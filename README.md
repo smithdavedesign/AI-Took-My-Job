@@ -264,6 +264,8 @@ A dedicated smoke path now exists as `npm run e2e:developer-context`, and GitHub
 
 `npm run e2e:mcp-developer-context` now validates the stdio MCP server itself with the SDK client, including the compact engineering summary tool.
 
+The broader packaging and agent-runtime smoke now runs through [.github/workflows/agent-and-deployment-smoke.yml](.github/workflows/agent-and-deployment-smoke.yml). That workflow always executes policy-review, Compose, and Terraform validation. Promotion ownership only runs when the repository secrets `E2E_GITHUB_TOKEN`, `E2E_GITHUB_TEST_OWNER`, and `E2E_GITHUB_TEST_REPO` are configured.
+
 ## Shadow Suite And Distribution
 
 Phase 8 now includes retained shadow-suite management and queued replay execution for staging or preview environments. Use `npm run e2e:shadow-suite` to validate the retained replay flow locally, and `npm run shadow-suite:tick` to enqueue due suites from a scheduler.
@@ -281,6 +283,12 @@ For automated end-to-end runs, GitHub sync can be redirected to a disposable tes
 
 - Set `GITHUB_USE_TEST_REPO=true`
 - Set `GITHUB_TEST_OWNER` and `GITHUB_TEST_REPO`
+
+For GitHub Actions promotion smoke, add these repository secrets so [.github/workflows/agent-and-deployment-smoke.yml](.github/workflows/agent-and-deployment-smoke.yml) can exercise the full promotion path instead of reporting a skipped job:
+
+- `E2E_GITHUB_TOKEN`
+- `E2E_GITHUB_TEST_OWNER`
+- `E2E_GITHUB_TEST_REPO`
 
 When this is enabled, all draft sync during smoke tests goes to the test repository instead of the primary `GITHUB_OWNER` and `GITHUB_REPO` target.
 
