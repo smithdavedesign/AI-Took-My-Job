@@ -23,6 +23,7 @@ import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
 import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
+import { resolveSimilarReports } from './services/reports/similar-reports.js';
 import { runReplayValidation } from './services/agent-tasks/replay-validation.js';
 import { prepareRepositoryWorkspace } from './services/agent-tasks/repository-workspace.js';
 import { buildReplayArtifacts, summarizeReplayPlan } from './services/replay/har-replay-plan.js';
@@ -252,6 +253,15 @@ async function main(): Promise<void> {
               loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
             } : {})
           });
+          const similarReports = embedding
+            ? await resolveSimilarReports({
+              report,
+              embedding: embedding.embedding,
+              loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+              loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId),
+              loadIssueLinkByReportId: (neighborReportId) => githubIssueLinkRepository.findByReportId(neighborReportId)
+            })
+            : { candidates: [] };
           const preparedContext = {
             report: {
               id: report.id,
@@ -279,6 +289,7 @@ async function main(): Promise<void> {
               executionStatus: replay.replayPlan?.execution?.status ?? null,
               matchedFailingStepOrders: replay.replayPlan?.execution?.matchedFailingStepOrders ?? []
             } : null,
+            similarReports,
             ownership,
             artifacts: artifacts.map((artifact) => ({
               id: artifact.id,

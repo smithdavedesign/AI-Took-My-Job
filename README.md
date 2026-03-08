@@ -30,6 +30,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
 - Ownership candidate inference from explicit report metadata, linked repository context, and nearest-neighbor reports.
+- Similar-report linkage that combines nearest-neighbor embeddings with deterministic heuristics and issue references.
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 
@@ -163,6 +164,7 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/artifacts`
 - `GET /internal/reports/:reportId/embedding`
 - `GET /internal/reports/:reportId/ownership`
+- `GET /internal/reports/:reportId/similar`
 - `GET /internal/reports/:reportId/replay`
 - `GET /internal/artifacts/:artifactId/download-url`
 - `GET /artifacts/download/:artifactId`
@@ -234,6 +236,8 @@ The `.nexus/output.json` contract can also request replay-backed validation by i
 Each stored report now also gets a deterministic `deterministic-hash-v1` embedding at ingestion time, exposed through `GET /internal/reports/:reportId/embedding` so clustering and similarity features can build on live data instead of empty schema scaffolding.
 
 Ownership hooks are now exposed through `GET /internal/reports/:reportId/ownership` and are also attached to prepared agent-task context. Current candidates come from explicit owner metadata in the report payload, linked repository owner, and similar stored reports.
+
+Similarity hooks are now exposed through `GET /internal/reports/:reportId/similar` and are also attached to prepared agent-task context. Current ranking blends embedding distance with deterministic heuristics such as title overlap, source match, severity match, and matching external identifiers.
 
 For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
 

@@ -17,6 +17,14 @@ interface OwnershipResponse {
   candidates: OwnershipCandidate[];
 }
 
+interface SimilarCandidate {
+  reportId: string;
+}
+
+interface SimilarResponse {
+  candidates: SimilarCandidate[];
+}
+
 interface AgentTaskResponse {
   agentTaskId: string;
 }
@@ -156,6 +164,13 @@ async function main(): Promise<void> {
   );
   assert(ownership.candidates.some((candidate) => candidate.label === 'checkout-platform'), 'ownership candidates did not include checkout-platform');
 
+  const similar = await pollJson<SimilarResponse>(
+    `${baseUrl}/internal/reports/${targetReport.reportId}/similar`,
+    { headers: authHeaders },
+    (value) => Array.isArray(value.candidates) && value.candidates.length > 0
+  );
+  assert(similar.candidates.some((candidate) => candidate.reportId === seedReport.reportId), 'similar reports did not include the seeded related report');
+
   const task = await requestJson<AgentTaskResponse>(`${baseUrl}/internal/agent-tasks`, {
     method: 'POST',
     headers: {
@@ -180,6 +195,8 @@ async function main(): Promise<void> {
   assert(storedTask.status === 'ready', 'task did not become ready');
   const preparedOwnership = storedTask.preparedContext?.ownership as { candidates?: OwnershipCandidate[] } | undefined;
   assert(preparedOwnership?.candidates?.some((candidate) => candidate.label === 'checkout-platform'), 'prepared agent context did not include ownership candidates');
+  const preparedSimilar = storedTask.preparedContext?.similarReports as { candidates?: SimilarCandidate[] } | undefined;
+  assert(preparedSimilar?.candidates?.some((candidate) => candidate.reportId === seedReport.reportId), 'prepared agent context did not include similar reports');
 
   const createdExecution = await requestJson<ExecutionResponse>(
     `${baseUrl}/internal/agent-tasks/${task.agentTaskId}/execute`,
@@ -250,6 +267,7 @@ async function main(): Promise<void> {
     seedReportId: seedReport.reportId,
     reportId: targetReport.reportId,
     topOwner: ownership.candidates[0]?.label ?? null,
+    similarReportId: similar.candidates[0]?.reportId ?? null,
     executionId: createdExecution.executionId,
     pullRequestNumber: promoted.pullRequestNumber,
     pullRequestUrl: promoted.pullRequestUrl,

@@ -13,6 +13,8 @@ Current flow:
    - report summary
    - GitHub draft linkage if available
    - replay status and matched failing steps if available
+  - similar stored reports when semantic or heuristic matches exist
+  - ownership candidates inferred from report and repository context
    - persisted artifact metadata
    - operator objective, execution mode, and acceptance criteria
 5. The task becomes `ready`.
@@ -195,6 +197,10 @@ npm run e2e:agent-routes
 
 `GET /internal/reports/:reportId/ownership`
 
+### Inspect similar stored reports for a report
+
+`GET /internal/reports/:reportId/similar`
+
 ## What This Does Not Do Yet
 
 This is not a full autonomous coding runtime yet.
@@ -218,6 +224,7 @@ Current execution scaffolding notes:
 - promoted executions now also persist a first-class PR record with repository, branches, PR number, PR URL, promotion actor, and merge outcome metadata
 - merge attempts are approval-gated and persist either merged or merge-failed status in that PR record
 - ownership hints are now attached to prepared agent-task context using explicit owner metadata, repository owner, and nearest-neighbor reports
+- similar reports are now attached to prepared agent-task context using embedding distance plus deterministic heuristics like title overlap, source match, severity match, and external-id match
 - replay validation can rerun the stored HAR against a target base URL and compare the result to an expected replay outcome such as `not-reproduced`
 - draft PR creation is now wired for GitHub repositories, but only after review approval and an explicit promote call
 - feedback-report embeddings are now persisted at ingestion time so Phase 5 clustering can operate on live vectors
