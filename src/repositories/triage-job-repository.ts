@@ -4,6 +4,7 @@ import type { StoredTriageJob } from '../types/reports.js';
 export interface TriageJobRepository {
   create(job: StoredTriageJob): Promise<void>;
   updateStatus(id: string, status: StoredTriageJob['status']): Promise<void>;
+  updatePriorityAndPayload(id: string, priority: number, payload: Record<string, unknown>): Promise<void>;
 }
 
 export function createTriageJobRepository(database: DatabaseClient): TriageJobRepository {
@@ -34,6 +35,16 @@ export function createTriageJobRepository(database: DatabaseClient): TriageJobRe
          SET status = $2, updated_at = NOW()
          WHERE id = $1`,
         [id, status]
+      );
+    },
+    async updatePriorityAndPayload(id, priority, payload) {
+      await database.query(
+        `UPDATE triage_jobs
+         SET priority = $2,
+             payload = $3::jsonb,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [id, priority, JSON.stringify(payload)]
       );
     }
   };

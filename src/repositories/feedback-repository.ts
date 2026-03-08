@@ -5,6 +5,7 @@ export interface FeedbackRepository {
   create(report: StoredFeedbackReport): Promise<void>;
   findById(id: string): Promise<StoredFeedbackReport | null>;
   updateStatus(id: string, status: StoredFeedbackReport['status']): Promise<void>;
+  updatePayload(id: string, payload: Record<string, unknown>): Promise<void>;
 }
 
 interface FeedbackRow {
@@ -74,6 +75,14 @@ export function createFeedbackRepository(database: DatabaseClient): FeedbackRepo
          SET status = $2, updated_at = NOW()
          WHERE id = $1`,
         [id, status]
+      );
+    },
+    async updatePayload(id, payload) {
+      await database.query(
+        `UPDATE feedback_reports
+         SET payload = $2::jsonb, updated_at = NOW()
+         WHERE id = $1`,
+        [id, JSON.stringify(payload)]
       );
     }
   };

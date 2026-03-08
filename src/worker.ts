@@ -23,6 +23,7 @@ import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
+import { resolveRefinedImpactAssessment } from './services/reports/report-impact.js';
 import { resolveReportHistory } from './services/reports/report-history.js';
 import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from './services/reports/similar-reports.js';
@@ -277,6 +278,19 @@ async function main(): Promise<void> {
             loadExecutionsByTaskId: (agentTaskId) => agentTaskExecutionRepository.findByTaskId(agentTaskId),
             loadPullRequestByExecutionId: (executionId) => agentTaskExecutionPullRequestRepository.findByExecutionId(executionId)
           });
+          const impact = await resolveRefinedImpactAssessment({
+            report,
+            ...(draft?.repository ? { repository: draft.repository } : {}),
+            ...(embedding ? {
+              embedding: embedding.embedding,
+              loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+              loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
+            } : {}),
+            loadIssueLinkByReportId: (linkedReportId) => githubIssueLinkRepository.findByReportId(linkedReportId),
+            loadTasksByReportId: (linkedReportId) => agentTaskRepository.findByReportId(linkedReportId),
+            loadExecutionsByTaskId: (agentTaskId) => agentTaskExecutionRepository.findByTaskId(agentTaskId),
+            loadPullRequestByExecutionId: (executionId) => agentTaskExecutionPullRequestRepository.findByExecutionId(executionId)
+          });
           const preparedContext = {
             report: {
               id: report.id,
@@ -298,6 +312,7 @@ async function main(): Promise<void> {
               title: draft.draftTitle,
               labels: draft.draftLabels
             } : null,
+            impact,
             replay: replay ? {
               status: replay.status,
               summary: replay.summary,
@@ -746,7 +761,39 @@ async function main(): Promise<void> {
 
       await feedbackRepository.updateStatus(report.id, 'triaged');
 
-      const draft = createIssueDraft(report);
+      const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
+      const draftRepository = await githubIssueLinkRepository.findByReportId(report.id);
+      const refinedImpact = await resolveRefinedImpactAssessment({
+        report,
+        ...(draftRepository?.repository ? { repository: draftRepository.repository } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
+        } : {}),
+        loadIssueLinkByReportId: (linkedReportId) => githubIssueLinkRepository.findByReportId(linkedReportId),
+        loadTasksByReportId: (linkedReportId) => agentTaskRepository.findByReportId(linkedReportId),
+        loadExecutionsByTaskId: (agentTaskId) => agentTaskExecutionRepository.findByTaskId(agentTaskId),
+        loadPullRequestByExecutionId: (executionId) => agentTaskExecutionPullRequestRepository.findByExecutionId(executionId)
+      });
+      const enrichedPayload = {
+        ...report.payload,
+        impactScore: refinedImpact.score,
+        impactAssessment: refinedImpact
+      };
+      await feedbackRepository.updatePayload(report.id, enrichedPayload);
+      await triageJobRepository.updatePriorityAndPayload(job.id, refinedImpact.score, {
+        ...job.data.payload,
+        impactScore: refinedImpact.score,
+        impactAssessment: refinedImpact
+      });
+
+      const enrichedReport = {
+        ...report,
+        payload: enrichedPayload
+      };
+
+      const draft = createIssueDraft(enrichedReport);
       let issueNumber: number | undefined;
       let issueUrl: string | undefined;
       let state: 'local-draft' | 'synced' | 'sync-failed' = 'local-draft';
@@ -783,6 +830,7 @@ async function main(): Promise<void> {
         jobId: job.id,
         reportId: report.id,
         source: report.source,
+        impactScore: refinedImpact.score,
         issueState: state,
         issueNumber,
         issueUrl

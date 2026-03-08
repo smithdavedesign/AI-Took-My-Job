@@ -16,6 +16,7 @@ Current flow:
   - similar stored reports when semantic or heuristic matches exist
   - ownership candidates inferred from report and repository context
   - historical issue and PR links from the current report and related reports
+  - refined impact assessment using recurrence, breadth, and prior remediation history
    - persisted artifact metadata
    - operator objective, execution mode, and acceptance criteria
 5. The task becomes `ready`.
@@ -206,6 +207,10 @@ npm run e2e:agent-routes
 
 `GET /internal/reports/:reportId/history`
 
+### Inspect refined impact for a report
+
+`GET /internal/reports/:reportId/impact`
+
 ## What This Does Not Do Yet
 
 This is not a full autonomous coding runtime yet.
@@ -231,6 +236,7 @@ Current execution scaffolding notes:
 - ownership hints are now attached to prepared agent-task context using explicit owner metadata, repository owner, and nearest-neighbor reports
 - similar reports are now attached to prepared agent-task context using embedding distance plus deterministic heuristics like title overlap, source match, severity match, and external-id match
 - historical issue and PR links are now attached to prepared agent-task context using the current report plus semantically related reports
+- refined impact is now attached to prepared agent-task context using recurrence, breadth, owner spread, and related issue/PR history
 - replay validation can rerun the stored HAR against a target base URL and compare the result to an expected replay outcome such as `not-reproduced`
 - draft PR creation is now wired for GitHub repositories, but only after review approval and an explicit promote call
 - feedback-report embeddings are now persisted at ingestion time so Phase 5 clustering can operate on live vectors

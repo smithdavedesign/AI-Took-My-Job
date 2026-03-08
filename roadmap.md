@@ -137,7 +137,7 @@ Deliverables:
 - [-] pgvector-backed embedding schema, nearest-neighbor repository scaffold, and ingestion-time embedding persistence.
 - [-] Historical linkage to recent issues and closed PRs via report history routes and prepared agent context.
 - [-] Repository-aware code ownership mapping.
-- [ ] Impact score refinement using recurrence and breadth.
+- [-] Impact score refinement using recurrence and breadth.
 
 Exit criteria:
 

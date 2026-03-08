@@ -164,6 +164,7 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/artifacts`
 - `GET /internal/reports/:reportId/embedding`
 - `GET /internal/reports/:reportId/history`
+- `GET /internal/reports/:reportId/impact`
 - `GET /internal/reports/:reportId/ownership`
 - `GET /internal/reports/:reportId/similar`
 - `GET /internal/reports/:reportId/replay`
@@ -241,6 +242,8 @@ Ownership hooks are now exposed through `GET /internal/reports/:reportId/ownersh
 Similarity hooks are now exposed through `GET /internal/reports/:reportId/similar` and are also attached to prepared agent-task context. Current ranking blends embedding distance with deterministic heuristics such as title overlap, source match, severity match, and matching external identifiers.
 
 Historical linkage is now exposed through `GET /internal/reports/:reportId/history` and is also attached to prepared agent-task context. It aggregates prior GitHub issue drafts/issues and agent-execution PR records from the current report plus semantically related reports so operators and agents can see recent related remediation history.
+
+Refined impact is now exposed through `GET /internal/reports/:reportId/impact` and is also attached to prepared agent-task context. The score blends the original ingestion-time score with recurrence from similar reports, breadth across sources and reporters, ownership spread, and related issue or PR history.
 
 For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
 

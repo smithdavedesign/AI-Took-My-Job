@@ -5,6 +5,26 @@ function formatJsonBlock(value: unknown): string {
   return '```json\n' + JSON.stringify(value, null, 2) + '\n```';
 }
 
+function buildImpactSection(report: StoredFeedbackReport): string[] {
+  const score = typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null;
+  const assessment = report.payload.impactAssessment;
+  if (score === null && (!assessment || typeof assessment !== 'object')) {
+    return [];
+  }
+
+  return [
+    '## Impact',
+    `- Score: ${score ?? 'unknown'}`,
+    ...(assessment && typeof assessment === 'object' && typeof (assessment as Record<string, unknown>).band === 'string'
+      ? [`- Band: ${(assessment as Record<string, unknown>).band}`]
+      : []),
+    ...(assessment && typeof assessment === 'object'
+      ? [formatJsonBlock(assessment)]
+      : []),
+    ''
+  ];
+}
+
 function buildSlackDraft(report: StoredFeedbackReport): IssueDraft {
   const reaction = typeof report.payload.reaction === 'string' ? report.payload.reaction : 'unknown';
 
@@ -14,6 +34,7 @@ function buildSlackDraft(report: StoredFeedbackReport): IssueDraft {
       '## Summary',
       'Internal report ingested from Slack.',
       '',
+      ...buildImpactSection(report),
       '## Source',
       `- Report ID: ${report.id}`,
       `- Reporter: ${report.reporterIdentifier ?? 'unknown'}`,
@@ -33,6 +54,7 @@ function buildObservabilityDraft(report: StoredFeedbackReport): IssueDraft {
       '## Summary',
       'Internal report ingested from observability telemetry.',
       '',
+      ...buildImpactSection(report),
       '## Source',
       `- Report ID: ${report.id}`,
       `- Provider: ${report.source}`,
@@ -56,6 +78,7 @@ function buildExtensionDraft(report: StoredFeedbackReport): IssueDraft {
       '## Summary',
       'Internal browser extension report captured from a staging or development session.',
       '',
+      ...buildImpactSection(report),
       '## Source',
       `- Report ID: ${report.id}`,
       `- Reporter: ${report.reporterIdentifier ?? 'unknown'}`,

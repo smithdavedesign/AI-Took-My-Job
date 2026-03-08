@@ -47,6 +47,16 @@ interface ReportHistoryResponse {
   relatedPullRequests: ReportHistoryPullRequestLink[];
 }
 
+interface ImpactResponse {
+  score: number;
+  band: string;
+  factors: {
+    recurrenceCount: number;
+    relatedIssueCount: number;
+    relatedPullRequestCount: number;
+  };
+}
+
 interface AgentTaskResponse {
   agentTaskId: string;
 }
@@ -142,6 +152,10 @@ async function pollJson<T>(url: string, init: RequestInit | undefined, predicate
 async function main(): Promise<void> {
   const baseUrl = getBaseUrl();
   const authHeaders = { Authorization: `Bearer ${getToken()}` };
+  const runId = Date.now();
+  const uniqueTitle = `Checkout service latency regression ${runId}`;
+  const uniqueCondition = `Checkout API latency ${runId}`;
+  const uniquePolicy = `Checkout SLO ${runId}`;
 
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
   assert(health.status === 'ok', 'health endpoint did not return ok');
@@ -153,12 +167,12 @@ async function main(): Promise<void> {
       'x-nexus-shared-secret': getSharedSecret()
     },
     body: JSON.stringify({
-      incident_id: `seed_${Date.now()}`,
+      incident_id: `seed_${runId}`,
       event: 'incident',
       severity: 'warning',
-      title: 'Checkout service latency regression',
-      condition_name: 'Checkout API latency',
-      policy_name: 'Checkout SLO',
+      title: uniqueTitle,
+      condition_name: uniqueCondition,
+      policy_name: uniquePolicy,
       owner: 'checkout-platform'
     })
   });
@@ -170,12 +184,12 @@ async function main(): Promise<void> {
       'x-nexus-shared-secret': getSharedSecret()
     },
     body: JSON.stringify({
-      incident_id: `target_${Date.now()}`,
+      incident_id: `target_${runId}`,
       event: 'incident',
       severity: 'warning',
-      title: 'Checkout service latency regression',
-      condition_name: 'Checkout API latency',
-      policy_name: 'Checkout SLO'
+      title: uniqueTitle,
+      condition_name: uniqueCondition,
+      policy_name: uniquePolicy
     })
   });
 
@@ -200,6 +214,13 @@ async function main(): Promise<void> {
   );
   assert(history.summary.relatedIssueCount > 0, 'report history did not include any related issues');
 
+  const impact = await pollJson<ImpactResponse>(
+    `${baseUrl}/internal/reports/${targetReport.reportId}/impact`,
+    { headers: authHeaders },
+    (value) => typeof value.score === 'number' && value.score > 0 && value.factors.recurrenceCount > 0
+  );
+  assert(impact.factors.relatedIssueCount > 0, 'refined impact did not include related issue history');
+
   const task = await requestJson<AgentTaskResponse>(`${baseUrl}/internal/agent-tasks`, {
     method: 'POST',
     headers: {
@@ -209,7 +230,7 @@ async function main(): Promise<void> {
     body: JSON.stringify({
       reportId: targetReport.reportId,
       targetRepository: 'smithdavedesign/testRepo',
-      title: `Promote and merge flow ${Date.now()}`,
+      title: `Promote and merge flow ${runId}`,
       objective: 'Create a minimal code change and validate the PR audit plus merge flow.',
       executionMode: 'fix',
       acceptanceCriteria: ['Execution can be promoted after approval.', 'Execution can be merged once approved.']
@@ -228,6 +249,8 @@ async function main(): Promise<void> {
   assert(preparedSimilar?.candidates?.some((candidate) => candidate.reportId === seedReport.reportId), 'prepared agent context did not include similar reports');
   const preparedHistory = storedTask.preparedContext?.history as ReportHistoryResponse | undefined;
   assert(preparedHistory?.relatedIssues?.some((issue) => issue.reportId === seedReport.reportId), 'prepared agent context did not include historical issue links');
+  const preparedImpact = storedTask.preparedContext?.impact as ImpactResponse | undefined;
+  assert(typeof preparedImpact?.score === 'number' && preparedImpact.score >= impact.score, 'prepared agent context did not include refined impact');
 
   const createdExecution = await requestJson<ExecutionResponse>(
     `${baseUrl}/internal/agent-tasks/${task.agentTaskId}/execute`,
@@ -303,6 +326,8 @@ async function main(): Promise<void> {
     ok: true,
     seedReportId: seedReport.reportId,
     reportId: targetReport.reportId,
+    impactScore: impact.score,
+    impactBand: impact.band,
     topOwner: ownership.candidates[0]?.label ?? null,
     similarReportId: similar.candidates[0]?.reportId ?? null,
     executionId: createdExecution.executionId,
