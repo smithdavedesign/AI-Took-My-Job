@@ -13,10 +13,19 @@ export interface GitHubIntegration {
   mode: AppConfig['GITHUB_AUTH_MODE'];
   enabled: boolean;
   repository: string;
+  usingTestRepository: boolean;
   createIssueDraft(input: GitHubIssueDraftInput): Promise<{ number: number; url: string }>;
 }
 
 function resolveRepositorySettings(config: AppConfig): { owner?: string; repo?: string; repository: string } {
+  if (config.GITHUB_USE_TEST_REPO && config.GITHUB_TEST_OWNER && config.GITHUB_TEST_REPO) {
+    return {
+      owner: config.GITHUB_TEST_OWNER,
+      repo: config.GITHUB_TEST_REPO,
+      repository: `${config.GITHUB_TEST_OWNER}/${config.GITHUB_TEST_REPO}`
+    };
+  }
+
   const repoValue = config.GITHUB_REPO;
 
   if (repoValue?.startsWith('https://github.com/')) {
@@ -81,6 +90,7 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
       mode: config.GITHUB_AUTH_MODE,
       enabled: false,
       repository,
+      usingTestRepository: config.GITHUB_USE_TEST_REPO,
       async createIssueDraft() {
         throw new Error('GitHub draft sync is disabled');
       }
@@ -102,6 +112,7 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
     mode: config.GITHUB_AUTH_MODE,
     enabled: true,
     repository,
+    usingTestRepository: config.GITHUB_USE_TEST_REPO,
     async createIssueDraft(input) {
       const response = await octokit.rest.issues.create({
         owner,

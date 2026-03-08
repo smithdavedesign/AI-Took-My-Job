@@ -19,6 +19,25 @@ const optionalString = z.preprocess((value) => {
   return value;
 }, z.string().optional());
 
+const booleanFromEnv = (defaultValue: boolean) => z.preprocess((value) => {
+  if (value === '' || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) {
+      return true;
+    }
+
+    if (['false', '0', 'no', 'off'].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean().default(defaultValue));
+
 const internalServiceTokenSchema = z.object({
   id: z.string().min(1),
   token: z.string().min(12),
@@ -50,7 +69,7 @@ const configSchema = z.object({
   S3_ENDPOINT: optionalString,
   S3_ACCESS_KEY_ID: optionalString,
   S3_SECRET_ACCESS_KEY: optionalString,
-  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  S3_FORCE_PATH_STYLE: booleanFromEnv(true),
   MINIO_ROOT_USER: z.string().default('minioadmin'),
   MINIO_ROOT_PASSWORD: z.string().default('minioadmin'),
   MINIO_BUCKET: z.string().default('nexus-artifacts'),
@@ -59,10 +78,13 @@ const configSchema = z.object({
   WEBHOOK_SHARED_SECRET: z.string().min(1, 'WEBHOOK_SHARED_SECRET is required'),
   DATABASE_URL: z.url({ protocol: /^postgres/ }),
   REDIS_URL: z.url({ protocol: /^redis/ }),
-  GITHUB_DRAFT_SYNC_ENABLED: z.coerce.boolean().default(false),
+  GITHUB_DRAFT_SYNC_ENABLED: booleanFromEnv(false),
   GITHUB_AUTH_MODE: z.enum(['pat', 'app']).default('pat'),
+  GITHUB_USE_TEST_REPO: booleanFromEnv(false),
   GITHUB_OWNER: optionalString,
   GITHUB_REPO: optionalString,
+  GITHUB_TEST_OWNER: optionalString,
+  GITHUB_TEST_REPO: optionalString,
   GITHUB_TOKEN: optionalString,
   GITHUB_APP_ID: optionalPositiveInt,
   GITHUB_APP_INSTALLATION_ID: optionalPositiveInt,
@@ -85,6 +107,24 @@ const configSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: [field],
         message: `${field} is required when ARTIFACT_STORAGE_PROVIDER=s3`
+      });
+    }
+  }
+
+  if (config.GITHUB_USE_TEST_REPO) {
+    if (!config.GITHUB_TEST_OWNER) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GITHUB_TEST_OWNER'],
+        message: 'GITHUB_TEST_OWNER is required when GITHUB_USE_TEST_REPO=true'
+      });
+    }
+
+    if (!config.GITHUB_TEST_REPO) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GITHUB_TEST_REPO'],
+        message: 'GITHUB_TEST_REPO is required when GITHUB_USE_TEST_REPO=true'
       });
     }
   }

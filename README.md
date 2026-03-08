@@ -150,8 +150,11 @@ Important variables:
 - `SLACK_SIGNING_SECRET`
 - `GITHUB_DRAFT_SYNC_ENABLED`
 - `GITHUB_AUTH_MODE`
+- `GITHUB_USE_TEST_REPO`
 - `GITHUB_OWNER`
 - `GITHUB_REPO`
+- `GITHUB_TEST_OWNER`
+- `GITHUB_TEST_REPO`
 - `GITHUB_TOKEN`
 - `GITHUB_APP_ID`
 - `GITHUB_APP_INSTALLATION_ID`
@@ -163,6 +166,13 @@ Two GitHub auth models are supported:
 
 - PAT mode for a service account with a fine-grained token.
 - GitHub App mode for stronger repository scoping and auditability.
+
+For automated end-to-end runs, GitHub sync can be redirected to a disposable test repository:
+
+- Set `GITHUB_USE_TEST_REPO=true`
+- Set `GITHUB_TEST_OWNER` and `GITHUB_TEST_REPO`
+
+When this is enabled, all draft sync during smoke tests goes to the test repository instead of the primary `GITHUB_OWNER` and `GITHUB_REPO` target.
 
 Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
 
@@ -262,6 +272,27 @@ npm run worker
 ```bash
 npm run check
 ```
+
+### 6. Run the committed E2E smoke test
+
+```bash
+npm run e2e:smoke
+```
+
+The committed smoke runner validates:
+
+- gateway health
+- browser-extension ingestion
+- replay completion and exact execution assertions
+- artifact persistence and signed download
+- internal bearer-auth routes
+- direct GitHub draft creation
+- Sentry, Datadog, and New Relic ingestion through persisted drafts
+
+If GitHub sync is enabled, the smoke runner refuses to hit the primary repository unless one of these is true:
+
+- `GITHUB_USE_TEST_REPO=true` with `GITHUB_TEST_OWNER` and `GITHUB_TEST_REPO` configured
+- `E2E_ALLOW_PRIMARY_GITHUB_REPO=true` is set intentionally
 
 ## Example Requests
 
