@@ -208,6 +208,12 @@ Deliverables:
 - [-] Hosted feedback widget, embed bootstrap, and public submission surface for lightweight user feedback.
 - [-] Project-scoped review queue before GitHub issue creation or downstream agent actions, including operator-facing queue controls and assignment workflows.
 
+Recent Phase 9 progress:
+
+- Signed project-scoped widget sessions now gate both `/public/projects/:projectKey/widget` and `/public/projects/:projectKey/embed.js`, and the public feedback submission path now requires the same short-lived token.
+- Internal onboarding can now mint GitHub App install links via `POST /internal/workspaces/:workspaceId/github-app/install-link`, and `/github/app/install/callback` persists installation metadata plus project repo bindings when repository access matches.
+- The operator review queue now exposes assignment health, queue aging metrics, and per-report review activity pulled from persisted audit events.
+
 Phase 9 architecture snapshot:
 
 ```mermaid
@@ -268,7 +274,7 @@ These do not block initial scaffolding, but they do affect later architecture:
 4. Should the first reproduction spike target a web frontend with stable staging auth, or a synthetic demo app?
 5. Should Phase 9 start with one repository per project, or support multiple repositories from the first slice?
 6. What is the smallest operator review surface that is sufficient before building a broader customer-facing dashboard?
-7. When the hosted widget moves beyond route-only intake, which access model should gate self-serve customer use: emailed links, signed sessions, or full product auth?
+7. The first hosted-widget access model is now signed sessions; the next decision is whether to evolve that into customer auth or keep session-based distribution for v1.
 
 ## Success Metrics
 
@@ -280,5 +286,5 @@ These do not block initial scaffolding, but they do affect later architecture:
 - [x] Initial Phase 9 slice validated locally: onboarding records plus a project-scoped hosted-feedback report persisted with `project_id` on 2026-03-08.
 - [-] Hosted feedback now queues for internal review before GitHub issue creation, with dedicated review endpoints and agent-task gating.
 - [-] Operator review is now exercised by `e2e:hosted-feedback-review`, with queue assignment actions, and a stronger review console is available at `/learn/review-queue`.
-- New customer repository connection completed without PAT setup.
+- [-] New customer repository connection can now start from a GitHub App install link and callback instead of manual installation-record creation, but still needs broader operator-facing onboarding UX.
 - Customer feedback submission completed in under 60 seconds through the hosted intake surface.

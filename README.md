@@ -41,13 +41,13 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 - Workspace, project, GitHub installation, and repository-connection persistence is now live for project-scoped onboarding.
-- Internal onboarding routes can now create workspaces, projects, GitHub installation records, and repository connections.
+- Internal onboarding routes can now create workspaces, projects, repository connections, signed hosted-widget sessions, and GitHub App install links that land on a callback-backed installation sync flow.
 - Runtime GitHub resolution is now project-aware for issue drafting, promotion, merge, and repository checkout.
-- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget` and an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`.
+- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget` and an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`, both gated by short-lived signed widget sessions.
 - Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
-- The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, full context loading, and single-report approve/reject actions.
+- The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, queue aging metrics, review activity history, full context loading, and single-report approve/reject actions.
 
-Still planned: fuller GitHub App onboarding UX and broader customer-facing operations surfaces around onboarding and support workflows.
+Still planned: broader customer-facing operations surfaces around onboarding and support workflows.
 
 ## Status Snapshot
 
@@ -131,11 +131,12 @@ sequenceDiagram
   Nexus->>Store: Persist workspace
   Admin->>Nexus: Create project
   Nexus->>Store: Persist project
+  Admin->>Nexus: Request GitHub App install link
+  Nexus-->>Admin: Signed install URL with workspace/project state
   Admin->>GitHubApp: Install app on repository or org
-  Admin->>Nexus: Register installation metadata
-  Nexus->>Store: Persist github_installation
-  Admin->>Nexus: Create repo connection
-  Nexus->>Store: Persist default repo connection for project
+  GitHubApp->>Nexus: Redirect to install callback
+  Nexus->>GitHubApp: Fetch installation + repository visibility
+  Nexus->>Store: Upsert github_installation and repo connection binding
 ```
 
 ### Project Feedback Flow
@@ -153,10 +154,11 @@ sequenceDiagram
   participant Review as Review Queue
   participant GitHub as GitHub
 
+  Reporter->>Gateway: Request signed widget session through internal control plane
   Reporter->>Embed: Launch embedded feedback surface
-  Embed->>Widget: Render project-scoped iframe
+  Embed->>Widget: Render signed project-scoped iframe
   Reporter->>Widget: Open project feedback page
-  Widget->>Gateway: POST hosted feedback payload
+  Widget->>Gateway: POST hosted feedback payload with widget session token
   Reporter->>Gateway: Submit project feedback or webhook report
   Gateway->>Router: Resolve project and repository scope
   Router-->>Gateway: Project context + default repository
@@ -199,6 +201,7 @@ sequenceDiagram
 - `GET /public/projects/:projectKey/embed.js`
 - `GET /public/projects/:projectKey/widget`
 - `POST /public/projects/:projectKey/feedback`
+- `GET /github/app/install/callback`
 
 ## Internal Routes
 
@@ -206,12 +209,14 @@ sequenceDiagram
 - `GET /internal/workspaces/:workspaceId`
 - `GET /internal/workspaces/:workspaceId/projects`
 - `GET /internal/workspaces/:workspaceId/github-installations`
+- `POST /internal/workspaces/:workspaceId/github-app/install-link`
 - `POST /internal/projects`
 - `GET /internal/projects/:projectId`
 - `GET /internal/projects/key/:projectKey`
 - `POST /internal/github/installations`
 - `POST /internal/repo-connections`
 - `GET /internal/projects/:projectId/repo-connections`
+- `POST /internal/projects/:projectId/widget-session`
 - `POST /internal/github/issues/draft`
 - `POST /internal/agent-tasks`
 - `GET /internal/agent-tasks/:taskId`
@@ -262,7 +267,7 @@ sequenceDiagram
 
 ## Validation Notes
 
-- `npm run e2e:hosted-feedback-review` now verifies the public widget route, the embeddable bootstrap route, queue assignment filters, the paged review-queue API, rejection gating, approval flow, and post-approval agent-task creation.
+- `npm run e2e:hosted-feedback-review` now verifies signed widget access, the embeddable bootstrap route, queue assignment filters, queue activity history, the paged review-queue API, rejection gating, approval flow, and post-approval agent-task creation.
 
 ## Environment
 
@@ -298,6 +303,10 @@ Important variables:
 - `GITHUB_APP_ID`
 - `GITHUB_APP_INSTALLATION_ID`
 - `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_APP_SLUG`
+- `GITHUB_APP_STATE_SECRET`
+- `PUBLIC_WIDGET_SIGNING_SECRET`
+- `PUBLIC_WIDGET_SESSION_TTL_SECONDS`
 - `AGENT_EXECUTION_COMMAND`
 - `AGENT_EXECUTION_ARGS`
 - `AGENT_EXECUTION_TIMEOUT_SECONDS`
@@ -366,12 +375,13 @@ Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
 
 The first customer-onboarding slice is now live behind internal routes and a public project-scoped feedback endpoint.
 
-- Workspace admins can create a workspace and project, register a GitHub App installation record, and connect a default repository to a project.
-- Public feedback can now be submitted to `POST /public/projects/:projectKey/feedback` and is persisted with `project_id` before triage begins.
+- Workspace admins can create a workspace and project, mint a GitHub App install link, let GitHub call back into Nexus to persist the installation, and connect or update the project repository binding without a PAT.
+- Public feedback can now be submitted to `POST /public/projects/:projectKey/feedback` through a signed widget session and is persisted with `project_id` before triage begins.
 - Runtime GitHub resolution now uses project repo connections first and only falls back to global env configuration when a project-scoped connection does not exist.
 - Hosted feedback now lands in `/internal/reports/review-queue`, and `POST /internal/reports/:reportId/review` is the approval gate for GitHub issue creation.
+- The operator review queue now exposes queue aging metrics and report-level review activity history sourced from persisted audit events.
 
-Live local validation on 2026-03-08 created a workspace, project, GitHub installation record, repo connection, and hosted-feedback report, and confirmed the stored report row carried the correct `project_id`.
+Live local validation on 2026-03-08 created a workspace, project, signed widget session, and hosted-feedback reports, confirmed review-gated processing end to end, and verified the stored report rows carried the correct `project_id`.
 
 The review gate is now live end to end: `npm run e2e:hosted-feedback-review` validates queue listing, rejection, approval, and hosted-feedback agent-task gating, and the CI smoke workflow runs it alongside the existing policy-review path.
 

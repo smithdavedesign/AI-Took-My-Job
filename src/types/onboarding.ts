@@ -33,3 +33,12 @@ export interface StoredRepoConnection {
   status: 'active' | 'inactive';
   config: Record<string, unknown>;
 }
+
+export interface GitHubInstallationUpsertInput extends StoredGitHubInstallation {}
+
+export interface RepoConnectionUpdateInput {
+  githubInstallationId?: string;
+  isDefault?: boolean;
+  status?: 'active' | 'inactive';
+  config?: Record<string, unknown>;
+}

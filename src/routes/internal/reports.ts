@@ -83,6 +83,32 @@ function compareTimestamps(left: string | undefined, right: string | undefined):
   return leftTime - rightTime;
 }
 
+function computeAgeHours(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const createdAt = Date.parse(value);
+  if (Number.isNaN(createdAt)) {
+    return null;
+  }
+
+  return Math.round(((Date.now() - createdAt) / 3600000) * 10) / 10;
+}
+
+function summarizeReviewActivity(event: { eventType: string; actorId?: string; payload: Record<string, unknown> }): string {
+  switch (event.eventType) {
+    case 'public_feedback.received':
+      return 'Hosted feedback entered the review-gated intake path.';
+    case 'report.review_assigned':
+      return `Assigned to ${typeof event.payload.reviewerId === 'string' ? event.payload.reviewerId : event.actorId ?? 'unknown reviewer'}.`;
+    case 'report.reviewed':
+      return `Decision recorded as ${typeof event.payload.reviewStatus === 'string' ? event.payload.reviewStatus : 'unknown'}.`;
+    default:
+      return event.eventType;
+  }
+}
+
 function matchesFileNeedle(fileNeedle: string, pathHints: string[], haystack: string): { matched: boolean; matchedPaths: string[] } {
   if (!fileNeedle) {
     return {
@@ -309,6 +335,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       }
 
       const impactScore = typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null;
+      const ageHours = computeAgeHours(report.createdAt ?? null);
       const item = {
         reportId: report.id,
         project: project ? {
@@ -325,6 +352,8 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         reporterIdentifier: report.reporterIdentifier ?? null,
         assignedReviewerId: review?.reviewerId ?? null,
         assignmentNotes: review?.notes ?? null,
+        ageHours,
+        stale: typeof ageHours === 'number' ? ageHours >= 24 : false,
         createdAt: report.createdAt ?? null,
         updatedAt: report.updatedAt ?? null,
         contextPath: `/internal/reports/${report.id}/context`,
@@ -381,6 +410,32 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       counts[item.severity] = (counts[item.severity] ?? 0) + 1;
       return counts;
     }, {});
+    const workflow = filteredItems.reduce((metrics, item) => {
+      if (item.assignedReviewerId) {
+        metrics.assignedCount += 1;
+      } else {
+        metrics.unassignedCount += 1;
+      }
+
+      if (item.stale) {
+        metrics.staleCount += 1;
+      }
+
+      if (typeof item.ageHours === 'number') {
+        metrics.totalAgeHours += item.ageHours;
+        metrics.agedCount += 1;
+        metrics.oldestPendingAgeHours = Math.max(metrics.oldestPendingAgeHours, item.ageHours);
+      }
+
+      return metrics;
+    }, {
+      assignedCount: 0,
+      unassignedCount: 0,
+      staleCount: 0,
+      oldestPendingAgeHours: 0,
+      totalAgeHours: 0,
+      agedCount: 0
+    });
     const projectSummaryMap = new Map<string, {
       project: { id: string; projectKey: string; name: string } | null;
       queuedCount: number;
@@ -430,6 +485,15 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         hasNextPage: boundedPage < totalPages,
         hasPreviousPage: boundedPage > 1,
         severityCounts,
+        workflow: {
+          assignedCount: workflow.assignedCount,
+          unassignedCount: workflow.unassignedCount,
+          staleCount: workflow.staleCount,
+          oldestPendingAgeHours: workflow.oldestPendingAgeHours,
+          averageAgeHours: workflow.agedCount > 0
+            ? Math.round((workflow.totalAgeHours / workflow.agedCount) * 10) / 10
+            : 0
+        },
         projectSummaries: Array.from(projectSummaryMap.values()).sort((left, right) => {
           return right.queuedCount - left.queuedCount
             || (right.highestImpactScore ?? -1) - (left.highestImpactScore ?? -1)
@@ -533,13 +597,14 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('report not found');
     }
 
-    const [embedding, draft, review, artifacts, replay, tasks] = await Promise.all([
+    const [embedding, draft, review, artifacts, replay, tasks, reviewActivity] = await Promise.all([
       app.reportEmbeddings.findByReportId(reportId),
       app.githubIssueLinks.findByReportId(reportId),
       app.reportReviews.findByReportId(reportId),
       app.artifacts.findByReportId(reportId),
       app.replayRuns.findLatestByReportId(reportId),
-      app.agentTasks.findByReportId(reportId)
+      app.agentTasks.findByReportId(reportId),
+      app.auditRepository.listByReportId(reportId, 40)
     ]);
 
     const [ownership, similar, duplicates, history, impact, executionsByTask] = await Promise.all([
@@ -614,6 +679,15 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       classification: classifyReport(report),
       draft,
       reportReview: review ?? null,
+      reviewActivity: reviewActivity.map((event) => ({
+        id: event.id,
+        eventType: event.eventType,
+        actorType: event.actorType,
+        actorId: event.actorId ?? null,
+        createdAt: event.createdAt,
+        summary: summarizeReviewActivity(event),
+        payload: event.payload
+      })),
       artifacts,
       replay: replay ?? null,
       ownership,

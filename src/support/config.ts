@@ -102,6 +102,10 @@ const configSchema = z.object({
   GITHUB_APP_ID: optionalPositiveInt,
   GITHUB_APP_INSTALLATION_ID: optionalPositiveInt,
   GITHUB_APP_PRIVATE_KEY: optionalString,
+  GITHUB_APP_SLUG: optionalString,
+  GITHUB_APP_STATE_SECRET: z.string().min(16).default('local-github-app-state-secret'),
+  PUBLIC_WIDGET_SIGNING_SECRET: z.string().min(16).default('local-public-widget-signing-secret'),
+  PUBLIC_WIDGET_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
   AGENT_EXECUTION_COMMAND: optionalString,
   AGENT_EXECUTION_ARGS: optionalStringArraySchema,
   AGENT_EXECUTION_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(3600).default(600),
@@ -146,6 +150,22 @@ const configSchema = z.object({
         message: 'GITHUB_TEST_REPO is required when GITHUB_USE_TEST_REPO=true'
       });
     }
+  }
+
+  if (config.NODE_ENV === 'production' && config.PUBLIC_WIDGET_SIGNING_SECRET === 'local-public-widget-signing-secret') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['PUBLIC_WIDGET_SIGNING_SECRET'],
+      message: 'PUBLIC_WIDGET_SIGNING_SECRET must be set explicitly in production'
+    });
+  }
+
+  if (config.NODE_ENV === 'production' && config.GITHUB_APP_STATE_SECRET === 'local-github-app-state-secret') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GITHUB_APP_STATE_SECRET'],
+      message: 'GITHUB_APP_STATE_SECRET must be set explicitly in production'
+    });
   }
 });
 

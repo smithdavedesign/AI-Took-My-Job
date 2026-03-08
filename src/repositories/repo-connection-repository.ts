@@ -1,5 +1,5 @@
 import type { DatabaseClient } from '../support/database.js';
-import type { StoredRepoConnection } from '../types/onboarding.js';
+import type { RepoConnectionUpdateInput, StoredRepoConnection } from '../types/onboarding.js';
 
 export interface RepoConnectionRepository {
   create(connection: StoredRepoConnection): Promise<void>;
@@ -7,6 +7,7 @@ export interface RepoConnectionRepository {
   findByProjectId(projectId: string): Promise<StoredRepoConnection[]>;
   findByProjectIdAndRepository(projectId: string, repository: string): Promise<StoredRepoConnection | null>;
   findDefaultByProjectId(projectId: string): Promise<StoredRepoConnection | null>;
+  update(id: string, input: RepoConnectionUpdateInput): Promise<StoredRepoConnection | null>;
 }
 
 interface RepoConnectionRow {
@@ -100,6 +101,41 @@ export function createRepoConnectionRepository(database: DatabaseClient): RepoCo
          ORDER BY updated_at DESC
          LIMIT 1`,
         [projectId]
+      );
+
+      const row = result.rows[0];
+      return row ? mapRow(row) : null;
+    },
+    async update(id, input) {
+      const current = await this.findById(id);
+      if (!current) {
+        return null;
+      }
+
+      const next = {
+        ...current,
+        ...(input.githubInstallationId ? { githubInstallationId: input.githubInstallationId } : {}),
+        ...(typeof input.isDefault === 'boolean' ? { isDefault: input.isDefault } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        config: input.config ? { ...current.config, ...input.config } : current.config
+      };
+
+      const result = await database.query<RepoConnectionRow>(
+        `UPDATE repo_connections
+         SET github_installation_id = $2,
+             is_default = $3,
+             status = $4,
+             config = $5::jsonb,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, github_installation_id, provider, repository, is_default, status, config`,
+        [
+          id,
+          next.githubInstallationId ?? null,
+          next.isDefault,
+          next.status,
+          JSON.stringify(next.config)
+        ]
       );
 
       const row = result.rows[0];

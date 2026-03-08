@@ -12,13 +12,15 @@ import {
   validateUploadBudgets
 } from '../../services/reports/captured-feedback.js';
 import { ingestFeedbackReport } from '../../services/reports/report-ingestion.js';
+import { requirePublicWidgetSession } from '../../support/public-widget-access.js';
 
 const projectKeyParamsSchema = z.object({
   projectKey: z.string().min(3).max(80)
 });
 
 const widgetQuerySchema = z.object({
-  embed: z.coerce.boolean().optional()
+  embed: z.coerce.boolean().optional(),
+  accessToken: z.string().min(32).optional()
 });
 
 const publicFeedbackSchema = z.object({
@@ -63,7 +65,7 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string; name: string }, options: { embedded?: boolean } = {}): string {
+function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string; name: string }, options: { embedded?: boolean; accessToken: string } ): string {
   const projectName = escapeHtml(project.name);
   const projectKey = escapeHtml(project.projectKey);
   const embedded = options.embedded === true;
@@ -200,6 +202,7 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     `    const projectKey = ${JSON.stringify(project.projectKey)};`,
     '    const submissionPath = `/public/projects/${projectKey}/feedback`;',
     `    const embedded = ${embedded ? 'true' : 'false'};`,
+    `    const accessToken = ${JSON.stringify(options.accessToken)};`,
     '    const form = document.getElementById("feedbackForm");',
     '    const statusEl = document.getElementById("status");',
     '    const responsePreviewEl = document.getElementById("responsePreview");',
@@ -281,7 +284,7 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '        };',
     '        const response = await fetch(submissionPath, {',
     '          method: "POST",',
-    '          headers: { "content-type": "application/json" },',
+    '          headers: { "content-type": "application/json", "x-nexus-widget-token": accessToken },',
     '          body: JSON.stringify(payload)',
     '        });',
     '        const text = await response.text();',
@@ -311,8 +314,8 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
   ].join('\n');
 }
 
-function buildHostedFeedbackEmbedScript(project: { projectKey: string; name: string }): string {
-  const iframePath = `/public/projects/${project.projectKey}/widget?embed=true`;
+function buildHostedFeedbackEmbedScript(project: { projectKey: string; name: string }, accessToken: string): string {
+  const iframePath = `/public/projects/${project.projectKey}/widget?embed=true&accessToken=${encodeURIComponent(accessToken)}`;
 
   return [
     '(function () {',
@@ -371,13 +374,22 @@ function buildHostedFeedbackEmbedScript(project: { projectKey: string; name: str
 export function registerProjectPublicRoutes(app: FastifyInstance): void {
   app.get('/public/projects/:projectKey/embed.js', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    const query = widgetQuerySchema.parse(request.query);
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
       throw app.httpErrors.notFound('project not found');
     }
 
+    requirePublicWidgetSession(app, request, reply, project);
+    const accessToken = query.accessToken ?? (typeof request.headers['x-nexus-widget-token'] === 'string'
+      ? request.headers['x-nexus-widget-token']
+      : null);
+    if (!accessToken) {
+      throw app.httpErrors.unauthorized('missing widget access token');
+    }
+
     reply.type('application/javascript; charset=utf-8');
-    return buildHostedFeedbackEmbedScript(project);
+    return buildHostedFeedbackEmbedScript(project, accessToken);
   });
 
   app.get('/public/projects/:projectKey/widget', async (request, reply) => {
@@ -388,9 +400,18 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('project not found');
     }
 
+    requirePublicWidgetSession(app, request, reply, project);
+    const accessToken = query.accessToken ?? (typeof request.headers['x-nexus-widget-token'] === 'string'
+      ? request.headers['x-nexus-widget-token']
+      : null);
+    if (!accessToken) {
+      throw app.httpErrors.unauthorized('missing widget access token');
+    }
+
     reply.type('text/html; charset=utf-8');
     return buildHostedFeedbackWidgetPage(project, {
-      embedded: query.embed === true
+      embedded: query.embed === true,
+      accessToken
     });
   });
 
@@ -401,8 +422,10 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('project not found');
     }
 
+    const widgetSession = requirePublicWidgetSession(app, request, reply, project);
+
     const payload = publicFeedbackSchema.parse(request.body);
-    const sessionId = payload.sessionId ?? `public-feedback-${randomUUID()}`;
+    const sessionId = payload.sessionId ?? widgetSession.sessionId ?? `public-feedback-${randomUUID()}`;
     const uploads = normalizeCapturedUploads(payload.artifacts.uploads);
     validateUploadBudgets(app, [
       { key: 'screenRecording', upload: uploads.screenRecording },
@@ -445,6 +468,12 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
         name: project.name
       },
       sourceSurface: 'hosted-widget',
+      widgetSession: {
+        id: widgetSession.sessionId,
+        origin: widgetSession.origin ?? null,
+        mode: widgetSession.mode,
+        expiresAt: widgetSession.expiresAt
+      },
       impactScore
     };
 
@@ -490,6 +519,7 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
         reportId: ingested.report.id,
         projectId: project.id,
         projectKey: project.projectKey,
+        widgetSessionId: widgetSession.sessionId,
         jobId: ingested.triageJobId,
         ...(replayJobResult ? { replayJobId: replayJobResult.jobId } : {}),
         impactScore,

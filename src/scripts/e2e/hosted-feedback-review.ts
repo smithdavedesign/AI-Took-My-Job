@@ -22,6 +22,14 @@ interface ProjectResponse {
   name: string;
 }
 
+interface WidgetSessionResponse {
+  accessToken: string;
+  embedScriptUrl: string;
+  widgetUrl: string;
+  expiresAt: string;
+  feedbackAuthHeader: string;
+}
+
 interface PublicFeedbackResponse {
   accepted: boolean;
   reportId: string;
@@ -69,6 +77,12 @@ interface ReviewResponse {
     status: string;
   };
   syncError?: string;
+}
+
+interface ReportContextResponse {
+  reviewActivity?: Array<{
+    eventType: string;
+  }>;
 }
 
 interface AgentTaskCreatedResponse {
@@ -149,15 +163,15 @@ async function pollJson<T>(url: string, init: RequestInit | undefined, predicate
   throw new Error(`Polling ${url} timed out. Last value: ${JSON.stringify(lastValue)}`);
 }
 
-async function assertHtmlPage(baseUrl: string, path: string): Promise<void> {
-  const response = await requestText(`${baseUrl}${path}`);
+async function assertHtmlPage(baseUrl: string, path: string, init?: RequestInit): Promise<void> {
+  const response = await requestText(`${baseUrl}${path}`, init);
   assert(response.status === 200, `${path} did not return 200`);
   assert(/text\/html/i.test(response.headers.get('content-type') ?? ''), `${path} did not return HTML`);
   assert(/<title>/i.test(response.text), `${path} did not include a title element`);
 }
 
-async function assertJavaScriptPage(baseUrl: string, path: string): Promise<void> {
-  const response = await requestText(`${baseUrl}${path}`);
+async function assertJavaScriptPage(baseUrl: string, path: string, init?: RequestInit): Promise<void> {
+  const response = await requestText(`${baseUrl}${path}`, init);
   assert(response.status === 200, `${path} did not return 200`);
   assert(/javascript/i.test(response.headers.get('content-type') ?? ''), `${path} did not return JavaScript`);
   assert(/nexus-hosted-widget/i.test(response.text), `${path} did not include the embed bootstrap`);
@@ -190,11 +204,27 @@ async function createWorkspaceAndProject(baseUrl: string, headers: Record<string
   });
 }
 
-async function submitHostedFeedback(baseUrl: string, projectKey: string, title: string): Promise<PublicFeedbackResponse> {
+async function createWidgetSession(baseUrl: string, projectId: string, headers: Record<string, string>): Promise<WidgetSessionResponse> {
+  return requestJson<WidgetSessionResponse>(`${baseUrl}/internal/projects/${projectId}/widget-session`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      origin: 'https://customer.example.test',
+      mode: 'embed'
+    })
+  });
+}
+
+async function submitHostedFeedback(baseUrl: string, projectKey: string, title: string, accessToken: string): Promise<PublicFeedbackResponse> {
   return requestJson<PublicFeedbackResponse>(`${baseUrl}/public/projects/${projectKey}/feedback`, {
     method: 'POST',
     headers: {
-      'content-type': 'application/json'
+      'content-type': 'application/json',
+      'x-nexus-widget-token': accessToken,
+      origin: 'https://customer.example.test'
     },
     body: JSON.stringify({
       title,
@@ -229,9 +259,26 @@ async function main(): Promise<void> {
   await assertHtmlPage(baseUrl, '/learn/review-queue');
 
   const project = await createWorkspaceAndProject(baseUrl, authHeaders, suffix);
-  await assertHtmlPage(baseUrl, `/public/projects/${project.projectKey}/widget`);
-  await assertJavaScriptPage(baseUrl, `/public/projects/${project.projectKey}/embed.js`);
-  const rejectedReport = await submitHostedFeedback(baseUrl, project.projectKey, `Reject hosted feedback ${suffix}`);
+  await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/widget`, 401);
+  await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/embed.js`, 401);
+  const widgetSession = await createWidgetSession(baseUrl, project.id, authHeaders);
+  assert(Boolean(widgetSession.accessToken), 'Widget session did not include an access token');
+  await assertHtmlPage(baseUrl, new URL(widgetSession.widgetUrl).pathname + new URL(widgetSession.widgetUrl).search, {
+    headers: {
+      origin: 'https://customer.example.test'
+    }
+  });
+  await assertJavaScriptPage(baseUrl, new URL(widgetSession.embedScriptUrl).pathname + new URL(widgetSession.embedScriptUrl).search, {
+    headers: {
+      referer: 'https://customer.example.test/support'
+    }
+  });
+  await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/widget?accessToken=${encodeURIComponent(widgetSession.accessToken)}`, 403, {
+    headers: {
+      origin: 'https://malicious.example.test'
+    }
+  });
+  const rejectedReport = await submitHostedFeedback(baseUrl, project.projectKey, `Reject hosted feedback ${suffix}`, widgetSession.accessToken);
 
   const queuedRejected = await pollJson<ReviewQueueResponse>(
     `${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&limit=5&page=1&sort=impact`,
@@ -290,6 +337,11 @@ async function main(): Promise<void> {
   });
   assert(rejectedResult.review?.status === 'rejected', 'Rejected review did not persist rejected state');
   assert(rejectedResult.draft?.state === 'rejected', 'Rejected review did not update draft state');
+  const rejectedContext = await requestJson<ReportContextResponse>(`${baseUrl}/internal/reports/${rejectedReport.reportId}/context`, {
+    headers: authHeaders
+  });
+  assert((rejectedContext.reviewActivity ?? []).some((event) => event.eventType === 'report.review_assigned'), 'Rejected report context did not expose assignment activity');
+  assert((rejectedContext.reviewActivity ?? []).some((event) => event.eventType === 'report.reviewed'), 'Rejected report context did not expose review decision activity');
 
   await requestExpectingStatus(`${baseUrl}/internal/agent-tasks`, 409, {
     method: 'POST',
@@ -307,7 +359,7 @@ async function main(): Promise<void> {
     })
   });
 
-  const approvedReport = await submitHostedFeedback(baseUrl, project.projectKey, `Approve hosted feedback ${suffix}`);
+  const approvedReport = await submitHostedFeedback(baseUrl, project.projectKey, `Approve hosted feedback ${suffix}`, widgetSession.accessToken);
   const queuedApproved = await pollJson<ReviewQueueResponse>(
     `${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&limit=5&page=1&sort=newest`,
     { headers: authHeaders },

@@ -47,6 +47,22 @@ export interface GitHubIntegrationResolver {
   isEnabled(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<boolean>;
 }
 
+export interface GitHubAppInstallationDetails {
+  installationId: number;
+  accountLogin?: string;
+  accountType?: string;
+  targetType?: string;
+  repositoriesSelection?: string;
+  permissions: Record<string, string>;
+}
+
+export interface GitHubInstallationRepositorySummary {
+  id: number;
+  fullName: string;
+  private: boolean;
+  defaultBranch?: string;
+}
+
 function parseRepository(repository: string): { owner: string; repo: string } {
   const parts = repository.split('/').filter(Boolean);
 
@@ -124,6 +140,20 @@ function createPatClient(config: AppConfig): Octokit {
   });
 }
 
+function createAppManagerClient(config: AppConfig): Octokit {
+  if (!config.GITHUB_APP_ID || !config.GITHUB_APP_PRIVATE_KEY) {
+    throw new Error('GitHub App credentials are required when using GitHub App onboarding');
+  }
+
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: config.GITHUB_APP_ID,
+      privateKey: config.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n')
+    }
+  });
+}
+
 function createAppClient(config: AppConfig, installationId = config.GITHUB_APP_INSTALLATION_ID): Octokit {
   if (!config.GITHUB_APP_ID || !installationId || !config.GITHUB_APP_PRIVATE_KEY) {
     throw new Error('GitHub App credentials are required when GITHUB_AUTH_MODE=app');
@@ -154,6 +184,69 @@ async function resolveAppInstallationToken(config: AppConfig, installationId: nu
   });
 
   return installationAuth.token;
+}
+
+export function buildGitHubAppInstallationUrl(config: AppConfig, state: string): string {
+  if (!config.GITHUB_APP_SLUG) {
+    throw new Error('GITHUB_APP_SLUG is required to build a GitHub App installation URL');
+  }
+
+  const url = new URL(`https://github.com/apps/${config.GITHUB_APP_SLUG}/installations/new`);
+  url.searchParams.set('state', state);
+  return url.toString();
+}
+
+export async function getGitHubAppInstallationDetails(
+  config: AppConfig,
+  installationId: number
+): Promise<GitHubAppInstallationDetails> {
+  const octokit = createAppManagerClient(config);
+  const response = await octokit.request('GET /app/installations/{installation_id}', {
+    installation_id: installationId
+  });
+  const account = response.data.account;
+  const accountLogin = account && 'login' in account ? account.login : undefined;
+  const accountType = account && 'type' in account ? account.type : undefined;
+
+  return {
+    installationId: response.data.id,
+    ...(accountLogin ? { accountLogin } : {}),
+    ...(accountType ? { accountType } : {}),
+    ...(response.data.target_type ? { targetType: response.data.target_type } : {}),
+    ...(response.data.repository_selection ? { repositoriesSelection: response.data.repository_selection } : {}),
+    permissions: Object.fromEntries(Object.entries(response.data.permissions ?? {}).map(([key, value]) => [key, String(value)]))
+  };
+}
+
+export async function listGitHubInstallationRepositories(
+  config: AppConfig,
+  installationId: number
+): Promise<GitHubInstallationRepositorySummary[]> {
+  const octokit = createAppClient(config, installationId);
+  const repositories: GitHubInstallationRepositorySummary[] = [];
+  let page = 1;
+
+  while (page <= 5) {
+    const response = await octokit.apps.listReposAccessibleToInstallation({
+      per_page: 100,
+      page
+    });
+
+    repositories.push(...response.data.repositories.map((repository) => ({
+      id: repository.id,
+      fullName: repository.full_name,
+      private: repository.private,
+      ...(repository.default_branch ? { defaultBranch: repository.default_branch } : {})
+    })));
+
+    if (response.data.repositories.length < 100) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return repositories;
 }
 
 export function createGitHubIntegration(

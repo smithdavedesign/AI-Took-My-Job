@@ -1,8 +1,9 @@
 import type { DatabaseClient } from '../support/database.js';
-import type { StoredGitHubInstallation } from '../types/onboarding.js';
+import type { GitHubInstallationUpsertInput, StoredGitHubInstallation } from '../types/onboarding.js';
 
 export interface GitHubInstallationRepository {
   create(installation: StoredGitHubInstallation): Promise<void>;
+  upsert(installation: GitHubInstallationUpsertInput): Promise<StoredGitHubInstallation>;
   findById(id: string): Promise<StoredGitHubInstallation | null>;
   findByInstallationId(installationId: number): Promise<StoredGitHubInstallation | null>;
   findByWorkspaceId(workspaceId: string): Promise<StoredGitHubInstallation[]>;
@@ -64,6 +65,38 @@ export function createGitHubInstallationRepository(database: DatabaseClient): Gi
 
       const row = result.rows[0];
       return row ? mapRow(row) : null;
+    },
+    async upsert(installation) {
+      const result = await database.query<GitHubInstallationRow>(
+        `INSERT INTO github_installations (
+          id,
+          workspace_id,
+          provider,
+          installation_id,
+          account_login,
+          account_type,
+          metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+        ON CONFLICT (installation_id)
+        DO UPDATE SET
+          workspace_id = EXCLUDED.workspace_id,
+          account_login = EXCLUDED.account_login,
+          account_type = EXCLUDED.account_type,
+          metadata = EXCLUDED.metadata,
+          updated_at = NOW()
+        RETURNING id, workspace_id, provider, installation_id, account_login, account_type, metadata`,
+        [
+          installation.id,
+          installation.workspaceId,
+          installation.provider,
+          installation.installationId,
+          installation.accountLogin ?? null,
+          installation.accountType ?? null,
+          JSON.stringify(installation.metadata)
+        ]
+      );
+
+      return mapRow(result.rows[0] as GitHubInstallationRow);
     },
     async findByInstallationId(installationId) {
       const result = await database.query<GitHubInstallationRow>(
