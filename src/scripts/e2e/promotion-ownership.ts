@@ -72,6 +72,11 @@ interface ExecutionResponse {
 
 interface StoredExecution {
   status: string;
+  findings?: string[];
+  resultSummary?: {
+    outcome?: string;
+    nextAction?: string;
+  };
 }
 
 interface ExecutionCloseout {
@@ -107,6 +112,19 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function isHandoffOnlyExecution(execution: StoredExecution): boolean {
+  if (execution.status !== 'completed') {
+    return false;
+  }
+
+  if (execution.resultSummary?.outcome !== 'workspace-prepared') {
+    return false;
+  }
+
+  return Array.isArray(execution.findings)
+    && execution.findings.some((finding) => finding.includes('Agent command not configured'));
 }
 
 function getBaseUrl(): string {
@@ -306,6 +324,17 @@ async function main(): Promise<void> {
     { headers: authHeaders },
     (value) => !['queued', 'running'].includes(value.status)
   );
+  if (isHandoffOnlyExecution(execution)) {
+    console.log(JSON.stringify({
+      skipped: true,
+      reason: 'worker is running without AGENT_EXECUTION_COMMAND, so no promotable code changes were generated',
+      executionId: createdExecution.executionId,
+      executionStatus: execution.status,
+      nextAction: execution.resultSummary?.nextAction ?? null
+    }, null, 2));
+    return;
+  }
+
   assert(['changes-generated', 'validated'].includes(execution.status), `unexpected execution status ${execution.status}`);
 
   const closeoutBeforeReview = await requestJson<ExecutionCloseout>(
