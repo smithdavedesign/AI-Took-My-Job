@@ -132,8 +132,8 @@ export async function resolveReportHistory(input: {
       return left.source === 'current-report' ? -1 : 1;
     }
 
-    const leftTimestamp = left.mergedAt ?? '';
-    const rightTimestamp = right.mergedAt ?? '';
+    const leftTimestamp = left.mergedAt ? String(left.mergedAt) : '';
+    const rightTimestamp = right.mergedAt ? String(right.mergedAt) : '';
     if (leftTimestamp !== rightTimestamp) {
       return rightTimestamp.localeCompare(leftTimestamp);
     }

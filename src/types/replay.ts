@@ -19,6 +19,7 @@ export interface ReplayStep {
 export interface ReplayStorageSnapshotSummary {
   localStorageKeys: string[];
   sessionStorageKeys: string[];
+  cookieNames?: string[];
 }
 
 export interface ReplayExecutionStepResult {
@@ -38,6 +39,10 @@ export interface ReplayExecutionResult {
   isolatedThirdPartyRequests: number;
   failingStepOrders: number[];
   matchedFailingStepOrders: number[];
+  resolvedStateReferenceCount: number;
+  restoredCookieNames: string[];
+  restoredLocalStorageKeys: string[];
+  restoredSessionStorageKeys: string[];
   stepResults: ReplayExecutionStepResult[];
 }
 

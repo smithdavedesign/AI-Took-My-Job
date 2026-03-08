@@ -58,14 +58,20 @@ export async function runReplayValidation(input: {
   const localStorageArtifact = artifacts.find((artifact) => artifact.artifactType === 'local-storage');
   const sessionStorageArtifact = artifacts.find((artifact) => artifact.artifactType === 'session-storage');
   const harText = await readStreamToString(await input.artifactStore.readArtifact(harArtifact.storageKey));
+  const localStorageSnapshot = localStorageArtifact ? await readJsonArtifact(input.artifactStore, localStorageArtifact.storageKey) : {};
+  const sessionStorageSnapshot = sessionStorageArtifact ? await readJsonArtifact(input.artifactStore, sessionStorageArtifact.storageKey) : {};
   const storageState = {
-    localStorageKeys: localStorageArtifact ? Object.keys(await readJsonArtifact(input.artifactStore, localStorageArtifact.storageKey)) : [],
-    sessionStorageKeys: sessionStorageArtifact ? Object.keys(await readJsonArtifact(input.artifactStore, sessionStorageArtifact.storageKey)) : []
+    localStorageKeys: Object.keys(localStorageSnapshot),
+    sessionStorageKeys: Object.keys(sessionStorageSnapshot)
   };
   const builtReplay = buildReplayArtifacts(harText, storageState);
   const execution = await executeReplayPlan({
     plan: builtReplay.plan,
     steps: builtReplay.executionSteps,
+    storageSnapshot: {
+      localStorage: Object.fromEntries(Object.entries(localStorageSnapshot).map(([key, value]) => [key, String(value)])),
+      sessionStorage: Object.fromEntries(Object.entries(sessionStorageSnapshot).map(([key, value]) => [key, String(value)]))
+    },
     ...(input.baseUrl ? { targetOrigin: input.baseUrl } : {})
   });
 

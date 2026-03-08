@@ -33,18 +33,23 @@ interface ReplayResponse {
     storageState: {
       localStorageKeys: string[];
       sessionStorageKeys: string[];
+      cookieNames?: string[];
     };
     execution?: {
       status: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
       matchedFailingStepOrders: number[];
       isolatedThirdPartyRequests: number;
+      resolvedStateReferenceCount: number;
+      restoredCookieNames: string[];
+      restoredLocalStorageKeys: string[];
+      restoredSessionStorageKeys: string[];
     };
   };
 }
 
 interface StoredArtifact {
   id: string;
-  artifactType: 'screen-recording' | 'har' | 'local-storage' | 'session-storage';
+  artifactType: 'screen-recording' | 'har' | 'console-logs' | 'local-storage' | 'session-storage';
 }
 
 interface DirectDraftResponse {
@@ -129,19 +134,39 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
-async function pollJson<T>(url: string, init: RequestInit | undefined, attempts = 20, delayMs = 1000): Promise<T> {
+async function pollJson<T>(url: string, init: RequestInit | undefined, attempts = 20, delayMs = 1000, predicate?: (value: T) => boolean): Promise<T> {
   let lastError: unknown;
+  let lastValue: T | undefined;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return await requestJson<T>(url, init);
+      lastValue = await requestJson<T>(url, init);
+      if (!predicate || predicate(lastValue)) {
+        return lastValue;
+      }
     } catch (error) {
       lastError = error;
-      await sleep(delayMs);
     }
+
+    await sleep(delayMs);
+  }
+
+  if (lastValue) {
+    throw new Error(`Polling ${url} timed out. Last value: ${JSON.stringify(lastValue)}`);
   }
 
   throw lastError instanceof Error ? lastError : new Error(`Polling ${url} failed`);
+}
+
+async function requestExpectingStatus(url: string, status: number, init?: RequestInit): Promise<string> {
+  const response = await fetch(url, init);
+  const text = await response.text();
+
+  if (response.status !== status) {
+    throw new Error(`${init?.method ?? 'GET'} ${url} failed expected ${status} got ${response.status}: ${text}`);
+  }
+
+  return text;
 }
 
 function expectIncludesAll(actual: string[], expected: string[], label: string): void {
@@ -184,7 +209,7 @@ function buildHarBase64(baseUrl: string): string {
               { name: 'content-type', value: 'application/json' },
               { name: 'x-csrf-token', value: 'csrf-secret-value' }
             ],
-            postData: { text: JSON.stringify({ cartId: 'cart-456', orderId: 'order-789' }) }
+            postData: { text: JSON.stringify({ cartId: '{{localStorage.cartId}}', orderId: '{{sessionStorage.currentOrderId}}' }) }
           },
           response: {
             status: 404,
@@ -241,15 +266,26 @@ async function main(): Promise<void> {
       severity: 'high',
       signals: { consoleErrorCount: 2, networkErrorCount: 1, stakeholderCount: 3 },
       artifacts: {
-        hasScreenRecording: false,
+        hasScreenRecording: true,
         hasHar: true,
+        hasConsoleLogs: true,
         hasLocalStorageSnapshot: true,
         hasSessionStorageSnapshot: true,
         uploads: {
+          screenRecording: {
+            fileName: 'screen-recording.webm',
+            mimeType: 'video/webm',
+            contentBase64: Buffer.from('fake-screen-recording-data').toString('base64')
+          },
           har: {
             fileName: 'checkout.har',
             mimeType: 'application/json',
             contentBase64: buildHarBase64(baseUrl)
+          },
+          consoleLogs: {
+            fileName: 'console-logs.json',
+            mimeType: 'application/json',
+            contentBase64: Buffer.from(JSON.stringify([{ level: 'error', message: 'checkout failed' }])).toString('base64')
           },
           localStorage: {
             fileName: 'local-storage.json',
@@ -272,7 +308,7 @@ async function main(): Promise<void> {
   });
   const replay = await pollJson<ReplayResponse>(`${baseUrl}/internal/reports/${extensionResponse.reportId}/replay`, {
     headers: authHeaders
-  });
+  }, 40, 1000, (value) => value.status === 'completed');
   const artifacts = await requestJson<StoredArtifact[]>(`${baseUrl}/internal/reports/${extensionResponse.reportId}/artifacts`, {
     headers: authHeaders
   });
@@ -281,13 +317,18 @@ async function main(): Promise<void> {
   assert(replay.replayPlan?.execution?.status === 'reproduced', 'Replay execution did not reproduce the failing step');
   assert(JSON.stringify(replay.replayPlan.execution.matchedFailingStepOrders) === JSON.stringify([2]), 'Replay matched failing step orders did not equal [2]');
   assert(replay.replayPlan.execution.isolatedThirdPartyRequests === 1, 'Replay did not isolate exactly one third-party request');
+  assert(replay.replayPlan.execution.resolvedStateReferenceCount >= 2, 'Replay did not resolve storage placeholders into execution requests');
+  expectIncludesAll(replay.replayPlan.execution.restoredCookieNames, ['sessionId', 'cartId'], 'Replay restored cookie names');
+  expectIncludesAll(replay.replayPlan.execution.restoredLocalStorageKeys, ['cartId', 'userId'], 'Replay restored localStorage keys');
+  expectIncludesAll(replay.replayPlan.execution.restoredSessionStorageKeys, ['currentOrderId', 'refreshToken'], 'Replay restored sessionStorage keys');
   expectIncludesAll(replay.replayPlan.thirdPartyHostnames, ['example.com'], 'Replay third-party hostnames');
   expectIncludesAll(replay.replayPlan.authSignals, ['authorization', 'cookie', 'x-csrf-token'], 'Replay auth signals');
   expectIncludesAll(replay.replayPlan.storageState.localStorageKeys, ['cartId', 'userId'], 'Replay localStorage keys');
   expectIncludesAll(replay.replayPlan.storageState.sessionStorageKeys, ['currentOrderId', 'refreshToken'], 'Replay sessionStorage keys');
+  expectIncludesAll(replay.replayPlan.storageState.cookieNames ?? [], ['sessionId', 'cartId'], 'Replay cookie names');
 
   const artifactTypes = artifacts.map((artifact) => artifact.artifactType).sort();
-  assert(JSON.stringify(artifactTypes) === JSON.stringify(['har', 'local-storage', 'session-storage']), `Unexpected artifact types: ${artifactTypes.join(', ')}`);
+  assert(JSON.stringify(artifactTypes) === JSON.stringify(['console-logs', 'har', 'local-storage', 'screen-recording', 'session-storage']), `Unexpected artifact types: ${artifactTypes.join(', ')}`);
 
   const harArtifact = artifacts.find((artifact) => artifact.artifactType === 'har');
   assert(harArtifact, 'HAR artifact was not persisted');
@@ -307,6 +348,33 @@ async function main(): Promise<void> {
   } else {
     assert(extensionDraft.state === 'local-draft', `Expected local-draft state when GitHub sync disabled, received ${extensionDraft.state}`);
   }
+
+  await requestExpectingStatus(`${baseUrl}/webhooks/extension/report`, 413, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-nexus-shared-secret': config.WEBHOOK_SHARED_SECRET
+    },
+    body: JSON.stringify({
+      sessionId: `e2e_extension_budget_${Date.now()}`,
+      title: 'Oversize artifact budget check',
+      environment: 'staging',
+      pageUrl: 'https://staging.example.test/checkout',
+      reporter: { id: 'qa-e2e', role: 'qa' },
+      severity: 'medium',
+      signals: { consoleErrorCount: 0, networkErrorCount: 0, stakeholderCount: 1 },
+      artifacts: {
+        hasScreenRecording: true,
+        uploads: {
+          screenRecording: {
+            fileName: 'oversize.webm',
+            mimeType: 'video/webm',
+            contentBase64: Buffer.alloc(1_200_000, 65).toString('base64')
+          }
+        }
+      }
+    })
+  });
 
   let directDraftSummary: Record<string, unknown> | undefined;
   if (config.GITHUB_DRAFT_SYNC_ENABLED) {

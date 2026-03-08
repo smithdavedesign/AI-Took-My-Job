@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { classifyReport } from '../../services/reports/report-classification.js';
+import { resolveDuplicateReports } from '../../services/reports/report-duplicates.js';
 import { resolveRefinedImpactAssessment } from '../../services/reports/report-impact.js';
 import { resolveReportHistory } from '../../services/reports/report-history.js';
 import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
@@ -12,6 +14,21 @@ const reportIdParamsSchema = z.object({
 });
 
 export function registerReportInternalRoutes(app: FastifyInstance): void {
+  app.get('/internal/reports/:reportId/classification', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { reportId } = reportIdParamsSchema.parse(request.params);
+    const report = await app.reports.findById(reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    return {
+      reportId,
+      ...classifyReport(report)
+    };
+  });
+
   app.get('/internal/reports/:reportId/embedding', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
 
@@ -88,6 +105,32 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     return {
       reportId,
       candidates: similar.candidates
+    };
+  });
+
+  app.get('/internal/reports/:reportId/duplicates', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { reportId } = reportIdParamsSchema.parse(request.params);
+    const report = await app.reports.findById(reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    const embedding = await app.reportEmbeddings.findByReportId(reportId);
+    const duplicates = await resolveDuplicateReports({
+      report,
+      ...(embedding ? {
+        embedding: embedding.embedding,
+        loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
+        loadReportById: (neighborReportId) => app.reports.findById(neighborReportId)
+      } : {}),
+      loadIssueLinkByReportId: (linkedReportId) => app.githubIssueLinks.findByReportId(linkedReportId)
+    });
+
+    return {
+      reportId,
+      candidates: duplicates.candidates
     };
   });
 

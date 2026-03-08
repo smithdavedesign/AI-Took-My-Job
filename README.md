@@ -31,6 +31,9 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - First-class PR audit records and approval-gated merge attempts for agent executions.
 - Ownership candidate inference from explicit report metadata, linked repository context, and nearest-neighbor reports.
 - Similar-report linkage that combines nearest-neighbor embeddings with deterministic heuristics and issue references.
+- Deterministic report classification and duplicate detection wired into triage and agent preparation.
+- Extension capture now validates explicit screen recording and console-log artifacts with enforced inline upload budgets.
+- Replay execution restores cookie and storage context and records restored-state evidence in replay output.
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 
@@ -162,6 +165,8 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/draft`
 - `GET /internal/reports/:reportId/agent-tasks`
 - `GET /internal/reports/:reportId/artifacts`
+- `GET /internal/reports/:reportId/classification`
+- `GET /internal/reports/:reportId/duplicates`
 - `GET /internal/reports/:reportId/embedding`
 - `GET /internal/reports/:reportId/history`
 - `GET /internal/reports/:reportId/impact`
@@ -244,6 +249,10 @@ Similarity hooks are now exposed through `GET /internal/reports/:reportId/simila
 Historical linkage is now exposed through `GET /internal/reports/:reportId/history` and is also attached to prepared agent-task context. It aggregates prior GitHub issue drafts/issues and agent-execution PR records from the current report plus semantically related reports so operators and agents can see recent related remediation history.
 
 Refined impact is now exposed through `GET /internal/reports/:reportId/impact` and is also attached to prepared agent-task context. The score blends the original ingestion-time score with recurrence from similar reports, breadth across sources and reporters, ownership spread, and related issue or PR history.
+
+Classification is now exposed through `GET /internal/reports/:reportId/classification`, and duplicate candidates are exposed through `GET /internal/reports/:reportId/duplicates`. Triage persists both into report payloads and agent-task prepared context, and high-confidence duplicates can reuse an existing synced GitHub issue instead of creating another one.
+
+The committed full-stack E2E now validates explicit screen-recording and console-log artifact capture, plus bounded inline upload rejection. Replay execution also restores cookie and storage context and persists restored-state evidence such as cookie names, storage keys, and placeholder-resolution counts.
 
 Promoted PRs now include execution evidence references, validation status, refined impact, and ownership hints in the PR body. When `APP_BASE_URL` is configured, those evidence references become fully qualified links back into Nexus internal routes.
 

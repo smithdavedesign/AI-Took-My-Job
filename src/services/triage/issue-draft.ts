@@ -25,6 +25,60 @@ function buildImpactSection(report: StoredFeedbackReport): string[] {
   ];
 }
 
+function buildClassificationSection(report: StoredFeedbackReport): string[] {
+  const classification = report.payload.classification;
+  if (!classification || typeof classification !== 'object') {
+    return [];
+  }
+
+  return [
+    '## Classification',
+    formatJsonBlock(classification),
+    ''
+  ];
+}
+
+function buildDuplicateSection(report: StoredFeedbackReport): string[] {
+  const duplicates = report.payload.duplicates;
+  if (!duplicates || typeof duplicates !== 'object') {
+    return [];
+  }
+
+  return [
+    '## Duplicate Candidates',
+    formatJsonBlock(duplicates),
+    ''
+  ];
+}
+
+function readClassificationLabels(report: StoredFeedbackReport): string[] {
+  const classification = report.payload.classification;
+  if (!classification || typeof classification !== 'object') {
+    return [];
+  }
+
+  const labels = (classification as Record<string, unknown>).labels;
+  return Array.isArray(labels)
+    ? labels.filter((value): value is string => typeof value === 'string' && value.length > 0)
+    : [];
+}
+
+function readDuplicateLabels(report: StoredFeedbackReport): string[] {
+  const duplicates = report.payload.duplicates;
+  if (!duplicates || typeof duplicates !== 'object') {
+    return [];
+  }
+
+  const candidates = (duplicates as Record<string, unknown>).candidates;
+  if (!Array.isArray(candidates)) {
+    return [];
+  }
+
+  return candidates.some((candidate) => candidate && typeof candidate === 'object' && (candidate as Record<string, unknown>).confidence === 'high')
+    ? ['possible-duplicate']
+    : [];
+}
+
 function buildSlackDraft(report: StoredFeedbackReport): IssueDraft {
   const reaction = typeof report.payload.reaction === 'string' ? report.payload.reaction : 'unknown';
 
@@ -35,6 +89,8 @@ function buildSlackDraft(report: StoredFeedbackReport): IssueDraft {
       'Internal report ingested from Slack.',
       '',
       ...buildImpactSection(report),
+      ...buildClassificationSection(report),
+      ...buildDuplicateSection(report),
       '## Source',
       `- Report ID: ${report.id}`,
       `- Reporter: ${report.reporterIdentifier ?? 'unknown'}`,
@@ -43,7 +99,7 @@ function buildSlackDraft(report: StoredFeedbackReport): IssueDraft {
       '## Raw Payload',
       formatJsonBlock(report.payload)
     ].join('\n'),
-    labels: ['bug', 'triaged', 'source:slack']
+    labels: [...new Set(['bug', 'triaged', 'source:slack', ...readClassificationLabels(report), ...readDuplicateLabels(report)])]
   };
 }
 
@@ -55,6 +111,8 @@ function buildObservabilityDraft(report: StoredFeedbackReport): IssueDraft {
       'Internal report ingested from observability telemetry.',
       '',
       ...buildImpactSection(report),
+      ...buildClassificationSection(report),
+      ...buildDuplicateSection(report),
       '## Source',
       `- Report ID: ${report.id}`,
       `- Provider: ${report.source}`,
@@ -63,7 +121,7 @@ function buildObservabilityDraft(report: StoredFeedbackReport): IssueDraft {
       '## Event Payload',
       formatJsonBlock(report.payload)
     ].join('\n'),
-    labels: ['bug', 'triaged', `source:${report.source}`]
+    labels: [...new Set(['bug', 'triaged', `source:${report.source}`, ...readClassificationLabels(report), ...readDuplicateLabels(report)])]
   };
 }
 
@@ -79,6 +137,8 @@ function buildExtensionDraft(report: StoredFeedbackReport): IssueDraft {
       'Internal browser extension report captured from a staging or development session.',
       '',
       ...buildImpactSection(report),
+      ...buildClassificationSection(report),
+      ...buildDuplicateSection(report),
       '## Source',
       `- Report ID: ${report.id}`,
       `- Reporter: ${report.reporterIdentifier ?? 'unknown'}`,
@@ -90,7 +150,7 @@ function buildExtensionDraft(report: StoredFeedbackReport): IssueDraft {
       '## Full Payload',
       formatJsonBlock(report.payload)
     ].join('\n'),
-    labels: ['bug', 'triaged', 'source:extension']
+    labels: [...new Set(['bug', 'triaged', 'source:extension', ...readClassificationLabels(report), ...readDuplicateLabels(report)])]
   };
 }
 

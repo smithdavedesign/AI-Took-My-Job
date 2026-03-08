@@ -3,6 +3,42 @@ import { URL } from 'node:url';
 
 import type { ReplayExecutionResult, ReplayExecutionStepResult, ReplayPlan } from '../../types/replay.js';
 
+function parseCookieHeader(value: string): Record<string, string> {
+  return Object.fromEntries(
+    value.split(';')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const separator = part.indexOf('=');
+        return separator >= 0
+          ? [part.slice(0, separator), part.slice(separator + 1)]
+          : [part, ''];
+      })
+  );
+}
+
+function replaceStatePlaceholders(value: string, state: {
+  cookies: Record<string, string>;
+  localStorage: Record<string, string>;
+  sessionStorage: Record<string, string>;
+}): { value: string; replacements: number } {
+  let replacements = 0;
+  const resolved = value.replace(/\{\{(cookies|localStorage|sessionStorage)\.([a-zA-Z0-9_-]+)\}\}/g, (_match, scope: 'cookies' | 'localStorage' | 'sessionStorage', key: string) => {
+    const source = state[scope];
+    if (!(key in source)) {
+      return _match;
+    }
+
+    replacements += 1;
+    return source[key] ?? '';
+  });
+
+  return {
+    value: resolved,
+    replacements
+  };
+}
+
 export interface ReplayExecutionInputStep {
   order: number;
   method: string;
@@ -48,12 +84,58 @@ export async function executeReplayPlan(input: {
   plan: ReplayPlan;
   steps: ReplayExecutionInputStep[];
   targetOrigin?: string;
+  storageSnapshot?: {
+    localStorage?: Record<string, string>;
+    sessionStorage?: Record<string, string>;
+  };
 }): Promise<ReplayExecutionResult> {
+  const firstPartyStep = input.steps.find((step) => !step.isThirdParty);
+  const resolvedOrigin = input.targetOrigin
+    ? new URL(input.targetOrigin).origin
+    : firstPartyStep ? new URL(firstPartyStep.url).origin : undefined;
+  const cookieMap = Object.assign({}, ...input.steps
+    .filter((step) => !step.isThirdParty)
+    .map((step) => step.headers.cookie)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .map((value) => parseCookieHeader(value)));
+  const localStorage = Object.fromEntries(
+    Object.entries(input.storageSnapshot?.localStorage ?? {}).map(([key, value]) => [key, String(value)])
+  );
+  const sessionStorage = Object.fromEntries(
+    Object.entries(input.storageSnapshot?.sessionStorage ?? {}).map(([key, value]) => [key, String(value)])
+  );
+  const restoredState = {
+    cookies: cookieMap,
+    localStorage,
+    sessionStorage
+  };
+  const hasStorageState = resolvedOrigin && (Object.keys(cookieMap).length > 0 || Object.keys(localStorage).length > 0);
   const client = await request.newContext({
-    ignoreHTTPSErrors: true
+    ignoreHTTPSErrors: true,
+    ...(hasStorageState ? {
+      storageState: {
+        cookies: Object.entries(cookieMap).map(([name, value]) => ({
+          name,
+          value: String(value),
+          domain: new URL(resolvedOrigin).hostname,
+          path: '/',
+          expires: -1,
+          httpOnly: false,
+          secure: false,
+          sameSite: 'Lax' as const
+        })),
+        origins: Object.keys(localStorage).length > 0
+          ? [{
+            origin: resolvedOrigin,
+            localStorage: Object.entries(localStorage).map(([name, value]) => ({ name, value }))
+          }]
+          : []
+      }
+    } : {})
   });
 
   const stepResults: ReplayExecutionStepResult[] = [];
+  let resolvedStateReferenceCount = 0;
 
   try {
     for (const step of input.steps) {
@@ -69,21 +151,34 @@ export async function executeReplayPlan(input: {
       }
 
       const startedAt = Date.now();
+      const restoredUrl = replaceStatePlaceholders(step.url, restoredState);
+      resolvedStateReferenceCount += restoredUrl.replacements;
       const requestUrl = input.targetOrigin
         ? (() => {
-          const original = new URL(step.url);
+          const original = new URL(restoredUrl.value);
           const target = new URL(input.targetOrigin);
           target.pathname = original.pathname;
           target.search = original.search;
           return target.toString();
         })()
-        : step.url;
+        : restoredUrl.value;
+      const resolvedHeaders = Object.fromEntries(Object.entries(filterHeaders(step.headers)).map(([key, value]) => {
+        const resolved = replaceStatePlaceholders(value, restoredState);
+        resolvedStateReferenceCount += resolved.replacements;
+        return [key, resolved.value];
+      }));
+      const resolvedBody = step.bodyText
+        ? replaceStatePlaceholders(step.bodyText, restoredState)
+        : null;
+      if (resolvedBody) {
+        resolvedStateReferenceCount += resolvedBody.replacements;
+      }
 
       try {
         const response = await client.fetch(requestUrl, {
           method: step.method,
-          headers: filterHeaders(step.headers),
-          ...(step.bodyText ? { data: step.bodyText } : {}),
+          headers: resolvedHeaders,
+          ...(resolvedBody ? { data: resolvedBody.value } : {}),
           failOnStatusCode: false
         });
 
@@ -123,6 +218,10 @@ export async function executeReplayPlan(input: {
     matchedFailingStepOrders: stepResults
       .filter((step) => step.expectedStatus >= 400 && step.result === 'matched')
       .map((step) => step.order),
+    resolvedStateReferenceCount,
+    restoredCookieNames: Object.keys(cookieMap),
+    restoredLocalStorageKeys: Object.keys(localStorage),
+    restoredSessionStorageKeys: Object.keys(sessionStorage),
     stepResults
   };
 }

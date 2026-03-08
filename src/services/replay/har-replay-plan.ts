@@ -184,6 +184,7 @@ export function buildReplayArtifacts(harText: string, storageState?: ReplayPlan[
     ...pickDataDependencies(step.planStep.pathname, step.planStep.queryKeys),
     ...extractBodyDependencies(step.executionStep.bodyText)
   ]))];
+  const cookieNames = [...new Set(steps.flatMap((step) => step.cookieNames))];
 
   return {
     plan: {
@@ -196,9 +197,10 @@ export function buildReplayArtifacts(harText: string, storageState?: ReplayPlan[
       authSignals,
       authRefreshPaths,
       dataDependencies,
-      storageState: storageState ?? {
-        localStorageKeys: [],
-        sessionStorageKeys: []
+      storageState: {
+        localStorageKeys: storageState?.localStorageKeys ?? [],
+        sessionStorageKeys: storageState?.sessionStorageKeys ?? [],
+        cookieNames
       }
     },
     executionSteps

@@ -23,6 +23,8 @@ import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
+import { classifyReport } from './services/reports/report-classification.js';
+import { resolveDuplicateReports } from './services/reports/report-duplicates.js';
 import { resolveRefinedImpactAssessment } from './services/reports/report-impact.js';
 import { resolveReportHistory } from './services/reports/report-history.js';
 import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
@@ -175,14 +177,20 @@ async function main(): Promise<void> {
           const harText = await readStreamToString(harStream);
           const localStorageArtifact = artifacts.find((artifact) => artifact.artifactType === 'local-storage');
           const sessionStorageArtifact = artifacts.find((artifact) => artifact.artifactType === 'session-storage');
+          const localStorageSnapshot = localStorageArtifact ? await readJsonArtifact(artifactStorage.store, localStorageArtifact.storageKey) : {};
+          const sessionStorageSnapshot = sessionStorageArtifact ? await readJsonArtifact(artifactStorage.store, sessionStorageArtifact.storageKey) : {};
           const storageState = {
-            localStorageKeys: localStorageArtifact ? Object.keys(await readJsonArtifact(artifactStorage.store, localStorageArtifact.storageKey)) : [],
-            sessionStorageKeys: sessionStorageArtifact ? Object.keys(await readJsonArtifact(artifactStorage.store, sessionStorageArtifact.storageKey)) : []
+            localStorageKeys: Object.keys(localStorageSnapshot),
+            sessionStorageKeys: Object.keys(sessionStorageSnapshot)
           };
           const builtReplay = buildReplayArtifacts(harText, storageState);
           const execution = await executeReplayPlan({
             plan: builtReplay.plan,
-            steps: builtReplay.executionSteps
+            steps: builtReplay.executionSteps,
+            storageSnapshot: {
+              localStorage: Object.fromEntries(Object.entries(localStorageSnapshot).map(([key, value]) => [key, String(value)])),
+              sessionStorage: Object.fromEntries(Object.entries(sessionStorageSnapshot).map(([key, value]) => [key, String(value)]))
+            }
           });
           const replayPlan = {
             ...builtReplay.plan,
@@ -248,6 +256,7 @@ async function main(): Promise<void> {
           const replay = await replayRunRepository.findLatestByReportId(report.id);
           const artifacts = await artifactBundleRepository.findByReportId(report.id);
           const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
+          const classification = classifyReport(report);
           const ownership = await resolveOwnershipCandidates({
             report,
             ...(draft?.repository ? { repository: draft.repository } : {}),
@@ -266,6 +275,15 @@ async function main(): Promise<void> {
               loadIssueLinkByReportId: (neighborReportId) => githubIssueLinkRepository.findByReportId(neighborReportId)
             })
             : { candidates: [] };
+          const duplicates = await resolveDuplicateReports({
+            report,
+            ...(embedding ? {
+              embedding: embedding.embedding,
+              loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+              loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
+            } : {}),
+            loadIssueLinkByReportId: (neighborReportId) => githubIssueLinkRepository.findByReportId(neighborReportId)
+          });
           const history = await resolveReportHistory({
             report,
             ...(embedding ? {
@@ -304,6 +322,8 @@ async function main(): Promise<void> {
             executionMode: job.data.payload.executionMode,
             acceptanceCriteria: job.data.payload.acceptanceCriteria ?? [],
             contextNotes: job.data.payload.contextNotes ?? null,
+            classification,
+            duplicates,
             githubDraft: draft ? {
               repository: draft.repository,
               issueNumber: draft.issueNumber ?? null,
@@ -759,9 +779,20 @@ async function main(): Promise<void> {
         throw new Error(`missing feedback report ${job.data.reportId}`);
       }
 
+      const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
+      const classification = classifyReport(report);
+      const duplicates = await resolveDuplicateReports({
+        report,
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
+        } : {}),
+        loadIssueLinkByReportId: (neighborReportId) => githubIssueLinkRepository.findByReportId(neighborReportId)
+      });
+
       await feedbackRepository.updateStatus(report.id, 'triaged');
 
-      const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
       const draftRepository = await githubIssueLinkRepository.findByReportId(report.id);
       const refinedImpact = await resolveRefinedImpactAssessment({
         report,
@@ -778,12 +809,16 @@ async function main(): Promise<void> {
       });
       const enrichedPayload = {
         ...report.payload,
+        classification,
+        duplicates,
         impactScore: refinedImpact.score,
         impactAssessment: refinedImpact
       };
       await feedbackRepository.updatePayload(report.id, enrichedPayload);
       await triageJobRepository.updatePriorityAndPayload(job.id, refinedImpact.score, {
         ...job.data.payload,
+        classification,
+        duplicates,
         impactScore: refinedImpact.score,
         impactAssessment: refinedImpact
       });
@@ -797,8 +832,13 @@ async function main(): Promise<void> {
       let issueNumber: number | undefined;
       let issueUrl: string | undefined;
       let state: 'local-draft' | 'synced' | 'sync-failed' = 'local-draft';
+      const duplicateIssue = duplicates.candidates.find((candidate) => candidate.confidence === 'high' && candidate.issueUrl);
 
-      if (github.enabled) {
+      if (duplicateIssue?.issueUrl) {
+        issueNumber = duplicateIssue.issueNumber;
+        issueUrl = duplicateIssue.issueUrl;
+        state = 'synced';
+      } else if (github.enabled) {
         try {
           const created = await github.createIssueDraft(draft);
           issueNumber = created.number;
@@ -813,7 +853,7 @@ async function main(): Promise<void> {
       await githubIssueLinkRepository.upsert({
         id: randomUUID(),
         feedbackReportId: report.id,
-        repository: github.repository || 'local-only',
+        repository: duplicateIssue?.repository ?? (github.repository || 'local-only'),
         draftTitle: draft.title,
         draftBody: draft.body,
         draftLabels: draft.labels,
@@ -831,6 +871,7 @@ async function main(): Promise<void> {
         reportId: report.id,
         source: report.source,
         impactScore: refinedImpact.score,
+        duplicateLinked: Boolean(duplicateIssue?.issueUrl),
         issueState: state,
         issueNumber,
         issueUrl

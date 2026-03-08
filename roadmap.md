@@ -34,10 +34,9 @@ Status legend:
 
 ### Next
 
-- [-] Complete Phase 3 browser extension capture gaps: screen recording maturity, console log capture, and bounded upload discipline.
-- [-] Complete Phase 4 browser-context replay: cookie and storage restoration plus fail-before/pass-after validation policy.
 - [-] Finish Phase 6 reviewability: stabilize downstream agent commands, tighten validation policy, and add human review controls around generated changes.
-- [-] Start Phase 5 semantic clustering, deterministic deduplication, and ownership mapping.
+- [ ] Start Phase 7 MCP developer context.
+- [ ] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 
 ### Blocked
@@ -79,39 +78,39 @@ Exit criteria:
 
 - [x] A bug reaction or telemetry event becomes a stored report and queued triage job.
 
-### [-] Phase 2: Redaction, Classification, And Issue Creation
+### [x] Phase 2: Redaction, Classification, And Issue Creation
 
 Objective: turn stored reports into safe, structured engineering issues.
 
 Deliverables:
 
 - [x] Multi-layer secret and PII scrubbing.
-- [ ] Intent classification and normalization pipeline.
+- [x] Intent classification and normalization pipeline.
 - [x] GitHub issue draft creation flow.
-- [-] Review gate before any GitHub write.
-- [ ] Deduplication v1 using deterministic heuristics and full-text similarity.
+- [x] Review gate before any GitHub write.
+- [x] Deduplication v1 using deterministic heuristics and full-text similarity.
 
 Exit criteria:
 
-- [-] An internal report can be converted into a proposed GitHub issue without leaking sensitive data.
+- [x] An internal report can be converted into a proposed GitHub issue without leaking sensitive data.
 
-### [-] Phase 3: Browser Extension MVP
+### [x] Phase 3: Browser Extension MVP
 
 Objective: capture the state developers need for deterministic reproduction.
 
 Deliverables:
 
-- [-] Explicit screen recording capture.
-- [-] Console log capture.
+- [x] Explicit screen recording capture.
+- [x] Console log capture.
 - [x] localStorage and sessionStorage snapshots.
 - [x] HAR and request metadata capture.
-- [-] Client-side first-pass redaction and bounded upload flow.
+- [x] Client-side first-pass redaction and bounded upload flow.
 
 Exit criteria:
 
-- [-] QA or PO can submit a captured artifact bundle attached to a report.
+- [x] QA or PO can submit a captured artifact bundle attached to a report.
 
-### [-] Phase 4: Reproduction Spike And Runner
+### [x] Phase 4: Reproduction Spike And Runner
 
 Objective: prove that captured sessions can be replayed reliably enough to support verified fixes.
 
@@ -120,28 +119,28 @@ Deliverables:
 - [x] HAR normalization pipeline.
 - [x] Synthetic token and auth-refresh handling strategy.
 - [x] Isolated Playwright execution service.
-- [-] Repeated fail-before and pass-after validation policy.
+- [x] Repeated fail-before and pass-after validation policy.
 - [x] Artifact-based reproduction job model.
 
 Exit criteria:
 
-- [-] Nexus can show consistent failure on a buggy build for at least one representative report class.
+- [x] Nexus can show consistent failure on a buggy build for at least one representative report class.
 
-### [ ] Phase 5: Semantic Intelligence
+### [x] Phase 5: Semantic Intelligence
 
 Objective: reduce noise and improve code ownership mapping.
 
 Deliverables:
 
-- [-] pgvector-backed semantic deduplication.
-- [-] pgvector-backed embedding schema, nearest-neighbor repository scaffold, and ingestion-time embedding persistence.
-- [-] Historical linkage to recent issues and closed PRs via report history routes and prepared agent context.
-- [-] Repository-aware code ownership mapping.
-- [-] Impact score refinement using recurrence and breadth.
+- [x] pgvector-backed semantic deduplication.
+- [x] pgvector-backed embedding schema, nearest-neighbor repository scaffold, and ingestion-time embedding persistence.
+- [x] Historical linkage to recent issues and closed PRs via report history routes and prepared agent context.
+- [x] Repository-aware code ownership mapping.
+- [x] Impact score refinement using recurrence and breadth.
 
 Exit criteria:
 
-- [-] Similar reports cluster together and suggest likely owning code areas.
+- [x] Similar reports cluster together and suggest likely owning code areas.
 
 ### [ ] Phase 6: Agentic PR Pipeline
 
@@ -201,10 +200,9 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [-] Close the remaining Phase 3 gaps around richer extension capture and upload discipline.
-2. [-] Strengthen Phase 4 with browser-context replay and fail-before/pass-after verification.
-3. [-] Finish Phase 6 reviewability with merge-ready GitHub credentials and stronger merge/closeout policy.
-4. [-] Start Phase 5 clustering, deduplication, ownership mapping, report linkage, and historical context.
+1. [-] Finish Phase 6 reviewability with stronger agent command contracts and validation closeout.
+2. [ ] Start Phase 7 MCP developer context.
+3. [ ] Start Phase 8 retained replay and distribution work.
 
 ## Open Questions
 
