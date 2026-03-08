@@ -4,20 +4,30 @@ AI-DevOps Nexus is a self-hostable internal engineering intelligence layer. It i
 
 ## Current Scope
 
-The repository currently implements the Phase 0 and early Phase 1 foundation from [roadmap.md](roadmap.md):
+The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful parts of Phases 2 through 4 from [roadmap.md](roadmap.md):
 
 - Fastify gateway with health checks and protected ingestion routes.
 - PostgreSQL repositories for feedback reports, artifact metadata, triage jobs, audit events, and GitHub draft metadata.
 - BullMQ queue publishing for triage jobs.
-- Worker process that converts stored reports into persisted issue drafts.
+- Worker process that converts stored reports into persisted issue drafts and replay records.
 - Configurable artifact storage with local-disk mode and S3-compatible object storage mode.
 - HAR replay pipeline that normalizes stored HAR artifacts into persisted replay plans.
 - Playwright-backed replay execution that verifies whether recorded failing steps still reproduce.
 - Internal service-token auth for internal routes and artifact download URL minting.
 - Optional GitHub sync using either a PAT-backed service account or a GitHub App.
-- Docker Compose topology for PostgreSQL and Redis.
+- Committed end-to-end smoke automation with safe GitHub test-repository routing.
+- Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 
-The verified reproduction loop, browser extension artifact uploads, and MCP server are still planned work.
+Still planned: richer browser automation, clustering and deduplication, agentic PR workflows, and MCP developer context.
+
+## Status Snapshot
+
+- Phase 0: complete
+- Phase 1: complete
+- Phase 2: partial
+- Phase 3: partial
+- Phase 4: partial
+- Phases 5 to 8: not started
 
 ## Architecture
 
@@ -431,18 +441,21 @@ The replay payload includes normalized steps, detected cookie names, auth-refres
 - Internal routes are protected by scoped bearer service tokens instead of the webhook shared secret.
 - HAR uploads now produce replay plans with auth, cookie, storage-state, and third-party metadata.
 - Replay jobs now execute through Playwright request contexts and record whether the failing steps were reproduced.
+- A committed `npm run e2e:smoke` runner now validates the full local stack end to end.
+- GitHub sync for smoke testing can now be redirected to a disposable test repository instead of the primary target.
 
 ## Current Limitations
 
 - Slack signature verification currently uses parsed request bodies and should be upgraded to raw-body verification before production use.
-- The worker now drafts from redacted payloads, and the replay pipeline normalizes HARs, but it does not yet execute browser automation or deterministic pass/fail verification.
-- Artifact downloads are now signed and time-limited, but there is not yet a user/session identity model beyond shared-secret internal access.
+- Replay execution currently uses Playwright request contexts, not full browser-context restoration with cookies, storage hydration, and pass-after fix validation.
+- Artifact downloads are signed and time-limited, but there is not yet a durable user or service identity model beyond env-defined service tokens.
 - Full runtime validation requires Docker because PostgreSQL and Redis are expected to run through Compose.
 - GitHub sync is optional and disabled by default.
+- Intent classification, deduplication, ownership mapping, and semantic clustering are not implemented yet.
 
 ## Next Recommended Work
 
-1. Add the verified reproduction loop with Playwright and isolated execution.
-2. Extend replay normalization to cookies, storage state, auth refresh, and third-party request isolation.
-3. Replace shared-secret internal auth with a real user or service identity model.
-4. Layer in LLM-backed clustering, duplicate detection, and draft refinement.
+1. Restore replay into a full browser context with cookie and storage hydration, then validate fail-before and pass-after behavior.
+2. Replace env-defined service tokens with a durable service identity and audit model.
+3. Add semantic clustering, deterministic deduplication, and ownership mapping.
+4. Start the agentic PR pipeline only after reproduction is stable enough to trust.
