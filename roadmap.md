@@ -42,7 +42,7 @@ Status legend:
 - [x] Plan Phase 9 customer onboarding and repository connection.
 - [x] Define workspace, project, and repository-connection data model.
 - [-] Refactor GitHub auth toward runtime project-scoped GitHub App resolution.
-- [-] Ship the hosted feedback widget and continue hardening the project-scoped submission flow.
+- [-] Ship the hosted feedback widget and embed bootstrap, and continue hardening the project-scoped submission flow.
 
 ### Blocked
 
@@ -205,8 +205,8 @@ Deliverables:
 - [-] Workspace and project model with project-scoped report routing.
 - [-] GitHub App-based repository connection flow.
 - [-] Runtime repository-to-installation resolution for GitHub writes.
-- [-] Hosted feedback widget and public submission surface for lightweight user feedback.
-- [-] Project-scoped review queue before GitHub issue creation or downstream agent actions, including operator-facing queue controls.
+- [-] Hosted feedback widget, embed bootstrap, and public submission surface for lightweight user feedback.
+- [-] Project-scoped review queue before GitHub issue creation or downstream agent actions, including operator-facing queue controls and assignment workflows.
 
 Phase 9 architecture snapshot:
 
@@ -216,7 +216,8 @@ flowchart LR
 	Onboarding --> Workspace[(Workspaces + Projects)]
 	Onboarding --> Install[(GitHub Installations)]
 	Onboarding --> Repo[(Repo Connections)]
-	Reporter[Reporter or Customer] --> Widget[/public/projects/:projectKey/widget/]
+	Reporter[Reporter or Customer] --> Embed[/public/projects/:projectKey/embed.js/]
+	Embed --> Widget[/public/projects/:projectKey/widget/]
 	Widget --> PublicRoute[/public/projects/:projectKey/feedback/]
 	PublicRoute --> Router[Project Router + GitHub Resolver]
 	Router --> Workspace
@@ -255,7 +256,7 @@ Current execution emphasis:
 5. [-] Ship internal onboarding endpoints plus the first public project feedback intake route.
 6. [-] Continue runtime GitHub App resolution and project-scoped review flow.
 7. [-] Harden report review operations so hosted feedback cannot auto-open issues or spawn agent tasks before approval.
-8. [-] Add a project-hosted widget surface plus a stronger operator review console and CI smoke coverage for hosted-feedback review decisions.
+8. [-] Add a project-hosted widget plus embed surface, stronger operator review controls, and CI smoke coverage for hosted-feedback review decisions.
 
 ## Open Questions
 
@@ -278,6 +279,6 @@ These do not block initial scaffolding, but they do affect later architecture:
 - [x] First deterministic replay achieved before autonomous PR work begins.
 - [x] Initial Phase 9 slice validated locally: onboarding records plus a project-scoped hosted-feedback report persisted with `project_id` on 2026-03-08.
 - [-] Hosted feedback now queues for internal review before GitHub issue creation, with dedicated review endpoints and agent-task gating.
-- [-] Operator review is now exercised by `e2e:hosted-feedback-review`, and a first review console is available at `/learn/review-queue`.
+- [-] Operator review is now exercised by `e2e:hosted-feedback-review`, with queue assignment actions, and a stronger review console is available at `/learn/review-queue`.
 - New customer repository connection completed without PAT setup.
 - Customer feedback submission completed in under 60 seconds through the hosted intake surface.

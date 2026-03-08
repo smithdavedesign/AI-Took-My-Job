@@ -25,6 +25,7 @@ const activeIssuesQuerySchema = z.object({
 
 const reviewQueueQuerySchema = z.object({
   projectId: z.string().uuid().optional(),
+  assignedTo: z.string().min(1).max(255).optional(),
   search: z.string().trim().min(1).max(255).optional(),
   page: z.coerce.number().int().min(1).max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -33,6 +34,14 @@ const reviewQueueQuerySchema = z.object({
 
 const reportReviewSchema = z.object({
   status: z.enum(['approved', 'rejected']),
+  repository: z.string().min(1).max(255).optional(),
+  notes: z.string().min(1).max(4000).optional()
+});
+
+const reviewQueueActionSchema = z.object({
+  action: z.enum(['assign', 'approve', 'reject']),
+  reportIds: z.array(z.string().uuid()).min(1).max(50),
+  reviewerId: z.string().min(1).max(255).optional(),
   repository: z.string().min(1).max(255).optional(),
   notes: z.string().min(1).max(4000).optional()
 });
@@ -121,6 +130,145 @@ function summarizeObservabilityContext(report: { source: string; externalId?: st
 }
 
 export function registerReportInternalRoutes(app: FastifyInstance): void {
+  async function applyReviewDecision(input: {
+    principalId: string;
+    requestId: string;
+    reportId: string;
+    payload: z.infer<typeof reportReviewSchema>;
+  }): Promise<Record<string, unknown>> {
+    const report = await app.reports.findById(input.reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    const draft = await app.githubIssueLinks.findByReportId(input.reportId);
+    if (!draft) {
+      throw app.httpErrors.notFound('draft not found');
+    }
+
+    const existingReview = await app.reportReviews.findByReportId(input.reportId);
+    if (input.payload.status === 'approved' && draft.state === 'synced' && existingReview?.status === 'approved') {
+      throw app.httpErrors.conflict('report review is already approved and synced');
+    }
+
+    if (input.payload.status === 'rejected') {
+      const review = {
+        id: existingReview?.id ?? randomUUID(),
+        feedbackReportId: input.reportId,
+        status: 'rejected' as const,
+        reviewerId: input.principalId,
+        repository: draft.repository,
+        ...(input.payload.notes ? { notes: input.payload.notes } : {}),
+        reviewedAt: new Date().toISOString()
+      };
+
+      await app.reportReviews.upsert(review);
+      await app.reports.updateStatus(input.reportId, 'drafted');
+      await app.githubIssueLinks.upsert({
+        ...draft,
+        state: 'rejected'
+      });
+
+      await app.audit.write({
+        eventType: 'report.reviewed',
+        actorType: 'system',
+        actorId: input.principalId,
+        requestId: input.requestId,
+        payload: {
+          reportId: input.reportId,
+          reviewStatus: 'rejected',
+          repository: draft.repository,
+          notes: input.payload.notes ?? null
+        }
+      });
+
+      return {
+        review,
+        draft: {
+          ...draft,
+          state: 'rejected'
+        }
+      };
+    }
+
+    const repository = input.payload.repository ?? draft.repository;
+    const github = await app.github.resolve({
+      projectId: report.projectId,
+      repository
+    });
+
+    let issueNumber: number | undefined;
+    let issueUrl: string | undefined;
+    let state: 'local-draft' | 'synced' | 'sync-failed' = 'local-draft';
+    let syncError: string | undefined;
+
+    if (github.enabled) {
+      try {
+        const created = await github.createIssueDraft({
+          title: draft.draftTitle,
+          body: draft.draftBody,
+          labels: draft.draftLabels
+        });
+        issueNumber = created.number;
+        issueUrl = created.url;
+        state = 'synced';
+      } catch (error) {
+        state = 'sync-failed';
+        syncError = error instanceof Error ? error.message : 'failed to create GitHub issue draft';
+      }
+    } else {
+      syncError = 'GitHub draft sync is disabled for the selected repository';
+    }
+
+    const review = {
+      id: existingReview?.id ?? randomUUID(),
+      feedbackReportId: input.reportId,
+      status: 'approved' as const,
+      reviewerId: input.principalId,
+      repository,
+      ...(input.payload.notes ? { notes: input.payload.notes } : {}),
+      reviewedAt: new Date().toISOString()
+    };
+
+    await app.reportReviews.upsert(review);
+    await app.reports.updateStatus(input.reportId, 'drafted');
+    await app.githubIssueLinks.upsert({
+      ...draft,
+      repository,
+      state,
+      ...(issueNumber ? { issueNumber } : {}),
+      ...(issueUrl ? { issueUrl } : {})
+    });
+
+    await app.audit.write({
+      eventType: 'report.reviewed',
+      actorType: 'system',
+      actorId: input.principalId,
+      requestId: input.requestId,
+      payload: {
+        reportId: input.reportId,
+        reviewStatus: 'approved',
+        repository,
+        issueNumber: issueNumber ?? null,
+        issueUrl: issueUrl ?? null,
+        syncError: syncError ?? null,
+        notes: input.payload.notes ?? null
+      }
+    });
+
+    return {
+      review,
+      draft: {
+        ...draft,
+        repository,
+        state,
+        ...(issueNumber ? { issueNumber } : {}),
+        ...(issueUrl ? { issueUrl } : {})
+      },
+      ...(syncError ? { syncError } : {})
+    };
+  }
+
   app.get('/internal/reports/review-queue', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
 
@@ -156,6 +304,10 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         return null;
       }
 
+      if (query.assignedTo && review?.reviewerId !== query.assignedTo) {
+        return null;
+      }
+
       const impactScore = typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null;
       const item = {
         reportId: report.id,
@@ -171,6 +323,8 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         repository: draft.repository,
         impactScore,
         reporterIdentifier: report.reporterIdentifier ?? null,
+        assignedReviewerId: review?.reviewerId ?? null,
+        assignmentNotes: review?.notes ?? null,
         createdAt: report.createdAt ?? null,
         updatedAt: report.updatedAt ?? null,
         contextPath: `/internal/reports/${report.id}/context`,
@@ -185,6 +339,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         item.title,
         item.repository,
         item.reporterIdentifier,
+        item.assignedReviewerId,
         item.project?.name,
         item.project?.projectKey,
         report.id
@@ -263,6 +418,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     return {
       filters: {
         projectId: query.projectId ?? null,
+        assignedTo: query.assignedTo ?? null,
         search: query.search ?? null,
         page: boundedPage,
         limit,
@@ -768,141 +924,90 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     };
   });
 
+  app.post('/internal/reports/review-queue/actions', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['github:draft']);
+    const payload = reviewQueueActionSchema.parse(request.body);
+
+    if (payload.action === 'assign') {
+      const reviewerId = payload.reviewerId ?? principal.id;
+      const results = await Promise.all(payload.reportIds.map(async (reportId) => {
+        const report = await app.reports.findById(reportId);
+        if (!report) {
+          throw app.httpErrors.notFound(`report ${reportId} not found`);
+        }
+
+        const existingReview = await app.reportReviews.findByReportId(reportId);
+        if (existingReview && existingReview.status !== 'pending') {
+          throw app.httpErrors.conflict(`report ${reportId} is no longer pending review`);
+        }
+
+        const assignedReview = {
+          id: existingReview?.id ?? randomUUID(),
+          feedbackReportId: reportId,
+          status: 'pending' as const,
+          reviewerId,
+          ...(payload.notes ? { notes: payload.notes } : {}),
+          ...(existingReview?.repository ? { repository: existingReview.repository } : {})
+        };
+
+        await app.reportReviews.upsert(assignedReview);
+        await app.audit.write({
+          eventType: 'report.review_assigned',
+          actorType: 'system',
+          actorId: principal.id,
+          requestId: request.id,
+          payload: {
+            reportId,
+            reviewerId,
+            notes: payload.notes ?? null
+          }
+        });
+
+        return {
+          reportId,
+          review: assignedReview
+        };
+      }));
+
+      return {
+        action: 'assign',
+        reviewerId,
+        results
+      };
+    }
+
+    const reviewPayload = {
+      status: payload.action === 'approve' ? 'approved' : 'rejected',
+      ...(payload.repository ? { repository: payload.repository } : {}),
+      ...(payload.notes ? { notes: payload.notes } : {})
+    } satisfies z.infer<typeof reportReviewSchema>;
+
+    const results = await Promise.all(payload.reportIds.map(async (reportId) => ({
+      reportId,
+      result: await applyReviewDecision({
+        principalId: principal.id,
+        requestId: request.id,
+        reportId,
+        payload: reviewPayload
+      })
+    })));
+
+    return {
+      action: payload.action,
+      results
+    };
+  });
+
   app.post('/internal/reports/:reportId/review', async (request) => {
     const principal = requireInternalServiceAuth(app, request, ['github:draft']);
 
     const { reportId } = reportIdParamsSchema.parse(request.params);
     const payload = reportReviewSchema.parse(request.body);
-    const report = await app.reports.findById(reportId);
-    if (!report) {
-      throw app.httpErrors.notFound('report not found');
-    }
-
-    const draft = await app.githubIssueLinks.findByReportId(reportId);
-    if (!draft) {
-      throw app.httpErrors.notFound('draft not found');
-    }
-
-    const existingReview = await app.reportReviews.findByReportId(reportId);
-    if (payload.status === 'approved' && draft.state === 'synced' && existingReview?.status === 'approved') {
-      throw app.httpErrors.conflict('report review is already approved and synced');
-    }
-
-    if (payload.status === 'rejected') {
-      const review = {
-        id: existingReview?.id ?? randomUUID(),
-        feedbackReportId: reportId,
-        status: 'rejected' as const,
-        reviewerId: principal.id,
-        repository: draft.repository,
-        ...(payload.notes ? { notes: payload.notes } : {}),
-        reviewedAt: new Date().toISOString()
-      };
-
-      await app.reportReviews.upsert(review);
-      await app.reports.updateStatus(reportId, 'drafted');
-      await app.githubIssueLinks.upsert({
-        ...draft,
-        state: 'rejected'
-      });
-
-      await app.audit.write({
-        eventType: 'report.reviewed',
-        actorType: 'system',
-        actorId: principal.id,
-        requestId: request.id,
-        payload: {
-          reportId,
-          reviewStatus: 'rejected',
-          repository: draft.repository,
-          notes: payload.notes ?? null
-        }
-      });
-
-      return {
-        review,
-        draft: {
-          ...draft,
-          state: 'rejected'
-        }
-      };
-    }
-
-    const repository = payload.repository ?? draft.repository;
-    const github = await app.github.resolve({
-      projectId: report.projectId,
-      repository
-    });
-
-    let issueNumber: number | undefined;
-    let issueUrl: string | undefined;
-    let state: 'local-draft' | 'synced' | 'sync-failed' = 'local-draft';
-    let syncError: string | undefined;
-
-    if (github.enabled) {
-      try {
-        const created = await github.createIssueDraft({
-          title: draft.draftTitle,
-          body: draft.draftBody,
-          labels: draft.draftLabels
-        });
-        issueNumber = created.number;
-        issueUrl = created.url;
-        state = 'synced';
-      } catch (error) {
-        state = 'sync-failed';
-        syncError = error instanceof Error ? error.message : 'failed to create GitHub issue draft';
-      }
-    } else {
-      syncError = 'GitHub draft sync is disabled for the selected repository';
-    }
-
-    const review = {
-      id: existingReview?.id ?? randomUUID(),
-      feedbackReportId: reportId,
-      status: 'approved' as const,
-      reviewerId: principal.id,
-      repository,
-      ...(payload.notes ? { notes: payload.notes } : {}),
-      reviewedAt: new Date().toISOString()
-    };
-
-    await app.reportReviews.upsert(review);
-    await app.reports.updateStatus(reportId, 'drafted');
-    await app.githubIssueLinks.upsert({
-      ...draft,
-      repository,
-      state,
-      ...(issueNumber ? { issueNumber } : {}),
-      ...(issueUrl ? { issueUrl } : {})
-    });
-
-    await app.audit.write({
-      eventType: 'report.reviewed',
-      actorType: 'system',
-      actorId: principal.id,
+    return applyReviewDecision({
+      principalId: principal.id,
       requestId: request.id,
-      payload: {
-        reportId,
-        reviewStatus: 'approved',
-        repository,
-        issueNumber: issueNumber ?? null,
-        issueUrl: issueUrl ?? null,
-        syncError: syncError ?? null,
-        notes: payload.notes ?? null
-      }
+      reportId,
+      payload
     });
-
-    return {
-      review,
-      draft: {
-        ...draft,
-        repository,
-        state,
-        ...(issueNumber ? { issueNumber } : {}),
-        ...(issueUrl ? { issueUrl } : {})
-      },
-      ...(syncError ? { syncError } : {})
-    };
   });
 }

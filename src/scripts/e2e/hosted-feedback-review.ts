@@ -33,6 +33,7 @@ interface PublicFeedbackResponse {
 
 interface ReviewQueueResponse {
   filters?: {
+    assignedTo?: string | null;
     page?: number;
     sort?: string;
   };
@@ -54,6 +55,7 @@ interface ReviewQueueResponse {
     reviewPath: string;
     contextPath: string;
     issueState: string;
+    assignedReviewerId?: string | null;
   }>;
 }
 
@@ -154,6 +156,13 @@ async function assertHtmlPage(baseUrl: string, path: string): Promise<void> {
   assert(/<title>/i.test(response.text), `${path} did not include a title element`);
 }
 
+async function assertJavaScriptPage(baseUrl: string, path: string): Promise<void> {
+  const response = await requestText(`${baseUrl}${path}`);
+  assert(response.status === 200, `${path} did not return 200`);
+  assert(/javascript/i.test(response.headers.get('content-type') ?? ''), `${path} did not return JavaScript`);
+  assert(/nexus-hosted-widget/i.test(response.text), `${path} did not include the embed bootstrap`);
+}
+
 async function createWorkspaceAndProject(baseUrl: string, headers: Record<string, string>, suffix: string): Promise<ProjectResponse> {
   const workspace = await requestJson<WorkspaceResponse>(`${baseUrl}/internal/workspaces`, {
     method: 'POST',
@@ -221,6 +230,7 @@ async function main(): Promise<void> {
 
   const project = await createWorkspaceAndProject(baseUrl, authHeaders, suffix);
   await assertHtmlPage(baseUrl, `/public/projects/${project.projectKey}/widget`);
+  await assertJavaScriptPage(baseUrl, `/public/projects/${project.projectKey}/embed.js`);
   const rejectedReport = await submitHostedFeedback(baseUrl, project.projectKey, `Reject hosted feedback ${suffix}`);
 
   const queuedRejected = await pollJson<ReviewQueueResponse>(
@@ -235,6 +245,32 @@ async function main(): Promise<void> {
   assert(queuedRejected.filters?.sort === 'impact', 'Review queue did not echo the requested sort');
   assert((queuedRejected.summary?.totalItems ?? 0) >= 1, 'Review queue summary did not include queued items');
   assert((queuedRejected.summary?.projectSummaries ?? []).some((entry) => entry.project?.id === project.id), 'Review queue project summaries did not include the created project');
+
+  const assignedQueue = await requestJson<ReviewQueueResponse>(
+    `${baseUrl}/internal/reports/review-queue/actions`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        action: 'assign',
+        reportIds: [rejectedReport.reportId],
+        reviewerId: 'queue-smoke-owner',
+        notes: 'Assigned during smoke validation.'
+      })
+    }
+  ) as unknown as ReviewQueueResponse;
+  assert(Boolean(assignedQueue), 'Bulk assignment did not return a response');
+
+  const filteredAssignedQueue = await requestJson<ReviewQueueResponse>(
+    `${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&assignedTo=${encodeURIComponent('queue-smoke-owner')}&limit=5&page=1&sort=impact`,
+    { headers: authHeaders }
+  );
+  const assignedItem = filteredAssignedQueue.items.find((item) => item.reportId === rejectedReport.reportId);
+  assert(assignedItem?.assignedReviewerId === 'queue-smoke-owner', 'Assigned report did not round-trip through the review queue filter');
+  assert(filteredAssignedQueue.filters?.assignedTo === 'queue-smoke-owner', 'Assigned-to filter did not echo in the review queue response');
 
   const initialRejectedReview = await requestJson<ReviewResponse>(`${baseUrl}${rejectedItem.reviewPath}`, {
     headers: authHeaders

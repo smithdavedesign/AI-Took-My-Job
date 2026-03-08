@@ -43,9 +43,9 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Workspace, project, GitHub installation, and repository-connection persistence is now live for project-scoped onboarding.
 - Internal onboarding routes can now create workspaces, projects, GitHub installation records, and repository connections.
 - Runtime GitHub resolution is now project-aware for issue drafting, promotion, merge, and repository checkout.
-- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, and a project-hosted widget page is now available at `/public/projects/:projectKey/widget`.
+- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget` and an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`.
 - Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
-- The operator review console at `/learn/review-queue` now supports project rollups, queue search, server-side sorting, pagination, full context loading, and approve/reject actions.
+- The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, full context loading, and single-report approve/reject actions.
 
 Still planned: fuller GitHub App onboarding UX and broader customer-facing operations surfaces around onboarding and support workflows.
 
@@ -143,6 +143,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant Reporter as Reporter or Customer
+  participant Embed as Embedded Script
   participant Widget as Hosted Widget Page
   participant Gateway as Nexus Gateway
   participant Router as Project Router
@@ -152,6 +153,8 @@ sequenceDiagram
   participant Review as Review Queue
   participant GitHub as GitHub
 
+  Reporter->>Embed: Launch embedded feedback surface
+  Embed->>Widget: Render project-scoped iframe
   Reporter->>Widget: Open project feedback page
   Widget->>Gateway: POST hosted feedback payload
   Reporter->>Gateway: Submit project feedback or webhook report
@@ -193,6 +196,7 @@ sequenceDiagram
 
 ## Public Routes
 
+- `GET /public/projects/:projectKey/embed.js`
 - `GET /public/projects/:projectKey/widget`
 - `POST /public/projects/:projectKey/feedback`
 
@@ -236,6 +240,7 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/developer-summary`
 - `GET /internal/reports/:reportId/ownership`
 - `GET /internal/reports/review-queue`
+- `POST /internal/reports/review-queue/actions`
 - `GET /internal/reports/:reportId/review`
 - `POST /internal/reports/:reportId/review`
 - `GET /internal/reports/:reportId/similar`
@@ -257,7 +262,7 @@ sequenceDiagram
 
 ## Validation Notes
 
-- `npm run e2e:hosted-feedback-review` now verifies the public widget route, the paged review-queue API, rejection gating, approval flow, and post-approval agent-task creation.
+- `npm run e2e:hosted-feedback-review` now verifies the public widget route, the embeddable bootstrap route, queue assignment filters, the paged review-queue API, rejection gating, approval flow, and post-approval agent-task creation.
 
 ## Environment
 

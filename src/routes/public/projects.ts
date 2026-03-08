@@ -17,6 +17,10 @@ const projectKeyParamsSchema = z.object({
   projectKey: z.string().min(3).max(80)
 });
 
+const widgetQuerySchema = z.object({
+  embed: z.coerce.boolean().optional()
+});
+
 const publicFeedbackSchema = z.object({
   sessionId: z.string().min(1).optional(),
   title: z.string().min(1).max(200),
@@ -59,9 +63,10 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string; name: string }): string {
+function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string; name: string }, options: { embedded?: boolean } = {}): string {
   const projectName = escapeHtml(project.name);
   const projectKey = escapeHtml(project.projectKey);
+  const embedded = options.embedded === true;
 
   return [
     '<!DOCTYPE html>',
@@ -73,7 +78,7 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '  <style>',
     '    :root { color-scheme: light; --ink: #13212f; --muted: rgba(19,33,47,0.7); --panel: rgba(255,255,255,0.86); --line: rgba(19,33,47,0.14); --accent: #bf5a2a; --accent-dark: #8e3c16; --accent-soft: rgba(191,90,42,0.14); --shadow: 0 24px 60px rgba(19,33,47,0.14); --good: #0d7344; --bad: #a3362f; }',
     '    * { box-sizing: border-box; }',
-    '    body { margin: 0; font-family: "Avenir Next", "Segoe UI", sans-serif; color: var(--ink); background: radial-gradient(circle at top, #fff6e8 0%, #f4ecdc 34%, #d8e4ea 100%); }',
+    `    body { margin: 0; font-family: "Avenir Next", "Segoe UI", sans-serif; color: var(--ink); background: ${embedded ? 'linear-gradient(180deg, #fff8ee 0%, #f5ede3 100%)' : 'radial-gradient(circle at top, #fff6e8 0%, #f4ecdc 34%, #d8e4ea 100%)'}; }`,
     '    main { max-width: 1120px; margin: 0 auto; padding: 28px 18px 44px; }',
     '    .hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr); gap: 18px; margin-bottom: 18px; }',
     '    .panel { background: var(--panel); border: 1px solid rgba(255,255,255,0.55); border-radius: 28px; box-shadow: var(--shadow); overflow: hidden; backdrop-filter: blur(10px); }',
@@ -109,11 +114,14 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '    .success { color: var(--good); }',
     '    .error { color: var(--bad); }',
     '    pre { margin: 0; padding: 14px; border-radius: 16px; background: #1f2329; color: #f2efe8; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }',
+    '    .embed-shell { display: flex; justify-content: flex-end; margin-bottom: 10px; }',
+    '    .embed-close { border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,0.92); color: var(--ink); padding: 8px 12px; cursor: pointer; }',
     '    @media (max-width: 980px) { .hero, .layout, .grid { grid-template-columns: 1fr; } main { padding-inline: 12px; } }',
     '  </style>',
     '</head>',
     '<body>',
     '  <main>',
+    embedded ? '    <div class="embed-shell"><button id="closeEmbed" class="embed-close" type="button">Close</button></div>' : '',
     '    <section class="hero">',
     '      <article class="panel hero-copy">',
     '        <span class="eyebrow">Hosted Feedback</span>',
@@ -191,16 +199,22 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '  <script>',
     `    const projectKey = ${JSON.stringify(project.projectKey)};`,
     '    const submissionPath = `/public/projects/${projectKey}/feedback`;',
+    `    const embedded = ${embedded ? 'true' : 'false'};`,
     '    const form = document.getElementById("feedbackForm");',
     '    const statusEl = document.getElementById("status");',
     '    const responsePreviewEl = document.getElementById("responsePreview");',
     '    const submitButton = document.getElementById("submitButton");',
+    '    const closeButton = document.getElementById("closeEmbed");',
     '    document.getElementById("projectKeyDisplay").textContent = projectKey;',
     '    document.getElementById("submissionPath").textContent = submissionPath;',
     '    document.getElementById("pageUrl").value = window.location.href;',
     '    function setStatus(message, kind) {',
     '      statusEl.textContent = message;',
     '      statusEl.className = `status${kind ? ` ${kind}` : ""}`;',
+    '    }',
+    '    function notifyParent(type, detail) {',
+    '      if (!embedded || !window.parent || window.parent === window) return;',
+    '      window.parent.postMessage({ source: "nexus-hosted-widget", type, detail }, "*");',
     '    }',
     '    async function encodeFile(file) {',
     '      if (!file) return undefined;',
@@ -277,31 +291,107 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '        responsePreviewEl.textContent = text;',
     '        const parsed = JSON.parse(text);',
     '        setStatus(`Feedback accepted. Report ${parsed.reportId} is queued for triage and review.`, "success");',
+    '        notifyParent("submitted", parsed);',
     '        form.reset();',
     '        document.getElementById("pageUrl").value = window.location.href;',
     '      } catch (error) {',
     '        responsePreviewEl.textContent = String(error instanceof Error ? error.message : error);',
     '        setStatus(error instanceof Error ? error.message : "Submission failed.", "error");',
+    '        notifyParent("error", { message: error instanceof Error ? error.message : "Submission failed." });',
     '      } finally {',
     '        submitButton.disabled = false;',
     '      }',
     '    });',
+    '    if (closeButton) {',
+    '      closeButton.addEventListener("click", () => notifyParent("close", { projectKey }));',
+    '    }',
     '  </script>',
     '</body>',
     '</html>'
   ].join('\n');
 }
 
+function buildHostedFeedbackEmbedScript(project: { projectKey: string; name: string }): string {
+  const iframePath = `/public/projects/${project.projectKey}/widget?embed=true`;
+
+  return [
+    '(function () {',
+    '  const script = document.currentScript;',
+    `  const projectKey = ${JSON.stringify(project.projectKey)};`,
+    `  const projectName = ${JSON.stringify(project.name)};`,
+    '  const baseUrl = script ? new URL(script.src, window.location.href).origin : window.location.origin;',
+    '  const label = script && script.dataset.label ? script.dataset.label : `Report an issue to ${projectName}`;',
+    '  const position = script && script.dataset.position ? script.dataset.position : "bottom-right";',
+    '  const inlineTarget = script && script.dataset.inlineTarget ? document.querySelector(script.dataset.inlineTarget) : null;',
+    '  const iframeUrl = new URL(baseUrl + ' + JSON.stringify(iframePath) + ');',
+    '  iframeUrl.searchParams.set("origin", window.location.origin);',
+    '  const style = document.createElement("style");',
+    '  style.textContent = [',
+    '    ".nexus-widget-launcher{position:fixed;z-index:9998;padding:14px 18px;border:none;border-radius:999px;background:linear-gradient(135deg,#bf5a2a,#8e3c16);color:#fff7ef;font:600 14px/1.1 \"Avenir Next\",\"Segoe UI\",sans-serif;box-shadow:0 18px 45px rgba(19,33,47,0.24);cursor:pointer;}",',
+    '    ".nexus-widget-launcher[data-position=bottom-right]{right:20px;bottom:20px;}",',
+    '    ".nexus-widget-launcher[data-position=bottom-left]{left:20px;bottom:20px;}",',
+    '    ".nexus-widget-backdrop{position:fixed;inset:0;background:rgba(18,26,35,0.48);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:18px;z-index:9999;}",',
+    '    ".nexus-widget-backdrop.is-open{display:flex;}",',
+    '    ".nexus-widget-frame{width:min(1080px,100%);height:min(92vh,860px);border:none;border-radius:28px;box-shadow:0 30px 90px rgba(18,26,35,0.28);background:#fff;}",',
+    '    ".nexus-widget-inline{width:100%;min-height:860px;border:none;border-radius:28px;box-shadow:0 20px 55px rgba(18,26,35,0.18);background:#fff;}"',
+    '  ].join("");',
+    '  document.head.appendChild(style);',
+    '  const frame = document.createElement("iframe");',
+    '  frame.src = iframeUrl.toString();',
+    '  frame.title = `${projectName} feedback widget`;',
+    '  if (inlineTarget) {',
+    '    frame.className = "nexus-widget-inline";',
+    '    inlineTarget.appendChild(frame);',
+    '    return;',
+    '  }',
+    '  frame.className = "nexus-widget-frame";',
+    '  const backdrop = document.createElement("div");',
+    '  backdrop.className = "nexus-widget-backdrop";',
+    '  backdrop.appendChild(frame);',
+    '  backdrop.addEventListener("click", function (event) {',
+    '    if (event.target === backdrop) { backdrop.classList.remove("is-open"); }',
+    '  });',
+    '  const launcher = document.createElement("button");',
+    '  launcher.type = "button";',
+    '  launcher.className = "nexus-widget-launcher";',
+    '  launcher.dataset.position = position;',
+    '  launcher.textContent = label;',
+    '  launcher.addEventListener("click", function () { backdrop.classList.add("is-open"); });',
+    '  window.addEventListener("message", function (event) {',
+    '    const data = event.data;',
+    '    if (!data || data.source !== "nexus-hosted-widget") return;',
+    '    if (data.type === "close" || data.type === "submitted") { backdrop.classList.remove("is-open"); }',
+    '  });',
+    '  document.body.appendChild(backdrop);',
+    '  document.body.appendChild(launcher);',
+    '})();'
+  ].join('\n');
+}
+
 export function registerProjectPublicRoutes(app: FastifyInstance): void {
-  app.get('/public/projects/:projectKey/widget', async (request, reply) => {
+  app.get('/public/projects/:projectKey/embed.js', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
       throw app.httpErrors.notFound('project not found');
     }
 
+    reply.type('application/javascript; charset=utf-8');
+    return buildHostedFeedbackEmbedScript(project);
+  });
+
+  app.get('/public/projects/:projectKey/widget', async (request, reply) => {
+    const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    const query = widgetQuerySchema.parse(request.query);
+    const project = await app.projects.findByKey(projectKey);
+    if (!project || project.status !== 'active') {
+      throw app.httpErrors.notFound('project not found');
+    }
+
     reply.type('text/html; charset=utf-8');
-    return buildHostedFeedbackWidgetPage(project);
+    return buildHostedFeedbackWidgetPage(project, {
+      embedded: query.embed === true
+    });
   });
 
   app.post('/public/projects/:projectKey/feedback', async (request, reply) => {
