@@ -34,7 +34,7 @@ Status legend:
 
 ### Next
 
-- [ ] Start Phase 7 MCP developer context.
+- [-] Continue Phase 7 MCP developer context.
 - [ ] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 
@@ -157,20 +157,20 @@ Exit criteria:
 
 - [x] Nexus can produce a draft PR with linked evidence and validation status.
 
-### [ ] Phase 7: MCP Developer Context
+### [-] Phase 7: MCP Developer Context
 
 Objective: surface active issue intelligence directly in the IDE.
 
 Deliverables:
 
-- [ ] MCP server with active issues by file or service.
-- [ ] Issue context tool returning logs, artifacts, and triage summaries.
-- [ ] Async reproduction status lookup.
-- [ ] Linked observability context.
+- [-] MCP server with active issues by file or service, including repository file-path heuristics.
+- [-] Issue context tool returning logs, artifacts, triage summaries, and inline previewable artifact context.
+- [x] Async reproduction status lookup.
+- [x] Linked observability context.
 
 Exit criteria:
 
-- [ ] Developers can query active issue context from the IDE without leaving their editor.
+- [-] Developers can query active issue context from the IDE without leaving their editor.
 
 ### [ ] Phase 8: Shadow Suite And Distribution
 
@@ -199,7 +199,7 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [ ] Start Phase 7 MCP developer context.
+1. [-] Continue Phase 7 MCP developer context.
 2. [ ] Start Phase 8 retained replay and distribution work.
 
 ## Open Questions

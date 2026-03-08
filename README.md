@@ -28,6 +28,8 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Agent-task intake, isolated execution worktrees, persisted execution artifacts, and replay-backed validation routes.
 - Agent executions now expose an explicit closeout view with contract, validation, review, promotion, and merge gates.
 - Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
+- A Phase 7 MCP stdio server now exposes active issue lookup, issue context, reproduction status, and observability context for IDE integrations.
+- The active-issue lookup now supports repository file-path heuristics, and the MCP issue-context tool can inline previews for logs, storage snapshots, HARs, and execution JSON artifacts.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
 - Ownership candidate inference from explicit report metadata, linked repository context, and nearest-neighbor reports.
@@ -49,7 +51,8 @@ Still planned: richer browser automation, clustering and deduplication, agentic 
 - Phase 4: complete
 - Phase 5: complete
 - Phase 6: complete
-- Phases 7 to 8: not started
+- Phase 7: partial
+- Phase 8: not started
 
 ## How It Works
 
@@ -166,8 +169,10 @@ sequenceDiagram
 - `POST /internal/agent-task-executions/:executionId/merge`
 - `GET /internal/reports/:reportId/draft`
 - `GET /internal/reports/:reportId/agent-tasks`
+- `GET /internal/reports/active-issues`
 - `GET /internal/reports/:reportId/artifacts`
 - `GET /internal/reports/:reportId/classification`
+- `GET /internal/reports/:reportId/context`
 - `GET /internal/reports/:reportId/duplicates`
 - `GET /internal/reports/:reportId/embedding`
 - `GET /internal/reports/:reportId/history`
@@ -219,6 +224,23 @@ Important variables:
 - `AGENT_EXECUTION_AUTO_CREATE_PR`
 - `EXTENSION_MAX_INLINE_ARTIFACT_BYTES`
 - `EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES`
+
+## MCP Developer Context
+
+The first Phase 7 slice is available as a stdio MCP server:
+
+```bash
+npm run mcp:dev
+```
+
+It uses Nexus internal APIs to expose:
+
+- active issue lookup by service or file-path heuristic
+- aggregated issue context with artifacts, ownership, impact, history, replay, and agent-task summaries
+- replay-backed reproduction status lookup
+- linked observability context for normalized reports
+
+The issue-context tool can also inline compact previews for previewable artifacts such as `console-logs`, `local-storage`, `session-storage`, `har`, and JSON execution artifacts.
 
 ## GitHub Auth Modes
 

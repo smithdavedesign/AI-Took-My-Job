@@ -4,6 +4,7 @@ import type { StoredFeedbackReport } from '../types/reports.js';
 export interface FeedbackRepository {
   create(report: StoredFeedbackReport): Promise<void>;
   findById(id: string): Promise<StoredFeedbackReport | null>;
+  listRecent(limit: number): Promise<StoredFeedbackReport[]>;
   updateStatus(id: string, status: StoredFeedbackReport['status']): Promise<void>;
   updatePayload(id: string, payload: Record<string, unknown>): Promise<void>;
 }
@@ -68,6 +69,26 @@ export function createFeedbackRepository(database: DatabaseClient): FeedbackRepo
         ...(row.title ? { title: row.title } : {}),
         ...(row.reporter_identifier ? { reporterIdentifier: row.reporter_identifier } : {})
       };
+    },
+    async listRecent(limit) {
+      const result = await database.query<FeedbackRow>(
+        `SELECT id, source, external_id, title, status, severity, reporter_identifier, payload
+         FROM feedback_reports
+         ORDER BY updated_at DESC, created_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        source: row.source,
+        status: row.status,
+        severity: row.severity,
+        payload: row.payload,
+        ...(row.external_id ? { externalId: row.external_id } : {}),
+        ...(row.title ? { title: row.title } : {}),
+        ...(row.reporter_identifier ? { reporterIdentifier: row.reporter_identifier } : {})
+      }));
     },
     async updateStatus(id, status) {
       await database.query(

@@ -4,6 +4,7 @@ import type { StoredGitHubIssueLink } from '../types/issues.js';
 export interface GitHubIssueLinkRepository {
   upsert(link: StoredGitHubIssueLink): Promise<void>;
   findByReportId(reportId: string): Promise<StoredGitHubIssueLink | null>;
+  listRecent(limit: number): Promise<StoredGitHubIssueLink[]>;
 }
 
 interface GitHubIssueLinkRow {
@@ -89,6 +90,36 @@ export function createGitHubIssueLinkRepository(database: DatabaseClient): GitHu
         ...(row.issue_number ? { issueNumber: row.issue_number } : {}),
         ...(row.issue_url ? { issueUrl: row.issue_url } : {})
       };
+    },
+    async listRecent(limit) {
+      const result = await database.query<GitHubIssueLinkRow>(
+        `SELECT
+           id,
+           feedback_report_id,
+           repository,
+           draft_title,
+           draft_body,
+           draft_labels,
+           issue_number,
+           issue_url,
+           state
+         FROM github_issue_links
+         ORDER BY updated_at DESC, created_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        feedbackReportId: row.feedback_report_id,
+        repository: row.repository,
+        draftTitle: row.draft_title,
+        draftBody: row.draft_body,
+        draftLabels: row.draft_labels,
+        state: row.state,
+        ...(row.issue_number ? { issueNumber: row.issue_number } : {}),
+        ...(row.issue_url ? { issueUrl: row.issue_url } : {})
+      }));
     }
   };
 }
