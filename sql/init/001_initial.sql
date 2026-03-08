@@ -172,6 +172,30 @@ CREATE TABLE IF NOT EXISTS agent_task_execution_reviews (
 CREATE INDEX IF NOT EXISTS agent_task_execution_reviews_execution_idx
   ON agent_task_execution_reviews (agent_task_execution_id);
 
+CREATE TABLE IF NOT EXISTS agent_task_execution_pull_requests (
+  id UUID PRIMARY KEY,
+  agent_task_execution_id UUID NOT NULL UNIQUE REFERENCES agent_task_executions(id) ON DELETE CASCADE,
+  repository TEXT NOT NULL,
+  head_branch TEXT NOT NULL,
+  base_branch TEXT NOT NULL,
+  head_commit_sha TEXT,
+  pull_request_number INTEGER,
+  pull_request_url TEXT,
+  draft BOOLEAN NOT NULL DEFAULT true,
+  status TEXT NOT NULL DEFAULT 'opened',
+  promoted_by TEXT,
+  promoted_at TIMESTAMPTZ,
+  merged_by TEXT,
+  merged_at TIMESTAMPTZ,
+  merge_commit_sha TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_task_execution_pull_requests_execution_idx
+  ON agent_task_execution_pull_requests (agent_task_execution_id);
+
 CREATE TABLE IF NOT EXISTS feedback_report_embeddings (
   id UUID PRIMARY KEY,
   feedback_report_id UUID NOT NULL UNIQUE REFERENCES feedback_reports(id) ON DELETE CASCADE,

@@ -65,3 +65,22 @@ export interface StoredAgentTaskExecutionReview {
   notes?: string;
   reviewedAt?: string;
 }
+
+export interface StoredAgentTaskExecutionPullRequest {
+  id: string;
+  agentTaskExecutionId: string;
+  repository: string;
+  headBranch: string;
+  baseBranch: string;
+  headCommitSha?: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
+  draft: boolean;
+  status: 'opened' | 'promotion-failed' | 'merged' | 'merge-failed';
+  promotedBy?: string;
+  promotedAt?: string;
+  mergedBy?: string;
+  mergedAt?: string;
+  mergeCommitSha?: string;
+  metadata: Record<string, unknown>;
+}

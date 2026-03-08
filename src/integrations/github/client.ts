@@ -18,6 +18,12 @@ export interface GitHubPullRequestInput {
   draft?: boolean;
 }
 
+export interface GitHubMergePullRequestInput {
+  repository?: string;
+  pullRequestNumber: number;
+  mergeMethod?: 'merge' | 'squash' | 'rebase';
+}
+
 export interface GitHubIntegration {
   mode: AppConfig['GITHUB_AUTH_MODE'];
   enabled: boolean;
@@ -25,6 +31,7 @@ export interface GitHubIntegration {
   usingTestRepository: boolean;
   createIssueDraft(input: GitHubIssueDraftInput): Promise<{ number: number; url: string }>;
   createPullRequest(input: GitHubPullRequestInput): Promise<{ number: number; url: string }>;
+  mergePullRequest(input: GitHubMergePullRequestInput): Promise<{ mergeCommitSha: string; merged: boolean; message: string }>;
 }
 
 function parseRepository(repository: string): { owner: string; repo: string } {
@@ -119,6 +126,9 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
       },
       async createPullRequest() {
         throw new Error('GitHub draft sync is disabled');
+      },
+      async mergePullRequest() {
+        throw new Error('GitHub draft sync is disabled');
       }
     };
   }
@@ -168,6 +178,21 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
       return {
         number: response.data.number,
         url: response.data.html_url
+      };
+    },
+    async mergePullRequest(input) {
+      const target = input.repository ? parseRepository(input.repository) : { owner, repo };
+      const response = await octokit.rest.pulls.merge({
+        owner: target.owner,
+        repo: target.repo,
+        pull_number: input.pullRequestNumber,
+        ...(input.mergeMethod ? { merge_method: input.mergeMethod } : {})
+      });
+
+      return {
+        mergeCommitSha: response.data.sha,
+        merged: response.data.merged,
+        message: response.data.message
       };
     }
   };

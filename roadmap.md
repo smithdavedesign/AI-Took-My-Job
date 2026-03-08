@@ -38,7 +38,7 @@ Status legend:
 - [-] Complete Phase 4 browser-context replay: cookie and storage restoration plus fail-before/pass-after validation policy.
 - [-] Finish Phase 6 reviewability: stabilize downstream agent commands, tighten validation policy, and add human review controls around generated changes.
 - [-] Start Phase 5 semantic clustering, deterministic deduplication, and ownership mapping.
-- [-] Add a review gate before GitHub writes are treated as production-ready workflow.
+- [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 
 ### Blocked
 
@@ -136,7 +136,7 @@ Deliverables:
 - [ ] pgvector-backed semantic deduplication.
 - [-] pgvector-backed embedding schema, nearest-neighbor repository scaffold, and ingestion-time embedding persistence.
 - [ ] Historical linkage to recent issues and closed PRs.
-- [ ] Repository-aware code ownership mapping.
+- [-] Repository-aware code ownership mapping.
 - [ ] Impact score refinement using recurrence and breadth.
 
 Exit criteria:
@@ -152,8 +152,8 @@ Deliverables:
 - [-] Agent-task intake, execution records, repository worktree preparation, pluggable agent command handoff, and execution inspection routes are live.
 - [-] Draft PR generation integration is live for configured repositories, and PR opening is now blocked pending approval and explicit promotion.
 - [-] Fix validation now includes replay-backed verification against stored HAR evidence, a dedicated persisted replay-comparison model, execution read routes, and a persisted validation policy record.
-- [-] PR metadata and audit trail.
-- [-] Human approval workflow.
+- [x] PR metadata and audit trail.
+- [x] Human approval workflow.
 
 Exit criteria:
 
@@ -203,8 +203,8 @@ Current execution emphasis:
 
 1. [-] Close the remaining Phase 3 gaps around richer extension capture and upload discipline.
 2. [-] Strengthen Phase 4 with browser-context replay and fail-before/pass-after verification.
-3. [-] Finish Phase 6 reviewability with stable downstream agent commands, PR audit trail, and approval controls.
-4. [ ] Start Phase 5 clustering, deduplication, and ownership mapping.
+3. [-] Finish Phase 6 reviewability with merge-ready GitHub credentials and stronger merge/closeout policy.
+4. [-] Start Phase 5 clustering, deduplication, and ownership mapping.
 
 ## Open Questions
 

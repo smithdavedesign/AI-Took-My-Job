@@ -7,6 +7,7 @@ import { createGitHubIntegration, type GitHubIntegration } from './integrations/
 import { createAuditRepository, type AuditRepository } from './repositories/audit-repository.js';
 import { createAgentTaskRepository, type AgentTaskRepository } from './repositories/agent-task-repository.js';
 import { createAgentTaskExecutionRepository, type AgentTaskExecutionRepository } from './repositories/agent-task-execution-repository.js';
+import { createAgentTaskExecutionPullRequestRepository, type AgentTaskExecutionPullRequestRepository } from './repositories/agent-task-execution-pull-request-repository.js';
 import { createAgentTaskExecutionReviewRepository, type AgentTaskExecutionReviewRepository } from './repositories/agent-task-execution-review-repository.js';
 import { createAgentTaskReplayValidationRepository, type AgentTaskReplayValidationRepository } from './repositories/agent-task-replay-validation-repository.js';
 import { createAgentTaskValidationPolicyRepository, type AgentTaskValidationPolicyRepository } from './repositories/agent-task-validation-policy-repository.js';
@@ -40,6 +41,7 @@ declare module 'fastify' {
     replayRuns: ReplayRunRepository;
     agentTasks: AgentTaskRepository;
     agentTaskExecutions: AgentTaskExecutionRepository;
+    agentTaskExecutionPullRequests: AgentTaskExecutionPullRequestRepository;
     agentTaskExecutionReviews: AgentTaskExecutionReviewRepository;
     agentTaskReplayValidations: AgentTaskReplayValidationRepository;
     agentTaskValidationPolicies: AgentTaskValidationPolicyRepository;
@@ -81,6 +83,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
   const agentTaskExecutionRepository = createAgentTaskExecutionRepository(database);
+  const agentTaskExecutionPullRequestRepository = createAgentTaskExecutionPullRequestRepository(database);
   const agentTaskExecutionReviewRepository = createAgentTaskExecutionReviewRepository(database);
   const agentTaskReplayValidationRepository = createAgentTaskReplayValidationRepository(database);
   const agentTaskValidationPolicyRepository = createAgentTaskValidationPolicyRepository(database);
@@ -103,6 +106,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('artifacts', artifactBundleRepository);
   app.decorate('agentTasks', agentTaskRepository);
   app.decorate('agentTaskExecutions', agentTaskExecutionRepository);
+  app.decorate('agentTaskExecutionPullRequests', agentTaskExecutionPullRequestRepository);
   app.decorate('agentTaskExecutionReviews', agentTaskExecutionReviewRepository);
   app.decorate('agentTaskReplayValidations', agentTaskReplayValidationRepository);
   app.decorate('agentTaskValidationPolicies', agentTaskValidationPolicyRepository);

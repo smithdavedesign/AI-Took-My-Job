@@ -15,12 +15,14 @@ import { createDatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
 import { createReplayRunRepository } from './repositories/replay-run-repository.js';
 import { createFeedbackRepository } from './repositories/feedback-repository.js';
+import { createFeedbackReportEmbeddingRepository } from './repositories/feedback-report-embedding-repository.js';
 import { createGitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
 import { createTriageJobRepository } from './repositories/triage-job-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
+import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
 import { runReplayValidation } from './services/agent-tasks/replay-validation.js';
 import { prepareRepositoryWorkspace } from './services/agent-tasks/repository-workspace.js';
 import { buildReplayArtifacts, summarizeReplayPlan } from './services/replay/har-replay-plan.js';
@@ -113,6 +115,7 @@ async function main(): Promise<void> {
   const redis = createRedisConnection(config.REDIS_URL);
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
+  const feedbackReportEmbeddingRepository = createFeedbackReportEmbeddingRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
   const agentTaskExecutionRepository = createAgentTaskExecutionRepository(database);
@@ -239,6 +242,16 @@ async function main(): Promise<void> {
           const draft = await githubIssueLinkRepository.findByReportId(report.id);
           const replay = await replayRunRepository.findLatestByReportId(report.id);
           const artifacts = await artifactBundleRepository.findByReportId(report.id);
+          const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
+          const ownership = await resolveOwnershipCandidates({
+            report,
+            ...(draft?.repository ? { repository: draft.repository } : {}),
+            ...(embedding ? {
+              embedding: embedding.embedding,
+              loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+              loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
+            } : {})
+          });
           const preparedContext = {
             report: {
               id: report.id,
@@ -266,6 +279,7 @@ async function main(): Promise<void> {
               executionStatus: replay.replayPlan?.execution?.status ?? null,
               matchedFailingStepOrders: replay.replayPlan?.execution?.matchedFailingStepOrders ?? []
             } : null,
+            ownership,
             artifacts: artifacts.map((artifact) => ({
               id: artifact.id,
               artifactType: artifact.artifactType,

@@ -20,6 +20,8 @@ Current flow:
 7. Nexus queues an `agent-execution` job, prepares an isolated branch and worktree, and stores execution findings plus validation evidence.
 8. If `AGENT_EXECUTION_COMMAND` is configured, Nexus invokes that command inside the prepared worktree with `.nexus/task.md`, `.nexus/context.json`, and `.nexus/output.json` as the contract surface.
 9. If the agent modifies files, Nexus persists a git diff artifact, can run the agent-provided validation command, can optionally rerun the stored HAR against a target base URL, and stops at a reviewable execution state before any PR is opened.
+10. After approval, an operator can explicitly promote the execution into a PR record.
+11. Merge attempts are separately gated and persisted as part of the execution audit trail.
 
 ## Current API Shape
 
@@ -111,12 +113,44 @@ This route requires:
 - a non-failed validation result
 - a GitHub-backed target repository with a usable base branch
 
+Optional request body:
+
+```json
+{
+  "draft": false
+}
+```
+
+### Inspect persisted PR metadata for an execution attempt
+
+`GET /internal/agent-task-executions/:executionId/pull-request`
+
+### Attempt a merge for an approved execution PR
+
+`POST /internal/agent-task-executions/:executionId/merge`
+
+Optional request body:
+
+```json
+{
+  "mergeMethod": "merge"
+}
+```
+
+This route requires:
+
+- an execution already promoted to `pr-opened`
+- a current approved review state
+- persisted PR metadata with a PR number
+- GitHub credentials that can actually merge PRs in the target repository
+
 Execution statuses now distinguish between:
 
 - `completed`: no code changes were produced, but the workspace and execution bundle were prepared
 - `changes-generated`: the agent produced code changes, but no passing validation or PR exists yet
 - `validated`: code changes were produced and validation passed, but PR creation is still blocked pending human approval and explicit promotion
 - `pr-opened`: a draft pull request was opened for the execution branch
+- `completed`: used both for no-change executions and for PR-backed executions that have been merged or otherwise fully closed out
 
 The `.nexus/output.json` contract can now include:
 
@@ -157,6 +191,10 @@ npm run e2e:agent-routes
 
 `GET /internal/reports/:reportId/embedding`
 
+### Inspect inferred ownership candidates for a report
+
+`GET /internal/reports/:reportId/ownership`
+
 ## What This Does Not Do Yet
 
 This is not a full autonomous coding runtime yet.
@@ -177,6 +215,9 @@ Current execution scaffolding notes:
 - the repository now includes a reusable downstream writing command at `src/scripts/agents/creative-readme-agent.ts` for README-focused tasks
 - persisted execution artifacts include agent context, agent output, git diff, validation logs, and replay-validation summaries when present
 - executions with changes now carry a pending review record that can be approved or rejected over internal routes
+- promoted executions now also persist a first-class PR record with repository, branches, PR number, PR URL, promotion actor, and merge outcome metadata
+- merge attempts are approval-gated and persist either merged or merge-failed status in that PR record
+- ownership hints are now attached to prepared agent-task context using explicit owner metadata, repository owner, and nearest-neighbor reports
 - replay validation can rerun the stored HAR against a target base URL and compare the result to an expected replay outcome such as `not-reproduced`
 - draft PR creation is now wired for GitHub repositories, but only after review approval and an explicit promote call
 - feedback-report embeddings are now persisted at ingestion time so Phase 5 clustering can operate on live vectors

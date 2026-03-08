@@ -28,6 +28,8 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Agent-task intake, isolated execution worktrees, persisted execution artifacts, and replay-backed validation routes.
 - Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
+- First-class PR audit records and approval-gated merge attempts for agent executions.
+- Ownership candidate inference from explicit report metadata, linked repository context, and nearest-neighbor reports.
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 
@@ -153,11 +155,14 @@ sequenceDiagram
 - `GET /internal/agent-task-executions/:executionId/validation-policy`
 - `GET /internal/agent-task-executions/:executionId/review`
 - `POST /internal/agent-task-executions/:executionId/review`
+- `GET /internal/agent-task-executions/:executionId/pull-request`
 - `POST /internal/agent-task-executions/:executionId/promote`
+- `POST /internal/agent-task-executions/:executionId/merge`
 - `GET /internal/reports/:reportId/draft`
 - `GET /internal/reports/:reportId/agent-tasks`
 - `GET /internal/reports/:reportId/artifacts`
 - `GET /internal/reports/:reportId/embedding`
+- `GET /internal/reports/:reportId/ownership`
 - `GET /internal/reports/:reportId/replay`
 - `GET /internal/artifacts/:artifactId/download-url`
 - `GET /artifacts/download/:artifactId`
@@ -222,11 +227,13 @@ Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
 
 Agent-task submission and execution flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
 
-If `AGENT_EXECUTION_COMMAND` is configured, the worker will invoke it inside each prepared execution worktree and expect the command to read `.nexus/task.md` and `.nexus/context.json`, then write structured output to `.nexus/output.json`. When an execution produces promotable changes, Nexus now stops at a reviewed execution state and requires explicit approval plus `POST /internal/agent-task-executions/:executionId/promote` before it will push the branch and open a draft PR.
+If `AGENT_EXECUTION_COMMAND` is configured, the worker will invoke it inside each prepared execution worktree and expect the command to read `.nexus/task.md` and `.nexus/context.json`, then write structured output to `.nexus/output.json`. When an execution produces promotable changes, Nexus stops at a reviewed execution state and requires explicit approval plus `POST /internal/agent-task-executions/:executionId/promote` before it will push the branch and open a PR. PR metadata is now persisted as a first-class execution record, and `POST /internal/agent-task-executions/:executionId/merge` refuses to merge unless the latest human review is still approved.
 
 The `.nexus/output.json` contract can also request replay-backed validation by including a `replayValidation` block with a target `baseUrl` and an expected replay outcome such as `not-reproduced`.
 
 Each stored report now also gets a deterministic `deterministic-hash-v1` embedding at ingestion time, exposed through `GET /internal/reports/:reportId/embedding` so clustering and similarity features can build on live data instead of empty schema scaffolding.
+
+Ownership hooks are now exposed through `GET /internal/reports/:reportId/ownership` and are also attached to prepared agent-task context. Current candidates come from explicit owner metadata in the report payload, linked repository owner, and similar stored reports.
 
 For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
 
@@ -244,6 +251,16 @@ AGENT_EXECUTION_COMMAND=tsx \
 AGENT_EXECUTION_ARGS="[\"$PWD/src/scripts/agents/creative-readme-agent.ts\"]" \
 npm run worker
 ```
+
+For promotion and ownership verification against the GitHub test repository, run the worker with the promotable fixture and then execute `npm run e2e:promotion-ownership`:
+
+```bash
+AGENT_EXECUTION_COMMAND=tsx \
+AGENT_EXECUTION_ARGS="[\"$PWD/src/scripts/e2e/agent-execution-promotable-fixture.ts\"]" \
+npm run worker
+```
+
+GitHub merge attempts require a token or app installation with pull-request merge permission. If the token can open PRs but cannot merge them, Nexus now persists that merge failure state in the PR audit record instead of losing it in logs.
 
 ## Internal Route Auth
 

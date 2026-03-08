@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 
 const reportIdParamsSchema = z.object({
@@ -28,6 +29,34 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       model: embedding.model,
       sourceText: embedding.sourceText,
       dimensions: embedding.embedding.length
+    };
+  });
+
+  app.get('/internal/reports/:reportId/ownership', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { reportId } = reportIdParamsSchema.parse(request.params);
+    const report = await app.reports.findById(reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    const embedding = await app.reportEmbeddings.findByReportId(reportId);
+    const draft = await app.githubIssueLinks.findByReportId(reportId);
+    const ownership = await resolveOwnershipCandidates({
+      report,
+      ...(draft?.repository ? { repository: draft.repository } : {}),
+      ...(embedding ? {
+        embedding: embedding.embedding,
+        loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
+        loadReportById: (neighborReportId) => app.reports.findById(neighborReportId)
+      } : {})
+    });
+
+    return {
+      reportId,
+      candidates: ownership.candidates,
+      neighbors: ownership.neighbors
     };
   });
 }
