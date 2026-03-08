@@ -81,6 +81,10 @@ interface PullRequestResponse {
   mergeCommitSha?: string;
 }
 
+interface GitHubPullRequestDetails {
+  body: string;
+}
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
@@ -147,6 +151,28 @@ async function pollJson<T>(url: string, init: RequestInit | undefined, predicate
   }
 
   throw lastError instanceof Error ? lastError : new Error(`Polling ${url} failed`);
+}
+
+async function requestGitHubPullRequest(repository: string, pullRequestNumber: number): Promise<GitHubPullRequestDetails | null> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return null;
+  }
+
+  const [owner, repo] = repository.split('/');
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${pullRequestNumber}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json'
+    }
+  });
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`GET GitHub pull request failed: ${response.status} ${text}`);
+  }
+
+  return JSON.parse(text) as GitHubPullRequestDetails;
 }
 
 async function main(): Promise<void> {
@@ -296,6 +322,14 @@ async function main(): Promise<void> {
     { headers: authHeaders },
     (value) => value.status === 'opened' && typeof value.pullRequestNumber === 'number'
   );
+
+  const githubPullRequest = await requestGitHubPullRequest('smithdavedesign/testRepo', promoted.pullRequestNumber);
+  if (githubPullRequest) {
+    assert(githubPullRequest.body.includes('## Evidence References'), 'GitHub pull request body did not include evidence references');
+    assert(githubPullRequest.body.includes(createdExecution.executionId), 'GitHub pull request body did not include the execution id');
+    assert(githubPullRequest.body.includes(`/internal/reports/${targetReport.reportId}/history`), 'GitHub pull request body did not include the report history reference');
+    assert(githubPullRequest.body.includes('Validation Status'), 'GitHub pull request body did not include validation status');
+  }
 
   await requestExpectingStatus(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/merge`,

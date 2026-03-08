@@ -157,7 +157,7 @@ Deliverables:
 
 Exit criteria:
 
-- [ ] Nexus can produce a draft PR with linked evidence and validation status.
+- [-] Nexus can produce a draft PR with linked evidence and validation status.
 
 ### [ ] Phase 7: MCP Developer Context
 

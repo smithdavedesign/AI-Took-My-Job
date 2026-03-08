@@ -239,6 +239,7 @@ Current execution scaffolding notes:
 - refined impact is now attached to prepared agent-task context using recurrence, breadth, owner spread, and related issue/PR history
 - replay validation can rerun the stored HAR against a target base URL and compare the result to an expected replay outcome such as `not-reproduced`
 - draft PR creation is now wired for GitHub repositories, but only after review approval and an explicit promote call
+- promoted PR bodies now include execution ids, validation status, evidence references, refined impact, and ownership hints
 - feedback-report embeddings are now persisted at ingestion time so Phase 5 clustering can operate on live vectors
 - GitHub-hosted repository checkout currently requires PAT-backed GitHub auth
 

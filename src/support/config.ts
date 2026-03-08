@@ -72,6 +72,7 @@ const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+  APP_BASE_URL: optionalString,
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   ARTIFACT_STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
   ARTIFACT_STORAGE_PATH: z.string().default('./var/artifacts'),

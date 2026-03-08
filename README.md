@@ -245,6 +245,8 @@ Historical linkage is now exposed through `GET /internal/reports/:reportId/histo
 
 Refined impact is now exposed through `GET /internal/reports/:reportId/impact` and is also attached to prepared agent-task context. The score blends the original ingestion-time score with recurrence from similar reports, breadth across sources and reporters, ownership spread, and related issue or PR history.
 
+Promoted PRs now include execution evidence references, validation status, refined impact, and ownership hints in the PR body. When `APP_BASE_URL` is configured, those evidence references become fully qualified links back into Nexus internal routes.
+
 For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
 
 ```bash
