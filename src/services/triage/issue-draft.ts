@@ -129,12 +129,14 @@ function buildExtensionDraft(report: StoredFeedbackReport): IssueDraft {
   const artifacts = typeof report.payload.artifacts === 'object' && report.payload.artifacts !== null
     ? report.payload.artifacts
     : {};
+  const sourceLabel = report.source === 'hosted-feedback' ? 'hosted feedback' : 'browser extension';
+  const titlePrefix = report.source === 'hosted-feedback' ? 'Customer feedback' : 'QA capture';
 
   return {
-    title: report.title ? `QA capture: ${report.title}` : `Captured issue ${report.id}`,
+    title: report.title ? `${titlePrefix}: ${report.title}` : `Captured issue ${report.id}`,
     body: [
       '## Summary',
-      'Internal browser extension report captured from a staging or development session.',
+      `Captured ${sourceLabel} report from a staging, production, or development session.`,
       '',
       ...buildImpactSection(report),
       ...buildClassificationSection(report),
@@ -150,7 +152,7 @@ function buildExtensionDraft(report: StoredFeedbackReport): IssueDraft {
       '## Full Payload',
       formatJsonBlock(report.payload)
     ].join('\n'),
-    labels: [...new Set(['bug', 'triaged', 'source:extension', ...readClassificationLabels(report), ...readDuplicateLabels(report)])]
+    labels: [...new Set(['bug', 'triaged', `source:${report.source}`, ...readClassificationLabels(report), ...readDuplicateLabels(report)])]
   };
 }
 
@@ -159,6 +161,7 @@ export function createIssueDraft(report: StoredFeedbackReport): IssueDraft {
     case 'slack':
       return buildSlackDraft(report);
     case 'extension':
+    case 'hosted-feedback':
       return buildExtensionDraft(report);
     case 'sentry':
     case 'datadog':

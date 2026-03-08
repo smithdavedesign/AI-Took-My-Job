@@ -4,23 +4,28 @@ import { readFile } from 'node:fs/promises';
 
 import { Queue, Worker } from 'bullmq';
 
-import { createGitHubIntegration } from './integrations/github/client.js';
+import { createGitHubIntegrationResolver } from './integrations/github/client.js';
 import { createAgentTaskExecutionRepository } from './repositories/agent-task-execution-repository.js';
 import { createAgentTaskExecutionPullRequestRepository } from './repositories/agent-task-execution-pull-request-repository.js';
 import { createAgentTaskExecutionReviewRepository } from './repositories/agent-task-execution-review-repository.js';
 import { createAgentTaskReplayValidationRepository } from './repositories/agent-task-replay-validation-repository.js';
 import { createAgentTaskValidationPolicyRepository } from './repositories/agent-task-validation-policy-repository.js';
 import { createArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
+import { createGitHubInstallationRepository } from './repositories/github-installation-repository.js';
 import { loadConfig } from './support/config.js';
 import { createDatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
 import { createReplayRunRepository } from './repositories/replay-run-repository.js';
+import { createProjectRepository } from './repositories/project-repository.js';
+import { createReportReviewRepository } from './repositories/report-review-repository.js';
+import { createRepoConnectionRepository } from './repositories/repo-connection-repository.js';
 import { createShadowSuiteRepository } from './repositories/shadow-suite-repository.js';
 import { createShadowSuiteRunRepository } from './repositories/shadow-suite-run-repository.js';
 import { createFeedbackRepository } from './repositories/feedback-repository.js';
 import { createFeedbackReportEmbeddingRepository } from './repositories/feedback-report-embedding-repository.js';
 import { createGitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
 import { createTriageJobRepository } from './repositories/triage-job-repository.js';
+import { createWorkspaceRepository } from './repositories/workspace-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
@@ -128,6 +133,11 @@ async function main(): Promise<void> {
   const redis = createRedisConnection(config.REDIS_URL);
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
+  createWorkspaceRepository(database);
+  createProjectRepository(database);
+  const githubInstallationRepository = createGitHubInstallationRepository(database);
+  const repoConnectionRepository = createRepoConnectionRepository(database);
+  const reportReviewRepository = createReportReviewRepository(database);
   const feedbackReportEmbeddingRepository = createFeedbackReportEmbeddingRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
@@ -142,7 +152,11 @@ async function main(): Promise<void> {
   const shadowSuiteRunRepository = createShadowSuiteRunRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
   const artifactStorage = createArtifactStore(config);
-  const github = createGitHubIntegration(config);
+  const githubResolver = createGitHubIntegrationResolver({
+    config,
+    repoConnections: repoConnectionRepository,
+    githubInstallations: githubInstallationRepository
+  });
   const queue = new Queue('triage', {
     connection: bullConnection
   });
@@ -603,11 +617,16 @@ async function main(): Promise<void> {
         await agentTaskExecutionRepository.update(runningExecution);
 
         try {
+          const github = await githubResolver.resolve({
+            projectId: task.projectId,
+            repository: task.targetRepository
+          });
           const workspace = await prepareRepositoryWorkspace({
             config,
             targetRepository: task.targetRepository,
             agentTaskId: task.id,
-            executionId
+            executionId,
+            github
           });
 
           const replayContext = task.preparedContext.replay;
@@ -1066,15 +1085,25 @@ async function main(): Promise<void> {
       };
 
       const draft = createIssueDraft(enrichedReport);
+      const github = await githubResolver.resolve({
+        projectId: report.projectId
+      });
       let issueNumber: number | undefined;
       let issueUrl: string | undefined;
-      let state: 'local-draft' | 'synced' | 'sync-failed' = 'local-draft';
+      let state: 'local-draft' | 'awaiting-review' | 'synced' | 'sync-failed' = 'local-draft';
       const duplicateIssue = duplicates.candidates.find((candidate) => candidate.confidence === 'high' && candidate.issueUrl);
 
       if (duplicateIssue?.issueUrl) {
         issueNumber = duplicateIssue.issueNumber;
         issueUrl = duplicateIssue.issueUrl;
         state = 'synced';
+      } else if (report.source === 'hosted-feedback') {
+        state = 'awaiting-review';
+        await reportReviewRepository.upsert({
+          id: randomUUID(),
+          feedbackReportId: report.id,
+          status: 'pending'
+        });
       } else if (github.enabled) {
         try {
           const created = await github.createIssueDraft(draft);
@@ -1099,7 +1128,7 @@ async function main(): Promise<void> {
         ...(issueUrl ? { issueUrl } : {})
       });
 
-      await feedbackRepository.updateStatus(report.id, 'drafted');
+      await feedbackRepository.updateStatus(report.id, state === 'awaiting-review' ? 'awaiting-review' : 'drafted');
       await triageJobRepository.updateStatus(job.id, 'completed');
 
       console.log(JSON.stringify({

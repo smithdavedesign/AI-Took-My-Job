@@ -41,8 +41,9 @@ export function classifyReport(report: StoredFeedbackReport): ReportClassificati
   const reasons: string[] = [];
   const labels = new Set<string>([`source:${report.source}`]);
 
-  let primaryIntent: ReportClassification['primaryIntent'] = report.source === 'extension' ? 'bug-report' : 'incident';
-  let confidence = report.source === 'extension' ? 0.72 : 0.8;
+  const isCapturedFeedback = report.source === 'extension' || report.source === 'hosted-feedback';
+  let primaryIntent: ReportClassification['primaryIntent'] = isCapturedFeedback ? 'bug-report' : 'incident';
+  let confidence = isCapturedFeedback ? 0.72 : 0.8;
 
   if (/(latency|slow|timeout|p95|performance)/i.test(normalizedTitle) || /(latency|slow|timeout|p95|performance)/i.test(payloadText)) {
     primaryIntent = 'performance';
@@ -59,15 +60,15 @@ export function classifyReport(report: StoredFeedbackReport): ReportClassificati
   }
 
   if (/(error|exception|incident|outage|failed|failure)/i.test(normalizedTitle) || /(error|exception|incident|failed|failure)/i.test(payloadText)) {
-    primaryIntent = report.source === 'extension' ? 'bug-report' : 'incident';
+    primaryIntent = isCapturedFeedback ? 'bug-report' : 'incident';
     confidence = Math.max(confidence, 0.86);
     reasons.push('failure terms detected in title or payload');
     labels.add('intent:incident');
   }
 
-  if (report.source === 'extension') {
+  if (isCapturedFeedback) {
     labels.add('intent:bug-report');
-    reasons.push('browser extension report implies user-observed bug context');
+    reasons.push('captured feedback implies user-observed bug context');
   }
 
   if (report.severity === 'critical' || report.severity === 'high') {

@@ -13,5 +13,5 @@ export interface StoredGitHubIssueLink {
   draftLabels: string[];
   issueNumber?: number;
   issueUrl?: string;
-  state: 'local-draft' | 'synced' | 'sync-failed';
+  state: 'local-draft' | 'awaiting-review' | 'synced' | 'sync-failed' | 'rejected';
 }

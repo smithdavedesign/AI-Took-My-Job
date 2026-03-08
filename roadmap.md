@@ -39,6 +39,10 @@ Status legend:
 - [x] Add a report-index backfill path and CI smoke coverage for developer context.
 - [x] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
+- [x] Plan Phase 9 customer onboarding and repository connection.
+- [x] Define workspace, project, and repository-connection data model.
+- [-] Refactor GitHub auth toward runtime project-scoped GitHub App resolution.
+- [-] Ship the hosted feedback widget and continue hardening the project-scoped submission flow.
 
 ### Blocked
 
@@ -192,6 +196,46 @@ Exit criteria:
 
 - [x] Teams can self-host Nexus and continuously run retained reproductions in shadow mode.
 
+### [-] Phase 9: Customer Onboarding And Repository Connection
+
+Objective: make Nexus easy for external teams to adopt by connecting a GitHub repository through a GitHub App and submitting high-signal feedback through a hosted surface.
+
+Deliverables:
+
+- [-] Workspace and project model with project-scoped report routing.
+- [-] GitHub App-based repository connection flow.
+- [-] Runtime repository-to-installation resolution for GitHub writes.
+- [-] Hosted feedback widget and public submission surface for lightweight user feedback.
+- [-] Project-scoped review queue before GitHub issue creation or downstream agent actions, including operator-facing queue controls.
+
+Phase 9 architecture snapshot:
+
+```mermaid
+flowchart LR
+	Admin[Workspace Admin] --> Onboarding[Internal Onboarding Routes]
+	Onboarding --> Workspace[(Workspaces + Projects)]
+	Onboarding --> Install[(GitHub Installations)]
+	Onboarding --> Repo[(Repo Connections)]
+	Reporter[Reporter or Customer] --> Widget[/public/projects/:projectKey/widget/]
+	Widget --> PublicRoute[/public/projects/:projectKey/feedback/]
+	PublicRoute --> Router[Project Router + GitHub Resolver]
+	Router --> Workspace
+	Router --> Repo
+	Router --> Install
+	PublicRoute --> Reports[(Project-Scoped Reports)]
+	Reports --> Queue[BullMQ]
+	Queue --> Worker[Nexus Worker]
+	Worker --> Review[Project Review Queue]
+	Review --> GitHub[GitHub Issues + PRs]
+```
+
+Exit criteria:
+
+- [ ] A new customer can connect a repository without creating a PAT.
+- [ ] A user can submit actionable feedback in under 60 seconds.
+- [ ] Nexus routes the report to the correct project and repository scope before any GitHub write.
+- [ ] Customer-originated issue and PR generation remain review-gated.
+
 ## Current Sprint
 
 Current focus has moved beyond the original foundation sprint. The initial sprint items are complete:
@@ -206,6 +250,12 @@ Current execution emphasis:
 
 1. [x] Continue Phase 7 MCP developer context.
 2. [x] Start Phase 8 retained replay and distribution work.
+3. [x] Plan Phase 9 customer onboarding and repository connection.
+4. [x] Define the initial workspace, project, and repository-connection schema.
+5. [-] Ship internal onboarding endpoints plus the first public project feedback intake route.
+6. [-] Continue runtime GitHub App resolution and project-scoped review flow.
+7. [-] Harden report review operations so hosted feedback cannot auto-open issues or spawn agent tasks before approval.
+8. [-] Add a project-hosted widget surface plus a stronger operator review console and CI smoke coverage for hosted-feedback review decisions.
 
 ## Open Questions
 
@@ -215,6 +265,9 @@ These do not block initial scaffolding, but they do affect later architecture:
 2. Observability ingestion now supports Sentry, Datadog, and New Relic, but ownership mapping and prioritization policy are still open.
 3. Does the browser extension need Chrome-only support at first, or Chromium plus Firefox?
 4. Should the first reproduction spike target a web frontend with stable staging auth, or a synthetic demo app?
+5. Should Phase 9 start with one repository per project, or support multiple repositories from the first slice?
+6. What is the smallest operator review surface that is sufficient before building a broader customer-facing dashboard?
+7. When the hosted widget moves beyond route-only intake, which access model should gate self-serve customer use: emailed links, signed sessions, or full product auth?
 
 ## Success Metrics
 
@@ -223,3 +276,8 @@ These do not block initial scaffolding, but they do affect later architecture:
 - Triage job creation latency under 500 ms from accepted ingestion.
 - Zero known sensitive value leakage in redaction tests.
 - [x] First deterministic replay achieved before autonomous PR work begins.
+- [x] Initial Phase 9 slice validated locally: onboarding records plus a project-scoped hosted-feedback report persisted with `project_id` on 2026-03-08.
+- [-] Hosted feedback now queues for internal review before GitHub issue creation, with dedicated review endpoints and agent-task gating.
+- [-] Operator review is now exercised by `e2e:hosted-feedback-review`, and a first review console is available at `/learn/review-queue`.
+- New customer repository connection completed without PAT setup.
+- Customer feedback submission completed in under 60 seconds through the hosted intake surface.

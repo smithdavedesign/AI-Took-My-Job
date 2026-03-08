@@ -2,6 +2,8 @@ import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
 
 import type { AppConfig } from '../../support/config.js';
+import type { GitHubInstallationRepository } from '../../repositories/github-installation-repository.js';
+import type { RepoConnectionRepository } from '../../repositories/repo-connection-repository.js';
 
 export interface GitHubIssueDraftInput {
   title: string;
@@ -29,9 +31,20 @@ export interface GitHubIntegration {
   enabled: boolean;
   repository: string;
   usingTestRepository: boolean;
+  resolveGitAuthToken(): Promise<string | undefined>;
   createIssueDraft(input: GitHubIssueDraftInput): Promise<{ number: number; url: string }>;
   createPullRequest(input: GitHubPullRequestInput): Promise<{ number: number; url: string }>;
   mergePullRequest(input: GitHubMergePullRequestInput): Promise<{ mergeCommitSha: string; merged: boolean; message: string }>;
+}
+
+export interface GitHubIntegrationResolver {
+  mode: AppConfig['GITHUB_AUTH_MODE'];
+  enabled: boolean;
+  repository: string;
+  usingTestRepository: boolean;
+  resolve(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<GitHubIntegration>;
+  resolveRepository(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<string>;
+  isEnabled(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<boolean>;
 }
 
 function parseRepository(repository: string): { owner: string; repo: string } {
@@ -47,7 +60,22 @@ function parseRepository(repository: string): { owner: string; repo: string } {
   };
 }
 
-function resolveRepositorySettings(config: AppConfig): { owner?: string; repo?: string; repository: string } {
+function resolveRepositorySettings(config: AppConfig, repositoryOverride?: string): { owner?: string; repo?: string; repository: string } {
+  if (repositoryOverride) {
+    if (!repositoryOverride.includes('/') || repositoryOverride.startsWith('/') || repositoryOverride.startsWith('.')) {
+      return {
+        repository: repositoryOverride
+      };
+    }
+
+    const { owner, repo } = parseRepository(repositoryOverride);
+    return {
+      owner,
+      repo,
+      repository: repositoryOverride
+    };
+  }
+
   if (config.GITHUB_USE_TEST_REPO && config.GITHUB_TEST_OWNER && config.GITHUB_TEST_REPO) {
     return {
       owner: config.GITHUB_TEST_OWNER,
@@ -96,8 +124,8 @@ function createPatClient(config: AppConfig): Octokit {
   });
 }
 
-function createAppClient(config: AppConfig): Octokit {
-  if (!config.GITHUB_APP_ID || !config.GITHUB_APP_INSTALLATION_ID || !config.GITHUB_APP_PRIVATE_KEY) {
+function createAppClient(config: AppConfig, installationId = config.GITHUB_APP_INSTALLATION_ID): Octokit {
+  if (!config.GITHUB_APP_ID || !installationId || !config.GITHUB_APP_PRIVATE_KEY) {
     throw new Error('GitHub App credentials are required when GITHUB_AUTH_MODE=app');
   }
 
@@ -105,22 +133,52 @@ function createAppClient(config: AppConfig): Octokit {
     authStrategy: createAppAuth,
     auth: {
       appId: config.GITHUB_APP_ID,
-      installationId: config.GITHUB_APP_INSTALLATION_ID,
+      installationId,
       privateKey: config.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n')
     }
   });
 }
 
-export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
-  const repositorySettings = resolveRepositorySettings(config);
-  const repository = repositorySettings.repository;
+async function resolveAppInstallationToken(config: AppConfig, installationId: number): Promise<string> {
+  if (!config.GITHUB_APP_ID || !config.GITHUB_APP_PRIVATE_KEY) {
+    throw new Error('GitHub App credentials are required when GITHUB_AUTH_MODE=app');
+  }
 
-  if (!config.GITHUB_DRAFT_SYNC_ENABLED) {
+  const auth = createAppAuth({
+    appId: config.GITHUB_APP_ID,
+    privateKey: config.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n')
+  });
+  const installationAuth = await auth({
+    type: 'installation',
+    installationId
+  });
+
+  return installationAuth.token;
+}
+
+export function createGitHubIntegration(
+  config: AppConfig,
+  overrides: {
+    repository?: string;
+    installationId?: number;
+    mode?: AppConfig['GITHUB_AUTH_MODE'];
+    token?: string;
+    enabled?: boolean;
+  } = {}
+): GitHubIntegration {
+  const repositorySettings = resolveRepositorySettings(config, overrides.repository);
+  const repository = repositorySettings.repository;
+  const mode = overrides.mode ?? config.GITHUB_AUTH_MODE;
+
+  if (!config.GITHUB_DRAFT_SYNC_ENABLED || overrides.enabled === false) {
     return {
-      mode: config.GITHUB_AUTH_MODE,
+      mode,
       enabled: false,
       repository,
       usingTestRepository: config.GITHUB_USE_TEST_REPO,
+      async resolveGitAuthToken() {
+        return undefined;
+      },
       async createIssueDraft() {
         throw new Error('GitHub draft sync is disabled');
       },
@@ -140,15 +198,29 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
   const owner = repositorySettings.owner;
   const repo = repositorySettings.repo;
 
-  const octokit = config.GITHUB_AUTH_MODE === 'app'
-    ? createAppClient(config)
-    : createPatClient(config);
+  const octokit = mode === 'app'
+    ? createAppClient(config, overrides.installationId)
+    : overrides.token
+      ? new Octokit({ auth: overrides.token })
+      : createPatClient(config);
 
   return {
-    mode: config.GITHUB_AUTH_MODE,
+    mode,
     enabled: true,
     repository,
     usingTestRepository: config.GITHUB_USE_TEST_REPO,
+    async resolveGitAuthToken() {
+      if (mode === 'app') {
+        const installationId = overrides.installationId ?? config.GITHUB_APP_INSTALLATION_ID;
+        if (!installationId) {
+          return undefined;
+        }
+
+        return resolveAppInstallationToken(config, installationId);
+      }
+
+      return overrides.token ?? config.GITHUB_TOKEN ?? undefined;
+    },
     async createIssueDraft(input) {
       const response = await octokit.rest.issues.create({
         owner,
@@ -194,6 +266,82 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
         merged: response.data.merged,
         message: response.data.message
       };
+    }
+  };
+}
+
+export function createGitHubIntegrationResolver(input: {
+  config: AppConfig;
+  repoConnections: RepoConnectionRepository;
+  githubInstallations: GitHubInstallationRepository;
+}): GitHubIntegrationResolver {
+  const defaultIntegration = createGitHubIntegration(input.config);
+
+  async function resolveProjectConnection(projectId?: string, repository?: string | null) {
+    if (!projectId) {
+      return null;
+    }
+
+    if (repository) {
+      const exactConnection = await input.repoConnections.findByProjectIdAndRepository(projectId, repository);
+      if (exactConnection) {
+        return exactConnection;
+      }
+    }
+
+    return input.repoConnections.findDefaultByProjectId(projectId);
+  }
+
+  return {
+    mode: defaultIntegration.mode,
+    enabled: defaultIntegration.enabled,
+    repository: defaultIntegration.repository,
+    usingTestRepository: defaultIntegration.usingTestRepository,
+    async resolve(options = {}) {
+      const requestedRepository = options.repository ?? undefined;
+      if (requestedRepository && (!requestedRepository.includes('/') || requestedRepository.startsWith('/') || requestedRepository.startsWith('.'))) {
+        return createGitHubIntegration(input.config, {
+          repository: requestedRepository,
+          enabled: false
+        });
+      }
+
+      const connection = await resolveProjectConnection(options.projectId, requestedRepository ?? null);
+      if (connection && connection.status === 'active' && connection.provider === 'github') {
+        const installation = connection.githubInstallationId
+          ? await input.githubInstallations.findById(connection.githubInstallationId)
+          : null;
+
+        if (installation) {
+          return createGitHubIntegration(input.config, {
+            repository: connection.repository,
+            mode: 'app',
+            installationId: installation.installationId,
+            enabled: true
+          });
+        }
+
+        return createGitHubIntegration(input.config, {
+          repository: connection.repository,
+          enabled: false
+        });
+      }
+
+      if (requestedRepository) {
+        return createGitHubIntegration(input.config, {
+          repository: requestedRepository
+        });
+      }
+
+      return defaultIntegration;
+    },
+    async resolveRepository(options = {}) {
+      const resolved = await this.resolve(options);
+      return resolved.repository;
+    },
+    async isEnabled(options = {}) {
+      const resolved = await this.resolve(options);
+      return resolved.enabled;
     }
   };
 }

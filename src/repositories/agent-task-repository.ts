@@ -15,6 +15,7 @@ export interface AgentTaskRepository {
 interface AgentTaskRow {
   id: string;
   feedback_report_id: string;
+  project_id: string | null;
   processing_job_id: string | null;
   requested_by: string;
   target_repository: string;
@@ -32,6 +33,7 @@ function mapRow(row: AgentTaskRow): StoredAgentTask {
   return {
     id: row.id,
     feedbackReportId: row.feedback_report_id,
+    ...(row.project_id ? { projectId: row.project_id } : {}),
     requestedBy: row.requested_by,
     targetRepository: row.target_repository,
     title: row.title,
@@ -53,6 +55,7 @@ export function createAgentTaskRepository(database: DatabaseClient): AgentTaskRe
         `INSERT INTO agent_tasks (
           id,
           feedback_report_id,
+          project_id,
           processing_job_id,
           requested_by,
           target_repository,
@@ -64,10 +67,11 @@ export function createAgentTaskRepository(database: DatabaseClient): AgentTaskRe
           status,
           prepared_context,
           failure_reason
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           task.id,
           task.feedbackReportId,
+          task.projectId ?? null,
           task.processingJobId ?? null,
           task.requestedBy,
           task.targetRepository,
@@ -108,7 +112,7 @@ export function createAgentTaskRepository(database: DatabaseClient): AgentTaskRe
     },
     async findById(id) {
       const result = await database.query<AgentTaskRow>(
-        `SELECT id, feedback_report_id, processing_job_id, requested_by, target_repository, title, objective,
+        `SELECT id, feedback_report_id, project_id, processing_job_id, requested_by, target_repository, title, objective,
                 execution_mode, acceptance_criteria, context_notes, status, prepared_context, failure_reason
          FROM agent_tasks
          WHERE id = $1`,
@@ -120,7 +124,7 @@ export function createAgentTaskRepository(database: DatabaseClient): AgentTaskRe
     },
     async findByReportId(reportId) {
       const result = await database.query<AgentTaskRow>(
-        `SELECT id, feedback_report_id, processing_job_id, requested_by, target_repository, title, objective,
+        `SELECT id, feedback_report_id, project_id, processing_job_id, requested_by, target_repository, title, objective,
                 execution_mode, acceptance_criteria, context_notes, status, prepared_context, failure_reason
          FROM agent_tasks
          WHERE feedback_report_id = $1

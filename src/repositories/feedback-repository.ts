@@ -11,13 +11,32 @@ export interface FeedbackRepository {
 
 interface FeedbackRow {
   id: string;
+  project_id: string | null;
   source: StoredFeedbackReport['source'];
   external_id: string | null;
   title: string | null;
   status: StoredFeedbackReport['status'];
   severity: StoredFeedbackReport['severity'];
   reporter_identifier: string | null;
+  created_at: string;
+  updated_at: string;
   payload: Record<string, unknown>;
+}
+
+function mapRow(row: FeedbackRow): StoredFeedbackReport {
+  return {
+    id: row.id,
+    source: row.source,
+    status: row.status,
+    severity: row.severity,
+    payload: row.payload,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(row.project_id ? { projectId: row.project_id } : {}),
+    ...(row.external_id ? { externalId: row.external_id } : {}),
+    ...(row.title ? { title: row.title } : {}),
+    ...(row.reporter_identifier ? { reporterIdentifier: row.reporter_identifier } : {})
+  };
 }
 
 export function createFeedbackRepository(database: DatabaseClient): FeedbackRepository {
@@ -26,6 +45,7 @@ export function createFeedbackRepository(database: DatabaseClient): FeedbackRepo
       await database.query(
         `INSERT INTO feedback_reports (
           id,
+          project_id,
           source,
           external_id,
           title,
@@ -33,9 +53,10 @@ export function createFeedbackRepository(database: DatabaseClient): FeedbackRepo
           severity,
           reporter_identifier,
           payload
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           report.id,
+          report.projectId ?? null,
           report.source,
           report.externalId ?? null,
           report.title ?? null,
@@ -48,47 +69,25 @@ export function createFeedbackRepository(database: DatabaseClient): FeedbackRepo
     },
     async findById(id) {
       const result = await database.query<FeedbackRow>(
-        `SELECT id, source, external_id, title, status, severity, reporter_identifier, payload
+        `SELECT id, project_id, source, external_id, title, status, severity, reporter_identifier, created_at, updated_at, payload
          FROM feedback_reports
          WHERE id = $1`,
         [id]
       );
 
       const row = result.rows[0];
-      if (!row) {
-        return null;
-      }
-
-      return {
-        id: row.id,
-        source: row.source,
-        status: row.status,
-        severity: row.severity,
-        payload: row.payload,
-        ...(row.external_id ? { externalId: row.external_id } : {}),
-        ...(row.title ? { title: row.title } : {}),
-        ...(row.reporter_identifier ? { reporterIdentifier: row.reporter_identifier } : {})
-      };
+      return row ? mapRow(row) : null;
     },
     async listRecent(limit) {
       const result = await database.query<FeedbackRow>(
-        `SELECT id, source, external_id, title, status, severity, reporter_identifier, payload
+        `SELECT id, project_id, source, external_id, title, status, severity, reporter_identifier, created_at, updated_at, payload
          FROM feedback_reports
          ORDER BY updated_at DESC, created_at DESC
          LIMIT $1`,
         [limit]
       );
 
-      return result.rows.map((row) => ({
-        id: row.id,
-        source: row.source,
-        status: row.status,
-        severity: row.severity,
-        payload: row.payload,
-        ...(row.external_id ? { externalId: row.external_id } : {}),
-        ...(row.title ? { title: row.title } : {}),
-        ...(row.reporter_identifier ? { reporterIdentifier: row.reporter_identifier } : {})
-      }));
+      return result.rows.map(mapRow);
     },
     async updateStatus(id, status) {
       await database.query(

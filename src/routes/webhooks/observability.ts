@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -7,8 +5,7 @@ import { computeInitialImpactScore } from '../../domain/impact-score.js';
 import { normalizeDatadogWebhook, type DatadogWebhookPayload } from '../../services/observability/datadog.js';
 import { normalizeNewRelicWebhook, type NewRelicWebhookPayload } from '../../services/observability/newrelic.js';
 import { normalizeSentryWebhook, type NormalizedObservabilityEvent, type SentryWebhookPayload } from '../../services/observability/sentry.js';
-import { buildFeedbackReportEmbedding } from '../../services/reports/feedback-report-embedding.js';
-import { redactPayload } from '../../services/redaction/payload-redactor.js';
+import { ingestFeedbackReport } from '../../services/reports/report-ingestion.js';
 import { safeEqual } from '../../support/http.js';
 
 const observabilityPayloadSchema = z.object({
@@ -71,47 +68,24 @@ const newRelicWebhookSchema = z.object({
 
 function persistObservabilityEvent(app: FastifyInstance, requestId: string, event: NormalizedObservabilityEvent) {
   return (async () => {
-    const reportId = randomUUID();
     const impactScore = computeInitialImpactScore({
       source: event.provider,
       severity: event.severity,
       frequency: event.frequency
     });
-    const sanitized = redactPayload({
+    const payload = {
       ...event,
       impactScore
-    });
+    };
 
-    const storedReport = {
-      id: reportId,
+    const ingested = await ingestFeedbackReport(app, {
       source: event.provider,
       title: event.title,
-      status: 'received',
       severity: event.severity,
       reporterIdentifier: event.provider,
-      payload: {
-        ...sanitized.value,
-        redactionCount: sanitized.redactionCount
-      },
+      payload,
+      triagePriority: impactScore,
       ...(event.fingerprint ? { externalId: event.fingerprint } : {})
-    } as const;
-
-    await app.reports.create(storedReport);
-    await app.reportEmbeddings.upsert({
-      id: storedReport.id,
-      feedbackReportId: storedReport.id,
-      ...buildFeedbackReportEmbedding(storedReport)
-    });
-
-    const queueResult = await app.jobs.enqueue({
-      type: 'triage',
-      reportId,
-      source: event.provider,
-      priority: impactScore,
-      payload: {
-        ...sanitized.value,
-        redactionCount: sanitized.redactionCount
-      }
     });
 
     await app.audit.write({
@@ -120,21 +94,21 @@ function persistObservabilityEvent(app: FastifyInstance, requestId: string, even
       actorId: event.provider,
       requestId,
       payload: {
-        reportId,
-        jobId: queueResult.jobId,
+        reportId: ingested.report.id,
+        jobId: ingested.triageJobId,
         provider: event.provider,
         eventType: event.eventType,
         severity: event.severity,
         fingerprint: event.fingerprint,
         impactScore,
-        redactionCount: sanitized.redactionCount
+        redactionCount: ingested.redactionCount
       }
     });
 
     return {
       accepted: true,
-      reportId,
-      jobId: queueResult.jobId,
+      reportId: ingested.report.id,
+      jobId: ingested.triageJobId,
       impactScore
     };
   })();

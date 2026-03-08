@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -21,6 +23,20 @@ const activeIssuesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional()
 });
 
+const reviewQueueQuerySchema = z.object({
+  projectId: z.string().uuid().optional(),
+  search: z.string().trim().min(1).max(255).optional(),
+  page: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  sort: z.enum(['newest', 'oldest', 'impact', 'severity']).optional()
+});
+
+const reportReviewSchema = z.object({
+  status: z.enum(['approved', 'rejected']),
+  repository: z.string().min(1).max(255).optional(),
+  notes: z.string().min(1).max(4000).optional()
+});
+
 function normalizedText(value: unknown): string {
   if (typeof value === 'string') {
     return value.toLowerCase();
@@ -35,6 +51,27 @@ function normalizedText(value: unknown): string {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function severityOrder(severity: 'unknown' | 'low' | 'medium' | 'high' | 'critical'): number {
+  switch (severity) {
+    case 'critical':
+      return 4;
+    case 'high':
+      return 3;
+    case 'medium':
+      return 2;
+    case 'low':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function compareTimestamps(left: string | undefined, right: string | undefined): number {
+  const leftTime = left ? Date.parse(left) : 0;
+  const rightTime = right ? Date.parse(right) : 0;
+  return leftTime - rightTime;
 }
 
 function matchesFileNeedle(fileNeedle: string, pathHints: string[], haystack: string): { matched: boolean; matchedPaths: string[] } {
@@ -84,6 +121,170 @@ function summarizeObservabilityContext(report: { source: string; externalId?: st
 }
 
 export function registerReportInternalRoutes(app: FastifyInstance): void {
+  app.get('/internal/reports/review-queue', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const query = reviewQueueQuerySchema.parse(request.query);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const searchNeedle = query.search?.toLowerCase();
+    const sort = query.sort ?? 'newest';
+    const recentReports = await app.reports.listRecent(Math.min(Math.max(page * limit * 8, 80), 400));
+    const pendingCandidates = recentReports.filter((report) => {
+      if (report.source !== 'hosted-feedback') {
+        return false;
+      }
+
+      if (query.projectId && report.projectId !== query.projectId) {
+        return false;
+      }
+
+      return true;
+    });
+    const hydratedCandidates = await Promise.all(pendingCandidates.map(async (report) => {
+      const [draft, review, project] = await Promise.all([
+        app.githubIssueLinks.findByReportId(report.id),
+        app.reportReviews.findByReportId(report.id),
+        report.projectId ? app.projects.findById(report.projectId) : Promise.resolve(null)
+      ]);
+
+      if (!draft || draft.state !== 'awaiting-review') {
+        return null;
+      }
+
+      if (review && review.status !== 'pending') {
+        return null;
+      }
+
+      const impactScore = typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null;
+      const item = {
+        reportId: report.id,
+        project: project ? {
+          id: project.id,
+          projectKey: project.projectKey,
+          name: project.name
+        } : null,
+        title: report.title ?? draft.draftTitle,
+        severity: report.severity,
+        status: report.status,
+        issueState: draft.state,
+        repository: draft.repository,
+        impactScore,
+        reporterIdentifier: report.reporterIdentifier ?? null,
+        createdAt: report.createdAt ?? null,
+        updatedAt: report.updatedAt ?? null,
+        contextPath: `/internal/reports/${report.id}/context`,
+        reviewPath: `/internal/reports/${report.id}/review`
+      };
+
+      if (!searchNeedle) {
+        return item;
+      }
+
+      const haystack = [
+        item.title,
+        item.repository,
+        item.reporterIdentifier,
+        item.project?.name,
+        item.project?.projectKey,
+        report.id
+      ].filter((value): value is string => Boolean(value)).join('\n').toLowerCase();
+
+      return haystack.includes(searchNeedle) ? item : null;
+    }));
+    const filteredItems = hydratedCandidates.filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    filteredItems.sort((left, right) => {
+      switch (sort) {
+        case 'oldest':
+          return compareTimestamps(left.createdAt ?? undefined, right.createdAt ?? undefined)
+            || compareTimestamps(left.updatedAt ?? undefined, right.updatedAt ?? undefined)
+            || left.reportId.localeCompare(right.reportId);
+        case 'impact':
+          return (right.impactScore ?? -1) - (left.impactScore ?? -1)
+            || severityOrder(right.severity) - severityOrder(left.severity)
+            || compareTimestamps(right.createdAt ?? undefined, left.createdAt ?? undefined)
+            || right.reportId.localeCompare(left.reportId);
+        case 'severity':
+          return severityOrder(right.severity) - severityOrder(left.severity)
+            || (right.impactScore ?? -1) - (left.impactScore ?? -1)
+            || compareTimestamps(right.createdAt ?? undefined, left.createdAt ?? undefined)
+            || right.reportId.localeCompare(left.reportId);
+        default:
+          return compareTimestamps(right.createdAt ?? undefined, left.createdAt ?? undefined)
+            || compareTimestamps(right.updatedAt ?? undefined, left.updatedAt ?? undefined)
+            || right.reportId.localeCompare(left.reportId);
+      }
+    });
+
+    const totalItems = filteredItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const boundedPage = Math.min(page, totalPages);
+    const startIndex = (boundedPage - 1) * limit;
+    const items = filteredItems.slice(startIndex, startIndex + limit);
+    const severityCounts = filteredItems.reduce<Record<string, number>>((counts, item) => {
+      counts[item.severity] = (counts[item.severity] ?? 0) + 1;
+      return counts;
+    }, {});
+    const projectSummaryMap = new Map<string, {
+      project: { id: string; projectKey: string; name: string } | null;
+      queuedCount: number;
+      highestImpactScore: number | null;
+      latestCreatedAt: string | null;
+      criticalCount: number;
+    }>();
+
+    for (const item of filteredItems) {
+      const key = item.project?.id ?? 'unscoped';
+      const existing = projectSummaryMap.get(key) ?? {
+        project: item.project,
+        queuedCount: 0,
+        highestImpactScore: null,
+        latestCreatedAt: null,
+        criticalCount: 0
+      };
+
+      existing.queuedCount += 1;
+      if (item.severity === 'critical') {
+        existing.criticalCount += 1;
+      }
+      if (typeof item.impactScore === 'number') {
+        existing.highestImpactScore = existing.highestImpactScore === null
+          ? item.impactScore
+          : Math.max(existing.highestImpactScore, item.impactScore);
+      }
+      if (!existing.latestCreatedAt || compareTimestamps(existing.latestCreatedAt, item.createdAt ?? undefined) < 0) {
+        existing.latestCreatedAt = item.createdAt;
+      }
+
+      projectSummaryMap.set(key, existing);
+    }
+
+    return {
+      filters: {
+        projectId: query.projectId ?? null,
+        search: query.search ?? null,
+        page: boundedPage,
+        limit,
+        sort
+      },
+      summary: {
+        totalItems,
+        totalPages,
+        hasNextPage: boundedPage < totalPages,
+        hasPreviousPage: boundedPage > 1,
+        severityCounts,
+        projectSummaries: Array.from(projectSummaryMap.values()).sort((left, right) => {
+          return right.queuedCount - left.queuedCount
+            || (right.highestImpactScore ?? -1) - (left.highestImpactScore ?? -1)
+            || compareTimestamps(right.latestCreatedAt ?? undefined, left.latestCreatedAt ?? undefined)
+            || (right.project?.name ?? 'Unscoped').localeCompare(left.project?.name ?? 'Unscoped');
+        })
+      },
+      items
+    };
+  });
+
   app.get('/internal/reports/active-issues', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
 
@@ -176,9 +377,10 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('report not found');
     }
 
-    const [embedding, draft, artifacts, replay, tasks] = await Promise.all([
+    const [embedding, draft, review, artifacts, replay, tasks] = await Promise.all([
       app.reportEmbeddings.findByReportId(reportId),
       app.githubIssueLinks.findByReportId(reportId),
+      app.reportReviews.findByReportId(reportId),
       app.artifacts.findByReportId(reportId),
       app.replayRuns.findLatestByReportId(reportId),
       app.agentTasks.findByReportId(reportId)
@@ -255,6 +457,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       },
       classification: classifyReport(report),
       draft,
+      reportReview: review ?? null,
       artifacts,
       replay: replay ?? null,
       ownership,
@@ -539,6 +742,167 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         impactScore: typeof impact.score === 'number' ? impact.score : null,
         agentTaskCount: tasks.length
       })
+    };
+  });
+
+  app.get('/internal/reports/:reportId/review', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { reportId } = reportIdParamsSchema.parse(request.params);
+    const report = await app.reports.findById(reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    const [draft, review] = await Promise.all([
+      app.githubIssueLinks.findByReportId(reportId),
+      app.reportReviews.findByReportId(reportId)
+    ]);
+
+    return {
+      reportId,
+      source: report.source,
+      projectId: report.projectId ?? null,
+      draftState: draft?.state ?? null,
+      review: review ?? null
+    };
+  });
+
+  app.post('/internal/reports/:reportId/review', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['github:draft']);
+
+    const { reportId } = reportIdParamsSchema.parse(request.params);
+    const payload = reportReviewSchema.parse(request.body);
+    const report = await app.reports.findById(reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    const draft = await app.githubIssueLinks.findByReportId(reportId);
+    if (!draft) {
+      throw app.httpErrors.notFound('draft not found');
+    }
+
+    const existingReview = await app.reportReviews.findByReportId(reportId);
+    if (payload.status === 'approved' && draft.state === 'synced' && existingReview?.status === 'approved') {
+      throw app.httpErrors.conflict('report review is already approved and synced');
+    }
+
+    if (payload.status === 'rejected') {
+      const review = {
+        id: existingReview?.id ?? randomUUID(),
+        feedbackReportId: reportId,
+        status: 'rejected' as const,
+        reviewerId: principal.id,
+        repository: draft.repository,
+        ...(payload.notes ? { notes: payload.notes } : {}),
+        reviewedAt: new Date().toISOString()
+      };
+
+      await app.reportReviews.upsert(review);
+      await app.reports.updateStatus(reportId, 'drafted');
+      await app.githubIssueLinks.upsert({
+        ...draft,
+        state: 'rejected'
+      });
+
+      await app.audit.write({
+        eventType: 'report.reviewed',
+        actorType: 'system',
+        actorId: principal.id,
+        requestId: request.id,
+        payload: {
+          reportId,
+          reviewStatus: 'rejected',
+          repository: draft.repository,
+          notes: payload.notes ?? null
+        }
+      });
+
+      return {
+        review,
+        draft: {
+          ...draft,
+          state: 'rejected'
+        }
+      };
+    }
+
+    const repository = payload.repository ?? draft.repository;
+    const github = await app.github.resolve({
+      projectId: report.projectId,
+      repository
+    });
+
+    let issueNumber: number | undefined;
+    let issueUrl: string | undefined;
+    let state: 'local-draft' | 'synced' | 'sync-failed' = 'local-draft';
+    let syncError: string | undefined;
+
+    if (github.enabled) {
+      try {
+        const created = await github.createIssueDraft({
+          title: draft.draftTitle,
+          body: draft.draftBody,
+          labels: draft.draftLabels
+        });
+        issueNumber = created.number;
+        issueUrl = created.url;
+        state = 'synced';
+      } catch (error) {
+        state = 'sync-failed';
+        syncError = error instanceof Error ? error.message : 'failed to create GitHub issue draft';
+      }
+    } else {
+      syncError = 'GitHub draft sync is disabled for the selected repository';
+    }
+
+    const review = {
+      id: existingReview?.id ?? randomUUID(),
+      feedbackReportId: reportId,
+      status: 'approved' as const,
+      reviewerId: principal.id,
+      repository,
+      ...(payload.notes ? { notes: payload.notes } : {}),
+      reviewedAt: new Date().toISOString()
+    };
+
+    await app.reportReviews.upsert(review);
+    await app.reports.updateStatus(reportId, 'drafted');
+    await app.githubIssueLinks.upsert({
+      ...draft,
+      repository,
+      state,
+      ...(issueNumber ? { issueNumber } : {}),
+      ...(issueUrl ? { issueUrl } : {})
+    });
+
+    await app.audit.write({
+      eventType: 'report.reviewed',
+      actorType: 'system',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        reportId,
+        reviewStatus: 'approved',
+        repository,
+        issueNumber: issueNumber ?? null,
+        issueUrl: issueUrl ?? null,
+        syncError: syncError ?? null,
+        notes: payload.notes ?? null
+      }
+    });
+
+    return {
+      review,
+      draft: {
+        ...draft,
+        repository,
+        state,
+        ...(issueNumber ? { issueNumber } : {}),
+        ...(issueUrl ? { issueUrl } : {})
+      },
+      ...(syncError ? { syncError } : {})
     };
   });
 }

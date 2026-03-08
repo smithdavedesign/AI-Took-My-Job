@@ -68,17 +68,28 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('report not found');
     }
 
+    if (report.source === 'hosted-feedback') {
+      const review = await app.reportReviews.findByReportId(report.id);
+      if (!review || review.status !== 'approved') {
+        throw app.httpErrors.conflict('hosted feedback reports require an approved review before agent tasks can be created');
+      }
+    }
+
     const existingDraft = await app.githubIssueLinks.findByReportId(report.id);
+    const defaultRepository = await app.github.resolveRepository({
+      projectId: report.projectId
+    });
     const taskId = randomUUID();
     const targetRepository = payload.targetRepository
       ?? existingDraft?.repository
-      ?? app.github.repository
+      ?? defaultRepository
       ?? 'local-only';
     const title = payload.title ?? report.title ?? `Agent task for report ${report.id}`;
 
     await app.agentTasks.create({
       id: taskId,
       feedbackReportId: report.id,
+      ...(report.projectId ? { projectId: report.projectId } : {}),
       requestedBy: principal.id,
       targetRepository,
       title,
@@ -295,7 +306,10 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       review,
       pullRequest,
       validationPolicy,
-      githubPromotionEnabled: app.github.enabled && isGitHubRepository(task.targetRepository)
+      githubPromotionEnabled: await app.github.isEnabled({
+        projectId: task.projectId,
+        repository: task.targetRepository
+      }) && isGitHubRepository(task.targetRepository)
     });
   });
 
@@ -421,7 +435,12 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('agent task not found');
     }
 
-    if (!app.github.enabled) {
+    const github = await app.github.resolve({
+      projectId: task.projectId,
+      repository: task.targetRepository
+    });
+
+    if (!github.enabled) {
       throw app.httpErrors.conflict('GitHub draft sync is disabled');
     }
 
@@ -463,7 +482,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     try {
       const promoted = await promoteExecutionPullRequest({
         config: app.config,
-        github: app.github,
+        github,
         task,
         execution,
         ...(typeof payload.draft === 'boolean' ? { draft: payload.draft } : {})
@@ -626,12 +645,17 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.conflict('agent task execution has no persisted pull request metadata');
     }
 
-    if (!app.github.enabled) {
+    const github = await app.github.resolve({
+      projectId: task.projectId,
+      repository: task.targetRepository
+    });
+
+    if (!github.enabled) {
       throw app.httpErrors.conflict('GitHub draft sync is disabled');
     }
 
     try {
-      const merged = await app.github.mergePullRequest({
+      const merged = await github.mergePullRequest({
         repository: task.targetRepository,
         pullRequestNumber: pullRequest.pullRequestNumber,
         ...(payload.mergeMethod ? { mergeMethod: payload.mergeMethod } : {})

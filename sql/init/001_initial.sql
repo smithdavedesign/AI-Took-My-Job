@@ -1,7 +1,65 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
+CREATE TABLE IF NOT EXISTS workspaces (
+  id UUID PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+  id UUID PRIMARY KEY,
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  project_key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  routing_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS projects_workspace_idx
+  ON projects (workspace_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS github_installations (
+  id UUID PRIMARY KEY,
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'github',
+  installation_id BIGINT NOT NULL UNIQUE,
+  account_login TEXT,
+  account_type TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS github_installations_workspace_idx
+  ON github_installations (workspace_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS repo_connections (
+  id UUID PRIMARY KEY,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  github_installation_id UUID REFERENCES github_installations(id) ON DELETE SET NULL,
+  provider TEXT NOT NULL DEFAULT 'github',
+  repository TEXT NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  status TEXT NOT NULL DEFAULT 'active',
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS repo_connections_project_repository_idx
+  ON repo_connections (project_id, repository);
+
+CREATE UNIQUE INDEX IF NOT EXISTS repo_connections_project_default_idx
+  ON repo_connections (project_id)
+  WHERE is_default = true;
+
 CREATE TABLE IF NOT EXISTS feedback_reports (
   id UUID PRIMARY KEY,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
   source TEXT NOT NULL,
   external_id TEXT,
   title TEXT,
@@ -14,8 +72,14 @@ CREATE TABLE IF NOT EXISTS feedback_reports (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE feedback_reports
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS feedback_reports_source_idx
   ON feedback_reports (source, received_at DESC);
+
+CREATE INDEX IF NOT EXISTS feedback_reports_project_idx
+  ON feedback_reports (project_id, received_at DESC);
 
 CREATE TABLE IF NOT EXISTS artifact_bundles (
   id UUID PRIMARY KEY,
@@ -50,6 +114,21 @@ CREATE TABLE IF NOT EXISTS github_issue_links (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS report_reviews (
+  id UUID PRIMARY KEY,
+  feedback_report_id UUID NOT NULL UNIQUE REFERENCES feedback_reports(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  reviewer_id TEXT,
+  repository TEXT,
+  notes TEXT,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS report_reviews_status_idx
+  ON report_reviews (status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS audit_events (
   id UUID PRIMARY KEY,
@@ -124,6 +203,7 @@ CREATE INDEX IF NOT EXISTS shadow_suite_runs_suite_idx
 CREATE TABLE IF NOT EXISTS agent_tasks (
   id UUID PRIMARY KEY,
   feedback_report_id UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
   processing_job_id UUID,
   requested_by TEXT NOT NULL,
   target_repository TEXT NOT NULL,
@@ -139,8 +219,14 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE agent_tasks
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS agent_tasks_report_idx
   ON agent_tasks (feedback_report_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS agent_tasks_project_idx
+  ON agent_tasks (project_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agent_task_executions (
   id UUID PRIMARY KEY,

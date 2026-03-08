@@ -99,6 +99,9 @@ jobs:
       - name: Run policy review smoke
         run: npm run e2e:policy-review
 
+      - name: Run hosted feedback review smoke
+        run: npm run e2e:hosted-feedback-review
+
       - name: Print logs on failure
         if: failure()
         run: |

@@ -158,7 +158,7 @@ export async function promoteExecutionPullRequest(input: PromoteExecutionPullReq
     throw new Error('execution is missing worktree, branch, or base branch metadata');
   }
 
-  const commandContext = await createRepositoryCommandContext(input.config, input.task.targetRepository);
+  const commandContext = await createRepositoryCommandContext(input.config, input.task.targetRepository, input.github);
 
   try {
     await runCommand('git', ['-C', input.execution.worktreePath, 'push', '-u', 'origin', input.execution.branchName], {

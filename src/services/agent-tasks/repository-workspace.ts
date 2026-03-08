@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { GitHubIntegration } from '../../integrations/github/client.js';
 import type { AppConfig } from '../../support/config.js';
 
 export interface PreparedRepositoryWorkspace {
@@ -86,7 +87,7 @@ async function createAskPassScript(token: string): Promise<{ scriptPath: string;
   };
 }
 
-async function buildCloneTarget(config: AppConfig, targetRepository: string): Promise<{
+async function buildCloneTarget(config: AppConfig, targetRepository: string, github?: GitHubIntegration): Promise<{
   cloneSource: string;
   env?: NodeJS.ProcessEnv;
   cleanup?: () => Promise<void>;
@@ -106,11 +107,12 @@ async function buildCloneTarget(config: AppConfig, targetRepository: string): Pr
   }
   const [owner, repo] = parts as [string, string];
 
-  if (config.GITHUB_AUTH_MODE !== 'pat' || !config.GITHUB_TOKEN) {
-    throw new Error('repository checkout currently requires PAT-backed GitHub auth');
+  const token = github ? await github.resolveGitAuthToken() : config.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error('repository checkout requires GitHub credentials for the target repository');
   }
 
-  const askPass = await createAskPassScript(config.GITHUB_TOKEN);
+  const askPass = await createAskPassScript(token);
   return {
     cloneSource: `https://github.com/${owner}/${repo}.git`,
     repositoryLabel: `${sanitizeSegment(owner)}__${sanitizeSegment(repo)}`,
@@ -122,8 +124,8 @@ async function buildCloneTarget(config: AppConfig, targetRepository: string): Pr
   };
 }
 
-export async function createRepositoryCommandContext(config: AppConfig, targetRepository: string): Promise<RepositoryCommandContext> {
-  const cloneTarget = await buildCloneTarget(config, targetRepository);
+export async function createRepositoryCommandContext(config: AppConfig, targetRepository: string, github?: GitHubIntegration): Promise<RepositoryCommandContext> {
+  const cloneTarget = await buildCloneTarget(config, targetRepository, github);
 
   return {
     ...(cloneTarget.env ? { env: cloneTarget.env } : {}),
@@ -206,8 +208,9 @@ export async function prepareRepositoryWorkspace(input: {
   targetRepository: string;
   agentTaskId: string;
   executionId: string;
+  github?: GitHubIntegration;
 }): Promise<PreparedRepositoryWorkspace> {
-  const cloneTarget = await buildCloneTarget(input.config, input.targetRepository);
+  const cloneTarget = await buildCloneTarget(input.config, input.targetRepository, input.github);
 
   try {
     const repositoryPath = await ensureRepositoryMirror(

@@ -21,6 +21,7 @@
     "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts",
     "e2e:agent-routes": "tsx src/scripts/e2e/agent-execution-routes.ts",
     "e2e:developer-context": "tsx src/scripts/e2e/developer-context.ts",
+    "e2e:hosted-feedback-review": "tsx src/scripts/e2e/hosted-feedback-review.ts",
     "e2e:mcp-developer-context": "tsx src/scripts/e2e/mcp-developer-context.ts",
     "e2e:policy-review": "tsx src/scripts/e2e/policy-review.ts",
     "e2e:shadow-suite": "tsx src/scripts/e2e/shadow-suite.ts",

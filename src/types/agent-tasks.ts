@@ -1,6 +1,7 @@
 export interface StoredAgentTask {
   id: string;
   feedbackReportId: string;
+  projectId?: string;
   processingJobId?: string;
   requestedBy: string;
   targetRepository: string;

@@ -3,7 +3,7 @@ import type { Redis } from 'ioredis';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 
-import { createGitHubIntegration, type GitHubIntegration } from './integrations/github/client.js';
+import { createGitHubIntegrationResolver, type GitHubIntegrationResolver } from './integrations/github/client.js';
 import { createAuditRepository, type AuditRepository } from './repositories/audit-repository.js';
 import { createAgentTaskRepository, type AgentTaskRepository } from './repositories/agent-task-repository.js';
 import { createAgentTaskExecutionRepository, type AgentTaskExecutionRepository } from './repositories/agent-task-execution-repository.js';
@@ -16,11 +16,16 @@ import { createFeedbackReportEmbeddingRepository, type FeedbackReportEmbeddingRe
 import { createArtifactStore } from './services/artifacts/index.js';
 import type { ArtifactStore, ArtifactStoreMetadata } from './services/artifacts/artifact-store.js';
 import { createFeedbackRepository, type FeedbackRepository } from './repositories/feedback-repository.js';
+import { createGitHubInstallationRepository, type GitHubInstallationRepository } from './repositories/github-installation-repository.js';
 import { createGitHubIssueLinkRepository, type GitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
+import { createProjectRepository, type ProjectRepository } from './repositories/project-repository.js';
 import { createReplayRunRepository, type ReplayRunRepository } from './repositories/replay-run-repository.js';
+import { createReportReviewRepository, type ReportReviewRepository } from './repositories/report-review-repository.js';
+import { createRepoConnectionRepository, type RepoConnectionRepository } from './repositories/repo-connection-repository.js';
 import { createShadowSuiteRepository, type ShadowSuiteRepository } from './repositories/shadow-suite-repository.js';
 import { createShadowSuiteRunRepository, type ShadowSuiteRunRepository } from './repositories/shadow-suite-run-repository.js';
 import { createTriageJobRepository, type TriageJobRepository } from './repositories/triage-job-repository.js';
+import { createWorkspaceRepository, type WorkspaceRepository } from './repositories/workspace-repository.js';
 import { loadConfig, type AppConfig } from './support/config.js';
 import { createDatabaseClient, type DatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
@@ -28,6 +33,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerArtifactRoutes } from './routes/artifacts.js';
 import { registerInternalRoutes } from './routes/internal/index.js';
 import { registerLearnRoutes } from './routes/learn.js';
+import { registerPublicRoutes } from './routes/public/index.js';
 import { registerWebhookRoutes } from './routes/webhooks/index.js';
 import { createAuditLogger, type AuditLogger } from './support/audit-log.js';
 import { createJobPublisher, type JobPublisher } from './support/job-publisher.js';
@@ -52,11 +58,16 @@ declare module 'fastify' {
     agentTaskValidationPolicies: AgentTaskValidationPolicyRepository;
     reportEmbeddings: FeedbackReportEmbeddingRepository;
     githubIssueLinks: GitHubIssueLinkRepository;
+    reportReviews: ReportReviewRepository;
+    workspaces: WorkspaceRepository;
+    projects: ProjectRepository;
+    githubInstallations: GitHubInstallationRepository;
+    repoConnections: RepoConnectionRepository;
     auditRepository: AuditRepository;
     triageJobs: TriageJobRepository;
     audit: AuditLogger;
     jobs: JobPublisher;
-    github: GitHubIntegration;
+    github: GitHubIntegrationResolver;
   }
 }
 
@@ -85,6 +96,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   const redis = createRedisConnection(config.REDIS_URL);
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
+  const workspaceRepository = createWorkspaceRepository(database);
+  const projectRepository = createProjectRepository(database);
+  const githubInstallationRepository = createGitHubInstallationRepository(database);
+  const repoConnectionRepository = createRepoConnectionRepository(database);
+  const reportReviewRepository = createReportReviewRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
   const agentTaskExecutionRepository = createAgentTaskExecutionRepository(database);
@@ -110,6 +126,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('db', database);
   app.decorate('redis', redis);
   app.decorate('reports', feedbackRepository);
+  app.decorate('workspaces', workspaceRepository);
+  app.decorate('projects', projectRepository);
+  app.decorate('githubInstallations', githubInstallationRepository);
+  app.decorate('repoConnections', repoConnectionRepository);
   app.decorate('artifacts', artifactBundleRepository);
   app.decorate('agentTasks', agentTaskRepository);
   app.decorate('agentTaskExecutions', agentTaskExecutionRepository);
@@ -124,11 +144,16 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('shadowSuites', shadowSuiteRepository);
   app.decorate('shadowSuiteRuns', shadowSuiteRunRepository);
   app.decorate('githubIssueLinks', githubIssueLinkRepository);
+  app.decorate('reportReviews', reportReviewRepository);
   app.decorate('auditRepository', auditRepository);
   app.decorate('triageJobs', triageJobRepository);
   app.decorate('audit', createAuditLogger(app.log as FastifyBaseLogger, auditRepository));
   app.decorate('jobs', createJobPublisher(app.log as FastifyBaseLogger, bullConnection, triageJobRepository));
-  app.decorate('github', createGitHubIntegration(config));
+  app.decorate('github', createGitHubIntegrationResolver({
+    config,
+    repoConnections: repoConnectionRepository,
+    githubInstallations: githubInstallationRepository
+  }));
 
   await app.register(sensible);
   await app.register(helmet, {
@@ -152,6 +177,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerLearnRoutes(app);
   registerArtifactRoutes(app);
   registerInternalRoutes(app);
+  registerPublicRoutes(app);
   registerWebhookRoutes(app);
 
   return app;

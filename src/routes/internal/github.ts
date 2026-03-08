@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 
 const githubIssueDraftSchema = z.object({
+  projectId: z.string().uuid().optional(),
+  repository: z.string().min(1).max(255).optional(),
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(20000),
   labels: z.array(z.string().min(1)).max(20).optional()
@@ -15,11 +17,16 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
 
     const payload = githubIssueDraftSchema.parse(request.body);
 
-    if (!app.github.enabled) {
+    const github = await app.github.resolve({
+      projectId: payload.projectId,
+      repository: payload.repository
+    });
+
+    if (!github.enabled) {
       throw app.httpErrors.conflict('GitHub draft sync is disabled');
     }
 
-    const created = await app.github.createIssueDraft({
+    const created = await github.createIssueDraft({
       title: payload.title,
       body: payload.body,
       ...(payload.labels ? { labels: payload.labels } : {})
@@ -40,7 +47,7 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
 
     return reply.code(201).send({
       created: true,
-      authMode: app.github.mode,
+      authMode: github.mode,
       issueNumber: created.number,
       issueUrl: created.url
     });

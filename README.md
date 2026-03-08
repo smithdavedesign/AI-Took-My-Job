@@ -14,7 +14,7 @@ A report arrives from a browser session. Sentry lights up. A HAR file gets attac
 
 ## What Exists Today
 
-The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful parts of Phases 2 through 6 from [roadmap.md](roadmap.md):
+The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 2 through Phase 8 delivery line, and the first Phase 9 customer-onboarding slice from [roadmap.md](roadmap.md):
 
 - Fastify gateway with health checks and protected ingestion routes.
 - PostgreSQL repositories for feedback reports, artifact metadata, triage jobs, audit events, and GitHub draft metadata.
@@ -40,8 +40,14 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Replay execution restores cookie and storage context and records restored-state evidence in replay output.
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
+- Workspace, project, GitHub installation, and repository-connection persistence is now live for project-scoped onboarding.
+- Internal onboarding routes can now create workspaces, projects, GitHub installation records, and repository connections.
+- Runtime GitHub resolution is now project-aware for issue drafting, promotion, merge, and repository checkout.
+- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, and a project-hosted widget page is now available at `/public/projects/:projectKey/widget`.
+- Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
+- The operator review console at `/learn/review-queue` now supports project rollups, queue search, server-side sorting, pagination, full context loading, and approve/reject actions.
 
-Still planned: richer browser automation, clustering and deduplication, agentic PR workflows, and the remaining MCP + shadow-suite work.
+Still planned: fuller GitHub App onboarding UX and broader customer-facing operations surfaces around onboarding and support workflows.
 
 ## Status Snapshot
 
@@ -52,16 +58,17 @@ Still planned: richer browser automation, clustering and deduplication, agentic 
 - Phase 4: complete
 - Phase 5: complete
 - Phase 6: complete
-- Phase 7: partial
-- Phase 8: not started
+- Phase 7: complete
+- Phase 8: complete
+- Phase 9: partial
 
 ## How It Works
 
 ### Processes
 
 - Gateway: receives webhooks and internal API requests.
-- Worker: consumes queued triage jobs and generates issue drafts.
-- PostgreSQL: stores reports, drafts, jobs, and audit logs.
+- Worker: consumes queued triage jobs, replay jobs, and agent-execution jobs.
+- PostgreSQL: stores onboarding state, reports, drafts, jobs, review state, and audit logs.
 - Redis: backs the BullMQ queue.
 
 ### System Architecture
@@ -74,47 +81,83 @@ flowchart LR
     Datadog[Datadog]
     NewRelic[New Relic]
     Extension[Browser Extension]
+    Widget[Hosted Feedback Widget]
   end
 
-  Gateway[Nexus Gateway\nFastify]
+  subgraph Control[Nexus Control Plane]
+    Gateway[Nexus Gateway\nFastify]
+    Router[Project Router\nGitHub Resolver]
+    Review[Review Queue\nHuman Approval]
+    Worker[Nexus Worker\nTriage + Replay + Agent Execution]
+  end
+
   Redis[(Redis / BullMQ)]
-  Worker[Nexus Worker\nTriage + Drafting]
-  Postgres[(PostgreSQL)]
+  Postgres[(PostgreSQL\nWorkspaces + Projects + Reports)]
   Artifacts[(Artifact Storage\nLocal or S3)]
-  GitHub[GitHub Issues]
+  GitHubApp[GitHub App\nInstallations]
+  GitHub[GitHub Issues + PRs]
 
   Slack --> Gateway
   Sentry --> Gateway
   Datadog --> Gateway
   NewRelic --> Gateway
   Extension --> Gateway
+  Widget --> Gateway
 
   Gateway --> Postgres
+  Gateway --> Router
   Gateway --> Redis
   Gateway --> Artifacts
   Redis --> Worker
   Worker --> Postgres
+  Worker --> Review
+  Review --> GitHub
+  Router --> GitHubApp
+  Router --> Postgres
   Worker --> GitHub
   Worker --> Artifacts
 ```
 
-### Processing Flow
+### Customer Onboarding Flow
 
 ```mermaid
 sequenceDiagram
-  participant Source as Source System
+  participant Admin as Workspace Admin
+  participant Nexus as Nexus Gateway
+  participant Store as Postgres
+  participant GitHubApp as GitHub App
+
+  Admin->>Nexus: Create workspace
+  Nexus->>Store: Persist workspace
+  Admin->>Nexus: Create project
+  Nexus->>Store: Persist project
+  Admin->>GitHubApp: Install app on repository or org
+  Admin->>Nexus: Register installation metadata
+  Nexus->>Store: Persist github_installation
+  Admin->>Nexus: Create repo connection
+  Nexus->>Store: Persist default repo connection for project
+```
+
+### Project Feedback Flow
+
+```mermaid
+sequenceDiagram
+  participant Reporter as Reporter or Customer
+  participant Widget as Hosted Widget Page
   participant Gateway as Nexus Gateway
-  participant Redactor as Redaction Layer
+  participant Router as Project Router
   participant Store as Postgres + Artifact Store
   participant Queue as BullMQ
   participant Worker as Nexus Worker
-  participant Replay as HAR Replay Pipeline
+  participant Review as Review Queue
   participant GitHub as GitHub
 
-  Source->>Gateway: Send webhook or extension report
-  Gateway->>Redactor: Normalize and redact payload
-  Redactor-->>Gateway: Sanitized payload + redaction count
-  Gateway->>Store: Persist feedback report
+  Reporter->>Widget: Open project feedback page
+  Widget->>Gateway: POST hosted feedback payload
+  Reporter->>Gateway: Submit project feedback or webhook report
+  Gateway->>Router: Resolve project and repository scope
+  Router-->>Gateway: Project context + default repository
+  Gateway->>Store: Persist project-scoped feedback report
   alt Inline artifacts included
     Gateway->>Store: Persist artifact files + metadata
   else Artifact flags only
@@ -124,14 +167,11 @@ sequenceDiagram
   Gateway->>Queue: Enqueue replay job when HAR exists
   Queue->>Worker: Deliver triage job
   Worker->>Store: Read report + artifacts
-  Worker->>Worker: Build deterministic issue draft
-  Queue->>Replay: Deliver replay job
-  Replay->>Store: Read HAR artifact
-  Replay->>Replay: Normalize requests into replay plan
-  Replay->>Store: Persist replay summary and steps
-  opt GitHub sync enabled
-    Worker->>GitHub: Create or update issue draft
-    GitHub-->>Worker: Issue number + URL
+  Worker->>Worker: Build draft, similarity, and replay evidence
+  opt Review-approved GitHub action
+    Worker->>Review: Present project-scoped draft or PR candidate
+    Review->>GitHub: Create issue or PR in connected repository
+    GitHub-->>Review: Issue or PR URL + number
   end
   Worker->>Store: Persist draft linkage and status
 ```
@@ -151,8 +191,23 @@ sequenceDiagram
 - `POST /webhooks/newrelic`
 - `POST /webhooks/extension/report`
 
+## Public Routes
+
+- `GET /public/projects/:projectKey/widget`
+- `POST /public/projects/:projectKey/feedback`
+
 ## Internal Routes
 
+- `POST /internal/workspaces`
+- `GET /internal/workspaces/:workspaceId`
+- `GET /internal/workspaces/:workspaceId/projects`
+- `GET /internal/workspaces/:workspaceId/github-installations`
+- `POST /internal/projects`
+- `GET /internal/projects/:projectId`
+- `GET /internal/projects/key/:projectKey`
+- `POST /internal/github/installations`
+- `POST /internal/repo-connections`
+- `GET /internal/projects/:projectId/repo-connections`
 - `POST /internal/github/issues/draft`
 - `POST /internal/agent-tasks`
 - `GET /internal/agent-tasks/:taskId`
@@ -180,6 +235,9 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/impact`
 - `GET /internal/reports/:reportId/developer-summary`
 - `GET /internal/reports/:reportId/ownership`
+- `GET /internal/reports/review-queue`
+- `GET /internal/reports/:reportId/review`
+- `POST /internal/reports/:reportId/review`
 - `GET /internal/reports/:reportId/similar`
 - `GET /internal/reports/:reportId/replay`
 - `GET /internal/shadow-suites`
@@ -194,7 +252,12 @@ sequenceDiagram
 - `GET /learn`
 - `GET /learn/prd`
 - `GET /learn/developer-workbench`
+- `GET /learn/review-queue`
 - `GET /health`
+
+## Validation Notes
+
+- `npm run e2e:hosted-feedback-review` now verifies the public widget route, the paged review-queue API, rejection gating, approval flow, and post-approval agent-task creation.
 
 ## Environment
 
@@ -293,6 +356,19 @@ For GitHub Actions promotion smoke, add these repository secrets so [.github/wor
 When this is enabled, all draft sync during smoke tests goes to the test repository instead of the primary `GITHUB_OWNER` and `GITHUB_REPO` target.
 
 Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
+
+## Phase 9 Onboarding Slice
+
+The first customer-onboarding slice is now live behind internal routes and a public project-scoped feedback endpoint.
+
+- Workspace admins can create a workspace and project, register a GitHub App installation record, and connect a default repository to a project.
+- Public feedback can now be submitted to `POST /public/projects/:projectKey/feedback` and is persisted with `project_id` before triage begins.
+- Runtime GitHub resolution now uses project repo connections first and only falls back to global env configuration when a project-scoped connection does not exist.
+- Hosted feedback now lands in `/internal/reports/review-queue`, and `POST /internal/reports/:reportId/review` is the approval gate for GitHub issue creation.
+
+Live local validation on 2026-03-08 created a workspace, project, GitHub installation record, repo connection, and hosted-feedback report, and confirmed the stored report row carried the correct `project_id`.
+
+The review gate is now live end to end: `npm run e2e:hosted-feedback-review` validates queue listing, rejection, approval, and hosted-feedback agent-task gating, and the CI smoke workflow runs it alongside the existing policy-review path.
 
 Agent-task submission and execution flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
 
