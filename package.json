@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "check": "tsc --noEmit -p tsconfig.json",
-    "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts"
+    "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts",
+    "e2e:agent-routes": "tsx src/scripts/e2e/agent-execution-routes.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1004.0",

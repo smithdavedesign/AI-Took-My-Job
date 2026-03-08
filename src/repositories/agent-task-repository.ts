@@ -95,7 +95,7 @@ export function createAgentTaskRepository(database: DatabaseClient): AgentTaskRe
         `UPDATE agent_tasks
          SET status = $2,
              prepared_context = COALESCE($3, prepared_context),
-             failure_reason = COALESCE($4, failure_reason),
+             failure_reason = $4,
              updated_at = NOW()
          WHERE id = $1`,
         [

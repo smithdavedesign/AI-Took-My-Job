@@ -130,6 +130,11 @@ sequenceDiagram
 - `POST /internal/github/issues/draft`
 - `POST /internal/agent-tasks`
 - `GET /internal/agent-tasks/:taskId`
+- `POST /internal/agent-tasks/:taskId/execute`
+- `GET /internal/agent-tasks/:taskId/executions`
+- `GET /internal/agent-task-executions/:executionId`
+- `GET /internal/agent-task-executions/:executionId/artifacts`
+- `GET /internal/agent-task-executions/:executionId/replay-validation`
 - `GET /internal/reports/:reportId/draft`
 - `GET /internal/reports/:reportId/agent-tasks`
 - `GET /internal/reports/:reportId/artifacts`
@@ -172,6 +177,10 @@ Important variables:
 - `GITHUB_APP_ID`
 - `GITHUB_APP_INSTALLATION_ID`
 - `GITHUB_APP_PRIVATE_KEY`
+- `AGENT_EXECUTION_COMMAND`
+- `AGENT_EXECUTION_ARGS`
+- `AGENT_EXECUTION_TIMEOUT_SECONDS`
+- `AGENT_EXECUTION_AUTO_CREATE_PR`
 
 ## GitHub Auth Modes
 
@@ -189,7 +198,20 @@ When this is enabled, all draft sync during smoke tests goes to the test reposit
 
 Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
 
-Agent-task submission flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
+Agent-task submission and execution flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
+
+If `AGENT_EXECUTION_COMMAND` is configured, the worker will invoke it inside each prepared execution worktree and expect the command to read `.nexus/task.md` and `.nexus/context.json`, then write structured output to `.nexus/output.json`. When `AGENT_EXECUTION_AUTO_CREATE_PR=true`, Nexus will commit agent changes, push the execution branch, and open a draft PR when the target repository has a usable base branch.
+
+The `.nexus/output.json` contract can also request replay-backed validation by including a `replayValidation` block with a target `baseUrl` and an expected replay outcome such as `not-reproduced`.
+
+For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
+
+```bash
+AGENT_EXECUTION_COMMAND=tsx \
+AGENT_EXECUTION_ARGS="[\"$PWD/src/scripts/e2e/agent-execution-fixture.ts\"]" \
+E2E_AGENT_FIXTURE_BASE_URL=http://127.0.0.1:4000 \
+npm run worker
+```
 
 ## Internal Route Auth
 

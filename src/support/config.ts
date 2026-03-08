@@ -56,6 +56,18 @@ const internalServiceTokensSchema = z.preprocess((value) => {
   return value;
 }, z.array(internalServiceTokenSchema).default([]));
 
+const optionalStringArraySchema = z.preprocess((value) => {
+  if (value === '' || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    return JSON.parse(value);
+  }
+
+  return value;
+}, z.array(z.string().min(1)).optional());
+
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
@@ -88,7 +100,11 @@ const configSchema = z.object({
   GITHUB_TOKEN: optionalString,
   GITHUB_APP_ID: optionalPositiveInt,
   GITHUB_APP_INSTALLATION_ID: optionalPositiveInt,
-  GITHUB_APP_PRIVATE_KEY: optionalString
+  GITHUB_APP_PRIVATE_KEY: optionalString,
+  AGENT_EXECUTION_COMMAND: optionalString,
+  AGENT_EXECUTION_ARGS: optionalStringArraySchema,
+  AGENT_EXECUTION_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(3600).default(600),
+  AGENT_EXECUTION_AUTO_CREATE_PR: booleanFromEnv(false)
 }).superRefine((config, context) => {
   if (config.ARTIFACT_STORAGE_PROVIDER !== 's3') {
     return;

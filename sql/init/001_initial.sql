@@ -99,3 +99,44 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
 
 CREATE INDEX IF NOT EXISTS agent_tasks_report_idx
   ON agent_tasks (feedback_report_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_task_executions (
+  id UUID PRIMARY KEY,
+  agent_task_id UUID NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+  processing_job_id UUID,
+  status TEXT NOT NULL DEFAULT 'queued',
+  branch_name TEXT,
+  base_branch TEXT,
+  worktree_path TEXT,
+  result_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  findings JSONB NOT NULL DEFAULT '[]'::jsonb,
+  patch_summary TEXT,
+  pull_request_url TEXT,
+  validation_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+  failure_reason TEXT,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_task_executions_task_idx
+  ON agent_task_executions (agent_task_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_task_replay_validations (
+  id UUID PRIMARY KEY,
+  agent_task_execution_id UUID NOT NULL UNIQUE REFERENCES agent_task_executions(id) ON DELETE CASCADE,
+  replay_run_id UUID REFERENCES replay_runs(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'failed',
+  expectation TEXT NOT NULL,
+  target_origin TEXT,
+  baseline_status TEXT,
+  actual_status TEXT,
+  baseline_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  post_change_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_task_replay_validations_execution_idx
+  ON agent_task_replay_validations (agent_task_execution_id);

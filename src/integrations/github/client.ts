@@ -9,12 +9,35 @@ export interface GitHubIssueDraftInput {
   labels?: string[];
 }
 
+export interface GitHubPullRequestInput {
+  repository?: string;
+  title: string;
+  body: string;
+  head: string;
+  base: string;
+  draft?: boolean;
+}
+
 export interface GitHubIntegration {
   mode: AppConfig['GITHUB_AUTH_MODE'];
   enabled: boolean;
   repository: string;
   usingTestRepository: boolean;
   createIssueDraft(input: GitHubIssueDraftInput): Promise<{ number: number; url: string }>;
+  createPullRequest(input: GitHubPullRequestInput): Promise<{ number: number; url: string }>;
+}
+
+function parseRepository(repository: string): { owner: string; repo: string } {
+  const parts = repository.split('/').filter(Boolean);
+
+  if (parts.length !== 2) {
+    throw new Error(`invalid GitHub repository value: ${repository}`);
+  }
+
+  return {
+    owner: parts[0] as string,
+    repo: parts[1] as string
+  };
 }
 
 function resolveRepositorySettings(config: AppConfig): { owner?: string; repo?: string; repository: string } {
@@ -93,6 +116,9 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
       usingTestRepository: config.GITHUB_USE_TEST_REPO,
       async createIssueDraft() {
         throw new Error('GitHub draft sync is disabled');
+      },
+      async createPullRequest() {
+        throw new Error('GitHub draft sync is disabled');
       }
     };
   }
@@ -120,6 +146,23 @@ export function createGitHubIntegration(config: AppConfig): GitHubIntegration {
         title: input.title,
         body: input.body,
         ...(input.labels ? { labels: input.labels } : {})
+      });
+
+      return {
+        number: response.data.number,
+        url: response.data.html_url
+      };
+    },
+    async createPullRequest(input) {
+      const target = input.repository ? parseRepository(input.repository) : { owner, repo };
+      const response = await octokit.rest.pulls.create({
+        owner: target.owner,
+        repo: target.repo,
+        title: input.title,
+        body: input.body,
+        head: input.head,
+        base: input.base,
+        draft: input.draft ?? true
       });
 
       return {

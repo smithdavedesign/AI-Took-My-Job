@@ -1,4 +1,5 @@
 import { request } from 'playwright-core';
+import { URL } from 'node:url';
 
 import type { ReplayExecutionResult, ReplayExecutionStepResult, ReplayPlan } from '../../types/replay.js';
 
@@ -46,6 +47,7 @@ function computeVerificationStatus(stepResults: ReplayExecutionStepResult[]): Re
 export async function executeReplayPlan(input: {
   plan: ReplayPlan;
   steps: ReplayExecutionInputStep[];
+  targetOrigin?: string;
 }): Promise<ReplayExecutionResult> {
   const client = await request.newContext({
     ignoreHTTPSErrors: true
@@ -67,8 +69,18 @@ export async function executeReplayPlan(input: {
       }
 
       const startedAt = Date.now();
+      const requestUrl = input.targetOrigin
+        ? (() => {
+          const original = new URL(step.url);
+          const target = new URL(input.targetOrigin);
+          target.pathname = original.pathname;
+          target.search = original.search;
+          return target.toString();
+        })()
+        : step.url;
+
       try {
-        const response = await client.fetch(step.url, {
+        const response = await client.fetch(requestUrl, {
           method: step.method,
           headers: filterHeaders(step.headers),
           ...(step.bodyText ? { data: step.bodyText } : {}),
@@ -79,7 +91,7 @@ export async function executeReplayPlan(input: {
         stepResults.push({
           order: step.order,
           method: step.method,
-          url: step.url,
+          url: requestUrl,
           expectedStatus: step.expectedStatus,
           actualStatus,
           durationMs: Date.now() - startedAt,
@@ -89,7 +101,7 @@ export async function executeReplayPlan(input: {
         stepResults.push({
           order: step.order,
           method: step.method,
-          url: step.url,
+          url: requestUrl,
           expectedStatus: step.expectedStatus,
           durationMs: Date.now() - startedAt,
           result: 'network-error',

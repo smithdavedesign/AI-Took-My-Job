@@ -14,7 +14,7 @@ export interface StoredFeedbackReport {
 export interface StoredTriageJob {
   id: string;
   reportId: string;
-  jobType: 'triage' | 'replay' | 'agent-task';
+  jobType: 'triage' | 'replay' | 'agent-task' | 'agent-execution';
   status: 'queued' | 'processing' | 'completed' | 'failed';
   priority: number;
   payload: Record<string, unknown>;

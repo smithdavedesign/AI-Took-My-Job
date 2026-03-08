@@ -9,7 +9,38 @@ export interface StoredAgentTask {
   executionMode: 'investigate' | 'fix';
   acceptanceCriteria: string[];
   contextNotes?: string;
-  status: 'queued' | 'preparing' | 'ready' | 'failed';
+  status: 'queued' | 'preparing' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled';
   preparedContext: Record<string, unknown>;
   failureReason?: string;
+}
+
+export interface StoredAgentTaskExecution {
+  id: string;
+  agentTaskId: string;
+  processingJobId?: string;
+  status: 'queued' | 'running' | 'changes-generated' | 'validated' | 'pr-opened' | 'completed' | 'failed' | 'cancelled';
+  branchName?: string;
+  baseBranch?: string;
+  worktreePath?: string;
+  resultSummary: Record<string, unknown>;
+  findings: string[];
+  patchSummary?: string;
+  pullRequestUrl?: string;
+  validationEvidence: Record<string, unknown>;
+  failureReason?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface StoredAgentTaskReplayValidation {
+  id: string;
+  agentTaskExecutionId: string;
+  replayRunId?: string;
+  status: 'passed' | 'failed';
+  expectation: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
+  targetOrigin?: string;
+  baselineStatus?: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
+  actualStatus?: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
+  baselineSummary: Record<string, unknown>;
+  postChangeSummary: Record<string, unknown>;
 }

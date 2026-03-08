@@ -36,7 +36,7 @@ Status legend:
 
 - [-] Complete Phase 3 browser extension capture gaps: screen recording maturity, console log capture, and bounded upload discipline.
 - [-] Complete Phase 4 browser-context replay: cookie and storage restoration plus fail-before/pass-after validation policy.
-- [-] Extend the new agent-task preparation path into a real execution runtime with repository checkout, fix generation, and validation.
+- [-] Extend the new agent-task preparation path into a real execution runtime with repository checkout, execution records, pluggable agent handoff, fix generation, and validation.
 - [ ] Start Phase 5 semantic clustering, deterministic deduplication, and ownership mapping.
 - [ ] Add a review gate before GitHub writes are treated as production-ready workflow.
 
@@ -148,9 +148,9 @@ Objective: generate fix proposals only when a trustworthy reproduction exists.
 
 Deliverables:
 
-- [-] Agent-task intake and prepared context bundle for future agent execution.
+- [-] Agent-task intake, execution records, repository worktree preparation, and pluggable agent command handoff are live.
 - [ ] Draft PR generation integration.
-- [ ] Fix validation against a failing reproduction.
+- [-] Fix validation now includes replay-backed verification against stored HAR evidence plus a dedicated persisted replay-comparison model and execution read routes.
 - [ ] PR metadata and audit trail.
 - [ ] Human approval workflow.
 

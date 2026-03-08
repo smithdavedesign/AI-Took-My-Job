@@ -5,6 +5,7 @@ export interface ArtifactBundleRepository {
   create(bundle: StoredArtifactBundle): Promise<void>;
   findById(id: string): Promise<StoredArtifactBundle | null>;
   findByReportId(reportId: string): Promise<StoredArtifactBundle[]>;
+  findByExecutionId(executionId: string): Promise<StoredArtifactBundle[]>;
 }
 
 interface ArtifactBundleRow {
@@ -63,6 +64,23 @@ export function createArtifactBundleRepository(database: DatabaseClient): Artifa
          WHERE feedback_report_id = $1
          ORDER BY created_at ASC`,
         [reportId]
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        feedbackReportId: row.feedback_report_id,
+        artifactType: row.artifact_type,
+        storageKey: row.storage_key,
+        metadata: row.metadata
+      }));
+    },
+    async findByExecutionId(executionId) {
+      const result = await database.query<ArtifactBundleRow>(
+        `SELECT id, feedback_report_id, artifact_type, storage_key, metadata
+         FROM artifact_bundles
+         WHERE metadata ->> 'executionId' = $1
+         ORDER BY created_at ASC`,
+        [executionId]
       );
 
       return result.rows.map((row) => ({
