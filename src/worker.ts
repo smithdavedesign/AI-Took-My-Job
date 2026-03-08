@@ -6,6 +6,7 @@ import { Queue, Worker } from 'bullmq';
 
 import { createGitHubIntegration } from './integrations/github/client.js';
 import { createAgentTaskExecutionRepository } from './repositories/agent-task-execution-repository.js';
+import { createAgentTaskExecutionPullRequestRepository } from './repositories/agent-task-execution-pull-request-repository.js';
 import { createAgentTaskExecutionReviewRepository } from './repositories/agent-task-execution-review-repository.js';
 import { createAgentTaskReplayValidationRepository } from './repositories/agent-task-replay-validation-repository.js';
 import { createAgentTaskValidationPolicyRepository } from './repositories/agent-task-validation-policy-repository.js';
@@ -22,6 +23,7 @@ import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
+import { resolveReportHistory } from './services/reports/report-history.js';
 import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from './services/reports/similar-reports.js';
 import { runReplayValidation } from './services/agent-tasks/replay-validation.js';
@@ -120,6 +122,7 @@ async function main(): Promise<void> {
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
   const agentTaskExecutionRepository = createAgentTaskExecutionRepository(database);
+  const agentTaskExecutionPullRequestRepository = createAgentTaskExecutionPullRequestRepository(database);
   const agentTaskExecutionReviewRepository = createAgentTaskExecutionReviewRepository(database);
   const agentTaskReplayValidationRepository = createAgentTaskReplayValidationRepository(database);
   const agentTaskValidationPolicyRepository = createAgentTaskValidationPolicyRepository(database);
@@ -262,6 +265,18 @@ async function main(): Promise<void> {
               loadIssueLinkByReportId: (neighborReportId) => githubIssueLinkRepository.findByReportId(neighborReportId)
             })
             : { candidates: [] };
+          const history = await resolveReportHistory({
+            report,
+            ...(embedding ? {
+              embedding: embedding.embedding,
+              loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
+              loadReportById: (neighborReportId) => feedbackRepository.findById(neighborReportId)
+            } : {}),
+            loadIssueLinkByReportId: (linkedReportId) => githubIssueLinkRepository.findByReportId(linkedReportId),
+            loadTasksByReportId: (linkedReportId) => agentTaskRepository.findByReportId(linkedReportId),
+            loadExecutionsByTaskId: (agentTaskId) => agentTaskExecutionRepository.findByTaskId(agentTaskId),
+            loadPullRequestByExecutionId: (executionId) => agentTaskExecutionPullRequestRepository.findByExecutionId(executionId)
+          });
           const preparedContext = {
             report: {
               id: report.id,
@@ -289,6 +304,7 @@ async function main(): Promise<void> {
               executionStatus: replay.replayPlan?.execution?.status ?? null,
               matchedFailingStepOrders: replay.replayPlan?.execution?.matchedFailingStepOrders ?? []
             } : null,
+            history,
             similarReports,
             ownership,
             artifacts: artifacts.map((artifact) => ({

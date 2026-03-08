@@ -163,6 +163,7 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/agent-tasks`
 - `GET /internal/reports/:reportId/artifacts`
 - `GET /internal/reports/:reportId/embedding`
+- `GET /internal/reports/:reportId/history`
 - `GET /internal/reports/:reportId/ownership`
 - `GET /internal/reports/:reportId/similar`
 - `GET /internal/reports/:reportId/replay`
@@ -239,6 +240,8 @@ Ownership hooks are now exposed through `GET /internal/reports/:reportId/ownersh
 
 Similarity hooks are now exposed through `GET /internal/reports/:reportId/similar` and are also attached to prepared agent-task context. Current ranking blends embedding distance with deterministic heuristics such as title overlap, source match, severity match, and matching external identifiers.
 
+Historical linkage is now exposed through `GET /internal/reports/:reportId/history` and is also attached to prepared agent-task context. It aggregates prior GitHub issue drafts/issues and agent-execution PR records from the current report plus semantically related reports so operators and agents can see recent related remediation history.
+
 For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
 
 ```bash
@@ -264,7 +267,7 @@ AGENT_EXECUTION_ARGS="[\"$PWD/src/scripts/e2e/agent-execution-promotable-fixture
 npm run worker
 ```
 
-GitHub merge attempts require a token or app installation with pull-request merge permission. If the token can open PRs but cannot merge them, Nexus now persists that merge failure state in the PR audit record instead of losing it in logs.
+GitHub merge attempts require a token or app installation with pull-request merge permission. Nexus persists both successful merges and merge failures in the PR audit record so operators can distinguish policy or credential problems from a completed closeout.
 
 ## Internal Route Auth
 

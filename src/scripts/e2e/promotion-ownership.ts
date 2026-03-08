@@ -25,6 +25,28 @@ interface SimilarResponse {
   candidates: SimilarCandidate[];
 }
 
+interface ReportHistoryIssueLink {
+  reportId: string;
+  issueUrl?: string;
+}
+
+interface ReportHistoryPullRequestLink {
+  executionId: string;
+  status: string;
+  pullRequestUrl?: string;
+}
+
+interface ReportHistoryResponse {
+  summary: {
+    relatedIssueCount: number;
+    relatedPullRequestCount: number;
+    mergedPullRequestCount: number;
+    similarReportCount: number;
+  };
+  relatedIssues: ReportHistoryIssueLink[];
+  relatedPullRequests: ReportHistoryPullRequestLink[];
+}
+
 interface AgentTaskResponse {
   agentTaskId: string;
 }
@@ -160,16 +182,23 @@ async function main(): Promise<void> {
   const ownership = await pollJson<OwnershipResponse>(
     `${baseUrl}/internal/reports/${targetReport.reportId}/ownership`,
     { headers: authHeaders },
-    (value) => Array.isArray(value.candidates) && value.candidates.length > 0
+    (value) => Array.isArray(value.candidates) && value.candidates.some((candidate) => candidate.label === 'checkout-platform')
   );
   assert(ownership.candidates.some((candidate) => candidate.label === 'checkout-platform'), 'ownership candidates did not include checkout-platform');
 
   const similar = await pollJson<SimilarResponse>(
     `${baseUrl}/internal/reports/${targetReport.reportId}/similar`,
     { headers: authHeaders },
-    (value) => Array.isArray(value.candidates) && value.candidates.length > 0
+    (value) => Array.isArray(value.candidates) && value.candidates.some((candidate) => candidate.reportId === seedReport.reportId)
   );
   assert(similar.candidates.some((candidate) => candidate.reportId === seedReport.reportId), 'similar reports did not include the seeded related report');
+
+  const history = await pollJson<ReportHistoryResponse>(
+    `${baseUrl}/internal/reports/${targetReport.reportId}/history`,
+    { headers: authHeaders },
+    (value) => Array.isArray(value.relatedIssues) && value.relatedIssues.some((issue) => issue.reportId === seedReport.reportId && typeof issue.issueUrl === 'string')
+  );
+  assert(history.summary.relatedIssueCount > 0, 'report history did not include any related issues');
 
   const task = await requestJson<AgentTaskResponse>(`${baseUrl}/internal/agent-tasks`, {
     method: 'POST',
@@ -197,6 +226,8 @@ async function main(): Promise<void> {
   assert(preparedOwnership?.candidates?.some((candidate) => candidate.label === 'checkout-platform'), 'prepared agent context did not include ownership candidates');
   const preparedSimilar = storedTask.preparedContext?.similarReports as { candidates?: SimilarCandidate[] } | undefined;
   assert(preparedSimilar?.candidates?.some((candidate) => candidate.reportId === seedReport.reportId), 'prepared agent context did not include similar reports');
+  const preparedHistory = storedTask.preparedContext?.history as ReportHistoryResponse | undefined;
+  assert(preparedHistory?.relatedIssues?.some((issue) => issue.reportId === seedReport.reportId), 'prepared agent context did not include historical issue links');
 
   const createdExecution = await requestJson<ExecutionResponse>(
     `${baseUrl}/internal/agent-tasks/${task.agentTaskId}/execute`,
@@ -245,7 +276,7 @@ async function main(): Promise<void> {
 
   await requestExpectingStatus(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/merge`,
-    403,
+    200,
     {
       method: 'POST',
       headers: {
@@ -259,7 +290,13 @@ async function main(): Promise<void> {
   const mergedRecord = await pollJson<PullRequestResponse>(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/pull-request`,
     { headers: authHeaders },
-    (value) => value.status === 'merge-failed'
+    (value) => value.status === 'merged' && typeof value.mergeCommitSha === 'string'
+  );
+
+  const mergedHistory = await pollJson<ReportHistoryResponse>(
+    `${baseUrl}/internal/reports/${targetReport.reportId}/history`,
+    { headers: authHeaders },
+    (value) => Array.isArray(value.relatedPullRequests) && value.relatedPullRequests.some((pullRequest) => pullRequest.executionId === createdExecution.executionId && pullRequest.status === 'merged' && typeof pullRequest.pullRequestUrl === 'string')
   );
 
   console.log(JSON.stringify({
@@ -272,9 +309,10 @@ async function main(): Promise<void> {
     pullRequestNumber: promoted.pullRequestNumber,
     pullRequestUrl: promoted.pullRequestUrl,
     pullRequestStatus: pullRequest.status,
-    mergeStatus: 'merge-failed',
+    mergeStatus: 'merged',
     mergeCommitSha: mergedRecord.mergeCommitSha ?? null,
-    mergedRecordStatus: mergedRecord.status
+    mergedRecordStatus: mergedRecord.status,
+    mergedHistoryPullRequestCount: mergedHistory.summary.relatedPullRequestCount
   }, null, 2));
 }
 

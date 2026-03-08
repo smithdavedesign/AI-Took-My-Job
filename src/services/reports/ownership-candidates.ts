@@ -1,5 +1,7 @@
 import type { StoredFeedbackReport } from '../../types/reports.js';
 
+import { resolveSimilarReports } from './similar-reports.js';
+
 export interface OwnershipCandidate {
   label: string;
   kind: 'explicit-owner' | 'repository-owner' | 'reporter' | 'similar-report-owner';
@@ -119,10 +121,14 @@ export async function resolveOwnershipCandidates(input: {
   let neighbors: Array<{ reportId: string; distance: number }> = [];
 
   if (input.embedding && input.loadNearestNeighbors && input.loadReportById) {
-    const nearest = await input.loadNearestNeighbors(input.embedding, input.limit ?? 5);
-    neighbors = nearest
-      .filter((neighbor) => neighbor.feedbackReportId !== input.report.id)
-      .map((neighbor) => ({ reportId: neighbor.feedbackReportId, distance: neighbor.distance }));
+    const similar = await resolveSimilarReports({
+      report: input.report,
+      embedding: input.embedding,
+      loadNearestNeighbors: input.loadNearestNeighbors,
+      loadReportById: input.loadReportById,
+      ...(typeof input.limit === 'number' ? { limit: input.limit } : {})
+    });
+    neighbors = similar.candidates.map((candidate) => ({ reportId: candidate.reportId, distance: candidate.distance }));
 
     for (const neighbor of neighbors) {
       const report = await input.loadReportById(neighbor.reportId);

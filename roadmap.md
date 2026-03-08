@@ -135,7 +135,7 @@ Deliverables:
 
 - [-] pgvector-backed semantic deduplication.
 - [-] pgvector-backed embedding schema, nearest-neighbor repository scaffold, and ingestion-time embedding persistence.
-- [-] Historical linkage to recent issues and closed PRs.
+- [-] Historical linkage to recent issues and closed PRs via report history routes and prepared agent context.
 - [-] Repository-aware code ownership mapping.
 - [ ] Impact score refinement using recurrence and breadth.
 
@@ -204,7 +204,7 @@ Current execution emphasis:
 1. [-] Close the remaining Phase 3 gaps around richer extension capture and upload discipline.
 2. [-] Strengthen Phase 4 with browser-context replay and fail-before/pass-after verification.
 3. [-] Finish Phase 6 reviewability with merge-ready GitHub credentials and stronger merge/closeout policy.
-4. [-] Start Phase 5 clustering, deduplication, ownership mapping, and report linkage.
+4. [-] Start Phase 5 clustering, deduplication, ownership mapping, report linkage, and historical context.
 
 ## Open Questions
 

@@ -75,7 +75,9 @@ export async function resolveSimilarReports(input: {
   loadIssueLinkByReportId?: (reportId: string) => Promise<StoredGitHubIssueLink | null>;
   limit?: number;
 }): Promise<SimilarReportResolution> {
-  const nearest = await input.loadNearestNeighbors(input.embedding, (input.limit ?? 5) + 1);
+  const limit = input.limit ?? 5;
+  const candidateWindow = Math.max(limit + 1, limit * 4);
+  const nearest = await input.loadNearestNeighbors(input.embedding, candidateWindow);
   const currentTitleTokens = tokenize(input.report.title);
   const candidates: SimilarReportCandidate[] = [];
 
@@ -136,6 +138,6 @@ export async function resolveSimilarReports(input: {
   return {
     candidates: candidates
       .sort((left, right) => right.combinedScore - left.combinedScore)
-      .slice(0, input.limit ?? 5)
+      .slice(0, limit)
   };
 }
