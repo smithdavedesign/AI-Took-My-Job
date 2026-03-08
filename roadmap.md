@@ -35,7 +35,8 @@ Status legend:
 ### Next
 
 - [-] Continue Phase 7 MCP developer context.
-- [-] Publish dedicated MCP setup docs and learn-more hosting routes.
+- [x] Publish dedicated MCP setup docs and learn-more hosting routes.
+- [x] Add a report-index backfill path and CI smoke coverage for developer context.
 - [ ] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 
@@ -169,6 +170,7 @@ Deliverables:
 - [x] Async reproduction status lookup.
 - [x] Linked observability context.
 - [x] Hosted learn-more pages for the PRD and developer workbench preview.
+- [x] Backfill utility and CI smoke coverage for persisted developer-context indexing.
 
 Exit criteria:
 

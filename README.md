@@ -248,7 +248,11 @@ The issue-context tool can also inline compact previews for previewable artifact
 
 Triage now persists a lightweight `reportIndex` into report payloads so service and repository file-path searches can reuse stable metadata instead of relying only on ad hoc text scans.
 
+For older reports, run `npm run backfill:report-index` to persist the same index onto already-triaged data. Use `--dry-run`, `--limit=<n>`, or `--force` as needed.
+
 Detailed setup, examples, and a VS Code MCP configuration snippet are documented in [docs/mcp-developer-context.md](docs/mcp-developer-context.md).
+
+A dedicated smoke path now exists as `npm run e2e:developer-context`, and GitHub Actions runs it through [.github/workflows/developer-context-smoke.yml](.github/workflows/developer-context-smoke.yml).
 
 ## GitHub Auth Modes
 

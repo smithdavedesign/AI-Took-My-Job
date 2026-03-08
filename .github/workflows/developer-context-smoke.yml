@@ -1,0 +1,103 @@
+name: Developer Context Smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: nexus
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nexus -d nexus"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 4000
+      APP_BASE_URL: http://127.0.0.1:4000
+      LOG_LEVEL: warn
+      ARTIFACT_STORAGE_PROVIDER: local
+      ARTIFACT_STORAGE_PATH: ./var/artifacts
+      ARTIFACT_DOWNLOAD_URL_TTL_SECONDS: 600
+      INTERNAL_SERVICE_TOKENS: '[{"id":"ci","token":"nexus-local-dev-token","scopes":["internal:read","artifacts:download-url","github:draft"]}]'
+      SLACK_SIGNING_SECRET: ci-slack-secret
+      WEBHOOK_SHARED_SECRET: ci-webhook-secret
+      DATABASE_URL: postgres://nexus:nexus@127.0.0.1:5432/nexus
+      REDIS_URL: redis://127.0.0.1:6379
+      GITHUB_DRAFT_SYNC_ENABLED: 'false'
+      GITHUB_AUTH_MODE: pat
+      GITHUB_USE_TEST_REPO: 'false'
+      GITHUB_TOKEN: ghp_ci_placeholder_token
+      AGENT_EXECUTION_ARGS: '[]'
+      E2E_BASE_URL: http://127.0.0.1:4000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Initialize database
+        run: psql "$DATABASE_URL" -f sql/init/001_initial.sql
+
+      - name: Start API
+        run: node dist/index.js > /tmp/nexus-api.log 2>&1 &
+
+      - name: Start worker
+        run: node dist/worker.js > /tmp/nexus-worker.log 2>&1 &
+
+      - name: Wait for health
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time" >&2
+          exit 1
+
+      - name: Run developer context smoke
+        run: npm run e2e:developer-context
+
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          echo '--- API LOG ---'
+          cat /tmp/nexus-api.log || true
+          echo '--- WORKER LOG ---'
+          cat /tmp/nexus-worker.log || true

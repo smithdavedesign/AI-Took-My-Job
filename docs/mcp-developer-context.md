@@ -66,6 +66,19 @@ During triage, Nexus now persists a `reportIndex` into each enriched report payl
 
 The active-issues route and MCP search reuse that persisted index when available, and fall back to live extraction for older reports.
 
+To backfill older rows after deploying the indexing change:
+
+```bash
+npm run backfill:report-index
+```
+
+Helpful flags:
+
+- `--dry-run`
+- `--limit=250`
+- `--batch-size=50`
+- `--force`
+
 ## VS Code MCP Configuration
 
 Example `.vscode/mcp.json` entry:
@@ -96,3 +109,13 @@ The gateway also hosts two public learn-more pages:
 - `/learn/developer-workbench`
 
 These are useful for onboarding teammates who need the product framing or a visual preview of the planned developer experience.
+
+## Smoke Coverage
+
+`npm run e2e:developer-context` verifies:
+
+- the public learn routes return HTML
+- a seeded report appears in `active-issues`
+- the seeded report exposes persisted `reportIndex` data through both `active-issues` and report context
+
+The same path runs in CI through `.github/workflows/developer-context-smoke.yml`.
