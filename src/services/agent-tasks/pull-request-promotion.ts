@@ -110,6 +110,7 @@ export function buildPullRequestBody(input: {
   const evidenceReferences = {
     execution: buildReference(input.config.APP_BASE_URL, `/internal/agent-task-executions/${executionId}`),
     executionArtifacts: buildReference(input.config.APP_BASE_URL, `/internal/agent-task-executions/${executionId}/artifacts`),
+    executionCloseout: buildReference(input.config.APP_BASE_URL, `/internal/agent-task-executions/${executionId}/closeout`),
     executionReplayValidation: buildReference(input.config.APP_BASE_URL, `/internal/agent-task-executions/${executionId}/replay-validation`),
     reportHistory: buildReference(input.config.APP_BASE_URL, `/internal/reports/${reportId}/history`),
     reportImpact: buildReference(input.config.APP_BASE_URL, `/internal/reports/${reportId}/impact`)
@@ -129,6 +130,7 @@ export function buildPullRequestBody(input: {
     '## Evidence References',
     `- Execution: ${evidenceReferences.execution}`,
     `- Execution Artifacts: ${evidenceReferences.executionArtifacts}`,
+    `- Execution Closeout: ${evidenceReferences.executionCloseout}`,
     `- Replay Validation: ${evidenceReferences.executionReplayValidation}`,
     `- Report History: ${evidenceReferences.reportHistory}`,
     `- Refined Impact: ${evidenceReferences.reportImpact}`,

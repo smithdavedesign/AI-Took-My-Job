@@ -38,6 +38,20 @@ interface StoredExecution {
   validationEvidence?: Record<string, unknown>;
 }
 
+interface ExecutionCloseout {
+  closeoutStatus: string;
+  promotable: boolean;
+  blockers: string[];
+  gates: {
+    review?: {
+      status: string;
+    };
+    validation?: {
+      status: string;
+    };
+  };
+}
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
@@ -268,6 +282,10 @@ async function main(): Promise<void> {
     { headers: authHeaders },
     (value) => ['passed', 'failed'].includes(value.status)
   );
+  const closeoutBefore = await requestJson<ExecutionCloseout>(
+    `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
+    { headers: authHeaders }
+  );
   const reviewBefore = await requestJson<{ status: string }>(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/review`,
     { headers: authHeaders }
@@ -286,6 +304,19 @@ async function main(): Promise<void> {
       })
     }
   );
+  const closeoutAfter = await pollJson<ExecutionCloseout>(
+    `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
+    { headers: authHeaders },
+    (value) => value.gates.review?.status === 'approved'
+  );
+
+  assert(closeoutBefore.promotable === false, 'Execution should not be promotable before approval');
+  assert(closeoutBefore.blockers.some((blocker) => blocker.includes('approval')), 'Closeout blockers did not mention approval before review');
+  assert(closeoutAfter.promotable === false, 'Execution with failed validation should remain non-promotable after approval');
+  assert(closeoutAfter.gates.review?.status === 'approved', `Expected approved review gate, received ${closeoutAfter.gates.review?.status}`);
+  assert(closeoutAfter.gates.validation?.status === 'failed', `Expected failed validation gate, received ${closeoutAfter.gates.validation?.status}`);
+  assert(closeoutAfter.closeoutStatus === 'blocked', `Unexpected closeout status after approval: ${closeoutAfter.closeoutStatus}`);
+  assert(closeoutAfter.blockers.some((blocker) => blocker.includes('validations failed')), 'Closeout blockers did not mention failed validation after approval');
 
   console.log(JSON.stringify({
     ok: true,
@@ -296,6 +327,8 @@ async function main(): Promise<void> {
     executionStatus: execution.status,
     policyStatus: policy.status,
     policyName: policy.policyName,
+    closeoutBefore: closeoutBefore.closeoutStatus,
+    closeoutAfter: closeoutAfter.closeoutStatus,
     reviewBefore: reviewBefore.status,
     reviewAfter: reviewAfter.status
   }, null, 2));

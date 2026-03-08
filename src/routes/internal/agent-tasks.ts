@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { buildExecutionCloseout } from '../../services/agent-tasks/execution-closeout.js';
 import { isGitHubRepository, promoteExecutionPullRequest } from '../../services/agent-tasks/pull-request-promotion.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 
@@ -266,6 +267,38 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     return policy;
   });
 
+  app.get('/internal/agent-task-executions/:executionId/closeout', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { executionId } = executionIdParamsSchema.parse(request.params);
+    const execution = await app.agentTaskExecutions.findById(executionId);
+
+    if (!execution) {
+      throw app.httpErrors.notFound('agent task execution not found');
+    }
+
+    const task = await app.agentTasks.findById(execution.agentTaskId);
+    if (!task) {
+      throw app.httpErrors.notFound('agent task not found');
+    }
+
+    const [review, pullRequest, validationPolicy] = await Promise.all([
+      app.agentTaskExecutionReviews.findByExecutionId(executionId),
+      app.agentTaskExecutionPullRequests.findByExecutionId(executionId),
+      app.agentTaskValidationPolicies.findByExecutionId(executionId)
+    ]);
+
+    return buildExecutionCloseout({
+      ...(app.config.APP_BASE_URL ? { baseUrl: app.config.APP_BASE_URL } : {}),
+      task,
+      execution,
+      review,
+      pullRequest,
+      validationPolicy,
+      githubPromotionEnabled: app.github.enabled && isGitHubRepository(task.targetRepository)
+    });
+  });
+
   app.get('/internal/agent-task-executions/:executionId/review', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
 
@@ -406,6 +439,13 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       : 'not-run';
     if (validationStatus === 'failed') {
       throw app.httpErrors.conflict('agent task execution cannot be promoted while validation is failed');
+    }
+
+    const contractStatus = typeof execution.resultSummary.contractStatus === 'string'
+      ? execution.resultSummary.contractStatus
+      : 'not-run';
+    if (contractStatus === 'failed') {
+      throw app.httpErrors.conflict('agent task execution cannot be promoted while the agent output contract is mismatched');
     }
 
     const existingPullRequest = await app.agentTaskExecutionPullRequests.findByExecutionId(executionId);

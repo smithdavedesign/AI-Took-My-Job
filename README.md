@@ -26,6 +26,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Internal service-token auth for internal routes and artifact download URL minting.
 - Optional GitHub sync using either a PAT-backed service account or a GitHub App.
 - Agent-task intake, isolated execution worktrees, persisted execution artifacts, and replay-backed validation routes.
+- Agent executions now expose an explicit closeout view with contract, validation, review, promotion, and merge gates.
 - Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
@@ -43,11 +44,11 @@ Still planned: richer browser automation, clustering and deduplication, agentic 
 
 - Phase 0: complete
 - Phase 1: complete
-- Phase 2: partial
-- Phase 3: partial
-- Phase 4: partial
-- Phase 5: partial
-- Phase 6: partial
+- Phase 2: complete
+- Phase 3: complete
+- Phase 4: complete
+- Phase 5: complete
+- Phase 6: complete
 - Phases 7 to 8: not started
 
 ## How It Works
@@ -155,6 +156,7 @@ sequenceDiagram
 - `GET /internal/agent-tasks/:taskId/executions`
 - `GET /internal/agent-task-executions/:executionId`
 - `GET /internal/agent-task-executions/:executionId/artifacts`
+- `GET /internal/agent-task-executions/:executionId/closeout`
 - `GET /internal/agent-task-executions/:executionId/replay-validation`
 - `GET /internal/agent-task-executions/:executionId/validation-policy`
 - `GET /internal/agent-task-executions/:executionId/review`

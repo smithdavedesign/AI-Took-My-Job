@@ -68,6 +68,23 @@ interface StoredReplayValidation {
   targetOrigin?: string;
 }
 
+interface ExecutionCloseout {
+  closeoutStatus: string;
+  promotable: boolean;
+  blockers: string[];
+  contract: {
+    status: string;
+  };
+  gates: {
+    validation?: {
+      status: string;
+    };
+    replayValidation?: {
+      status: string;
+    };
+  };
+}
+
 interface HealthResponse {
   status: string;
 }
@@ -317,6 +334,10 @@ async function main(): Promise<void> {
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/replay-validation`,
     { headers: authHeaders }
   );
+  const closeout = await requestJson<ExecutionCloseout>(
+    `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
+    { headers: authHeaders }
+  );
 
   assert(replayValidation.agentTaskExecutionId === createdExecution.executionId, 'Replay validation record returned the wrong execution id');
   assert(replayValidation.status === 'failed', `Expected replay validation status failed, received ${replayValidation.status}`);
@@ -324,6 +345,12 @@ async function main(): Promise<void> {
   assert(replayValidation.baselineStatus === 'reproduced', `Expected replay baselineStatus reproduced, received ${replayValidation.baselineStatus}`);
   assert(replayValidation.actualStatus === 'reproduced', `Expected replay actualStatus reproduced, received ${replayValidation.actualStatus}`);
   assert(replayValidation.targetOrigin === baseUrl, `Expected replay targetOrigin ${baseUrl}, received ${replayValidation.targetOrigin}`);
+  assert(closeout.promotable === false, 'Execution with failed replay validation should not be promotable');
+  assert(closeout.closeoutStatus === 'blocked', `Expected blocked closeout status, received ${closeout.closeoutStatus}`);
+  assert(closeout.contract.status === 'passed', `Expected passing contract status, received ${closeout.contract.status}`);
+  assert(closeout.gates.validation?.status === 'failed', `Expected failed validation gate, received ${closeout.gates.validation?.status}`);
+  assert(closeout.gates.replayValidation?.status === 'failed', `Expected failed replay gate, received ${closeout.gates.replayValidation?.status}`);
+  assert(closeout.blockers.some((blocker) => blocker.includes('validations failed')), 'Closeout blockers did not mention failed validation');
 
   console.log(JSON.stringify({
     ok: true,
@@ -333,6 +360,7 @@ async function main(): Promise<void> {
     executionStatus: execution.status,
     validationStatus: execution.resultSummary.validationStatus,
     artifactTypes,
+    closeoutStatus: closeout.closeoutStatus,
     replayValidation: {
       status: replayValidation.status,
       expectation: replayValidation.expectation,

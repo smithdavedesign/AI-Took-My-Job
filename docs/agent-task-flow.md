@@ -94,6 +94,12 @@ Response body:
 
 `GET /internal/agent-task-executions/:executionId/artifacts`
 
+### Inspect the computed closeout state for an execution attempt
+
+`GET /internal/agent-task-executions/:executionId/closeout`
+
+This route summarizes whether the execution is currently promotable or mergeable and which gates are still blocking closeout.
+
 ### Inspect the replay comparison for an execution attempt
 
 `GET /internal/agent-task-executions/:executionId/replay-validation`
@@ -161,8 +167,11 @@ The `.nexus/output.json` contract can now include:
 
 ```json
 {
+  "contractVersion": "nexus-agent-output-v1",
   "summary": "Prepared a candidate fix.",
   "findings": ["Updated the checkout handler."],
+  "outcome": "changes-made",
+  "changedFiles": ["src/checkout/handler.ts"],
   "validationCommand": "npm test -- checkout",
   "replayValidation": {
     "enabled": true,
@@ -239,8 +248,10 @@ Current execution scaffolding notes:
 - the downstream agent contract is file-based and command-driven: `.nexus/task.md`, `.nexus/context.json`, `.nexus/output.json`
 - the repository now includes a reusable downstream writing command at `src/scripts/agents/creative-readme-agent.ts` for README-focused tasks
 - persisted execution artifacts include agent context, agent output, git diff, validation logs, and replay-validation summaries when present
+- executions now expose a computed closeout summary so callers can see contract mismatches, validation blockers, review state, and promotion/merge readiness without reverse-engineering raw JSON fields
 - executions with changes now carry a pending review record that can be approved or rejected over internal routes
 - promoted executions now also persist a first-class PR record with repository, branches, PR number, PR URL, promotion actor, and merge outcome metadata
+- promoted PR bodies now link directly to the execution closeout route in addition to validation, artifact, history, and impact evidence
 - merge attempts are approval-gated and persist either merged or merge-failed status in that PR record
 - ownership hints are now attached to prepared agent-task context using explicit owner metadata, repository owner, and nearest-neighbor reports
 - deterministic classification and duplicate candidates are now attached to prepared agent-task context during task preparation

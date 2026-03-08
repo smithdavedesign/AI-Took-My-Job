@@ -34,7 +34,6 @@ Status legend:
 
 ### Next
 
-- [-] Finish Phase 6 reviewability: stabilize downstream agent commands, tighten validation policy, and add human review controls around generated changes.
 - [ ] Start Phase 7 MCP developer context.
 - [ ] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
@@ -142,21 +141,21 @@ Exit criteria:
 
 - [x] Similar reports cluster together and suggest likely owning code areas.
 
-### [ ] Phase 6: Agentic PR Pipeline
+### [x] Phase 6: Agentic PR Pipeline
 
 Objective: generate fix proposals only when a trustworthy reproduction exists.
 
 Deliverables:
 
-- [-] Agent-task intake, execution records, repository worktree preparation, pluggable agent command handoff, and execution inspection routes are live.
-- [-] Draft PR generation integration is live for configured repositories, and PR opening is now blocked pending approval and explicit promotion.
-- [-] Fix validation now includes replay-backed verification against stored HAR evidence, a dedicated persisted replay-comparison model, execution read routes, and a persisted validation policy record.
+- [x] Agent-task intake, execution records, repository worktree preparation, pluggable agent command handoff, stronger agent output contracts, and execution inspection routes are live.
+- [x] Draft PR generation integration is live for configured repositories, and PR opening is blocked pending approval and explicit promotion.
+- [x] Fix validation now includes replay-backed verification against stored HAR evidence, a dedicated persisted replay-comparison model, execution read routes, a persisted validation policy record, and explicit execution closeout gating.
 - [x] PR metadata and audit trail.
 - [x] Human approval workflow.
 
 Exit criteria:
 
-- [-] Nexus can produce a draft PR with linked evidence and validation status.
+- [x] Nexus can produce a draft PR with linked evidence and validation status.
 
 ### [ ] Phase 7: MCP Developer Context
 
@@ -200,9 +199,8 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [-] Finish Phase 6 reviewability with stronger agent command contracts and validation closeout.
-2. [ ] Start Phase 7 MCP developer context.
-3. [ ] Start Phase 8 retained replay and distribution work.
+1. [ ] Start Phase 7 MCP developer context.
+2. [ ] Start Phase 8 retained replay and distribution work.
 
 ## Open Questions
 

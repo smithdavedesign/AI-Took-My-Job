@@ -67,6 +67,7 @@ async function main(): Promise<void> {
 
   await writeFile(readmePath, updated, 'utf8');
   await writeFile(outputPath, JSON.stringify({
+    contractVersion: 'nexus-agent-output-v1',
     summary: 'Reframed the README with a stronger product narrative while keeping the technical sections intact.',
     findings: [
       'Rewrote the opening README narrative.',
@@ -74,6 +75,8 @@ async function main(): Promise<void> {
       'Included the live agent-task execution capabilities in the scope summary.',
       'Renamed Architecture to How It Works for a stronger product framing.'
     ],
+    outcome: 'changes-made',
+    changedFiles: ['README.md'],
     validationCommand: 'npm run check'
   }, null, 2), 'utf8');
 }

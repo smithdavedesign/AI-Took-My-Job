@@ -74,6 +74,24 @@ interface StoredExecution {
   status: string;
 }
 
+interface ExecutionCloseout {
+  closeoutStatus: string;
+  promotable: boolean;
+  mergeable: boolean;
+  blockers: string[];
+  gates: {
+    review?: {
+      status: string;
+    };
+    promotion?: {
+      status: string;
+    };
+    merge?: {
+      status: string;
+    };
+  };
+}
+
 interface PullRequestResponse {
   status: string;
   pullRequestNumber?: number;
@@ -290,6 +308,13 @@ async function main(): Promise<void> {
   );
   assert(['changes-generated', 'validated'].includes(execution.status), `unexpected execution status ${execution.status}`);
 
+  const closeoutBeforeReview = await requestJson<ExecutionCloseout>(
+    `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
+    { headers: authHeaders }
+  );
+  assert(closeoutBeforeReview.promotable === false, 'Execution should not be promotable before review approval');
+  assert(closeoutBeforeReview.blockers.some((blocker) => blocker.includes('approval')), 'Closeout blockers did not mention missing approval before review');
+
   await requestJson(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/review`,
     {
@@ -304,6 +329,13 @@ async function main(): Promise<void> {
       })
     }
   );
+
+  const closeoutReady = await pollJson<ExecutionCloseout>(
+    `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
+    { headers: authHeaders },
+    (value) => value.promotable === true
+  );
+  assert(closeoutReady.closeoutStatus === 'ready-for-promotion', `Unexpected closeout status after approval: ${closeoutReady.closeoutStatus}`);
 
   const promoted = await requestJson<{ pullRequestNumber: number; pullRequestUrl: string }>(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/promote`,
@@ -328,6 +360,7 @@ async function main(): Promise<void> {
     assert(githubPullRequest.body.includes('## Evidence References'), 'GitHub pull request body did not include evidence references');
     assert(githubPullRequest.body.includes(createdExecution.executionId), 'GitHub pull request body did not include the execution id');
     assert(githubPullRequest.body.includes(`/internal/reports/${targetReport.reportId}/history`), 'GitHub pull request body did not include the report history reference');
+    assert(githubPullRequest.body.includes(`/internal/agent-task-executions/${createdExecution.executionId}/closeout`), 'GitHub pull request body did not include the execution closeout reference');
     assert(githubPullRequest.body.includes('Validation Status'), 'GitHub pull request body did not include validation status');
   }
 
@@ -356,6 +389,14 @@ async function main(): Promise<void> {
     (value) => Array.isArray(value.relatedPullRequests) && value.relatedPullRequests.some((pullRequest) => pullRequest.executionId === createdExecution.executionId && pullRequest.status === 'merged' && typeof pullRequest.pullRequestUrl === 'string')
   );
 
+  const closeoutAfterMerge = await pollJson<ExecutionCloseout>(
+    `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
+    { headers: authHeaders },
+    (value) => value.closeoutStatus === 'completed'
+  );
+  assert(closeoutAfterMerge.mergeable === false, 'Merged execution should no longer be mergeable');
+  assert(closeoutAfterMerge.gates.merge?.status === 'merged', `Expected merged gate status, received ${closeoutAfterMerge.gates.merge?.status}`);
+
   console.log(JSON.stringify({
     ok: true,
     seedReportId: seedReport.reportId,
@@ -365,6 +406,9 @@ async function main(): Promise<void> {
     topOwner: ownership.candidates[0]?.label ?? null,
     similarReportId: similar.candidates[0]?.reportId ?? null,
     executionId: createdExecution.executionId,
+    closeoutBeforeReview: closeoutBeforeReview.closeoutStatus,
+    closeoutReady: closeoutReady.closeoutStatus,
+    closeoutAfterMerge: closeoutAfterMerge.closeoutStatus,
     pullRequestNumber: promoted.pullRequestNumber,
     pullRequestUrl: promoted.pullRequestUrl,
     pullRequestStatus: pullRequest.status,

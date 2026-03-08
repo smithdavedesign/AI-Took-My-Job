@@ -20,8 +20,11 @@ async function main(): Promise<void> {
 
   await writeFile(proofPath, `execution ${executionId}\n`, 'utf8');
   await writeFile(outputPath, JSON.stringify({
+    contractVersion: 'nexus-agent-output-v1',
     summary: 'Prepared replay validation verification change.',
     findings: ['Wrote nexus-proof.txt for execution route verification.'],
+    outcome: 'changes-made',
+    changedFiles: ['nexus-proof.txt'],
     replayValidation: {
       enabled: true,
       baseUrl: replayBaseUrl,

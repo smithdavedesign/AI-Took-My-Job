@@ -100,6 +100,10 @@ async function runGit(worktreePath: string, args: string[], env?: NodeJS.Process
   });
 }
 
+function repositoryChangePathspec(): string[] {
+  return ['--', '.', ':(exclude).nexus', ':(exclude).nexus/**'];
+}
+
 async function readStreamToString(stream: NodeJS.ReadableStream): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream as AsyncIterable<Buffer | string>) {
@@ -608,22 +612,66 @@ async function main(): Promise<void> {
               ? 'passed'
               : 'failed';
 
-          const initialStatus = await runGit(workspace.worktreePath, ['status', '--short'], undefined);
+          const initialStatus = await runGit(workspace.worktreePath, ['status', '--short', ...repositoryChangePathspec()], undefined);
           const hasChanges = initialStatus.stdout.trim().length > 0;
+          let actualChangedFiles: string[] = [];
+          if (hasChanges) {
+            await runCommand('git', ['-C', workspace.worktreePath, 'add', '-A', ...repositoryChangePathspec()], {
+              cwd: workspace.worktreePath
+            });
+
+            const changedFilesResult = await runCommand('git', ['-C', workspace.worktreePath, 'diff', '--cached', '--name-only', '--no-ext-diff', ...repositoryChangePathspec()], {
+              cwd: workspace.worktreePath
+            });
+            actualChangedFiles = changedFilesResult.stdout
+              .split('\n')
+              .map((entry) => entry.trim())
+              .filter(Boolean);
+          }
+
+          const contractWarnings: string[] = [];
+          if (hasChanges && agentRun.output.outcome === 'no-changes') {
+            contractWarnings.push('Agent reported no-changes but the worktree contains staged modifications.');
+          }
+
+          if (!hasChanges && agentRun.output.outcome === 'changes-made') {
+            contractWarnings.push('Agent reported changes-made but the worktree contains no repository changes.');
+          }
+
+          if (hasChanges && agentRun.output.changedFiles.length === 0) {
+            contractWarnings.push('Agent did not report changedFiles for a modified worktree.');
+          }
+
+          const unreportedChangedFiles = actualChangedFiles.filter((filePath) => !agentRun.output.changedFiles.includes(filePath));
+          if (unreportedChangedFiles.length > 0) {
+            contractWarnings.push(`Agent omitted changed files from the contract: ${unreportedChangedFiles.join(', ')}`);
+          }
+
+          const nonExistentReportedFiles = agentRun.output.changedFiles.filter((filePath) => !actualChangedFiles.includes(filePath));
+          if (hasChanges && nonExistentReportedFiles.length > 0) {
+            contractWarnings.push(`Agent reported changed files that were not present in the staged diff: ${nonExistentReportedFiles.join(', ')}`);
+          }
+
+          const contractStatus: 'passed' | 'failed' = contractWarnings.length === 0 ? 'passed' : 'failed';
+          validationEvidence.agentOutputContract = {
+            contractVersion: agentRun.output.contractVersion,
+            reportedOutcome: agentRun.output.outcome,
+            reportedChangedFiles: agentRun.output.changedFiles,
+            actualChangedFiles,
+            status: contractStatus,
+            warnings: contractWarnings
+          };
+
           let patchSummary = agentRun.output.summary;
           let commitSha: string | undefined;
           let pullRequestUrl: string | undefined;
           let finalStatus: StoredAgentTaskExecution['status'] = 'completed';
 
           if (hasChanges) {
-            await runCommand('git', ['-C', workspace.worktreePath, 'add', '-A'], {
+            const diffResult = await runCommand('git', ['-C', workspace.worktreePath, 'diff', '--cached', '--binary', '--no-ext-diff', ...repositoryChangePathspec()], {
               cwd: workspace.worktreePath
             });
-
-            const diffResult = await runCommand('git', ['-C', workspace.worktreePath, 'diff', '--cached', '--binary', '--no-ext-diff'], {
-              cwd: workspace.worktreePath
-            });
-            const diffStatResult = await runCommand('git', ['-C', workspace.worktreePath, 'diff', '--cached', '--stat', '--no-ext-diff'], {
+            const diffStatResult = await runCommand('git', ['-C', workspace.worktreePath, 'diff', '--cached', '--stat', '--no-ext-diff', ...repositoryChangePathspec()], {
               cwd: workspace.worktreePath
             });
             patchSummary = diffStatResult.stdout || agentRun.output.summary;
@@ -659,7 +707,7 @@ async function main(): Promise<void> {
             commitSha = headResult.stdout;
             validationEvidence.commitSha = commitSha;
 
-            finalStatus = aggregateValidationStatus === 'passed' ? 'validated' : 'changes-generated';
+            finalStatus = aggregateValidationStatus === 'passed' && contractStatus === 'passed' ? 'validated' : 'changes-generated';
 
             await agentTaskExecutionReviewRepository.upsert({
               id: randomUUID(),
@@ -672,7 +720,7 @@ async function main(): Promise<void> {
               status: 'pending'
             };
 
-            if (aggregateValidationStatus !== 'failed' && workspace.baseBranch && github.enabled && isGitHubRepository(task.targetRepository)) {
+            if (aggregateValidationStatus !== 'failed' && contractStatus !== 'failed' && workspace.baseBranch && github.enabled && isGitHubRepository(task.targetRepository)) {
               validationEvidence.pullRequest = {
                 status: 'blocked-awaiting-approval'
               };
@@ -686,6 +734,7 @@ async function main(): Promise<void> {
             ...(replayContext ? ['Replay context is attached to the execution bundle.'] : []),
             ...(artifactContext.length > 0 ? [`${artifactContext.length} artifacts are linked into the execution bundle.`] : []),
             ...agentRun.output.findings,
+            ...contractWarnings.map((warning) => `Agent output contract warning: ${warning}`),
             ...(hasChanges ? ['Agent execution produced code changes in the worktree.'] : ['Agent execution did not modify repository files.'])
           ];
 
@@ -706,7 +755,8 @@ async function main(): Promise<void> {
             ...(workspace.baseBranch ? { baseBranch: workspace.baseBranch } : { repositoryState: 'empty' }),
             ...(commitSha ? { commitSha } : {}),
             ...(pullRequestUrl ? { pullRequestUrl } : {}),
-            validationStatus: aggregateValidationStatus
+            validationStatus: aggregateValidationStatus,
+            contractStatus
           };
 
           const completedExecution: StoredAgentTaskExecution = {

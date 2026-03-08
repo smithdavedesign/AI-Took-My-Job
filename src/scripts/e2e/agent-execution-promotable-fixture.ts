@@ -17,8 +17,11 @@ async function main(): Promise<void> {
 
   await writeFile(proofPath, `promotable execution ${executionId}\n`, 'utf8');
   await writeFile(outputPath, JSON.stringify({
+    contractVersion: 'nexus-agent-output-v1',
     summary: 'Prepared a promotable change for PR audit and merge validation.',
-    findings: ['Wrote nexus-promotable-proof.txt for the promotion and merge flow.']
+    findings: ['Wrote nexus-promotable-proof.txt for the promotion and merge flow.'],
+    outcome: 'changes-made',
+    changedFiles: ['nexus-promotable-proof.txt']
   }, null, 2), 'utf8');
 }
 
