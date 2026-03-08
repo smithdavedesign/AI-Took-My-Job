@@ -414,6 +414,14 @@ docker compose up -d postgres redis
 
 Docker must be running locally for this step to work.
 
+To run the full packaged stack, including MinIO bucket bootstrap and the dedicated worker container:
+
+```bash
+docker compose up -d --build
+```
+
+The Compose packaging now overrides `DATABASE_URL`, `REDIS_URL`, and `S3_ENDPOINT` with in-network service addresses so the containers do not inherit host-local values like `127.0.0.1` from `.env`.
+
 ### 3. Start the gateway
 
 ```bash

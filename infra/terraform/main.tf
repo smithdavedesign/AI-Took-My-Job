@@ -41,6 +41,11 @@ resource "docker_image" "mc" {
 
 resource "docker_image" "app" {
   name = var.app_image
+
+  build {
+    context    = abspath("${path.module}/../..")
+    dockerfile = abspath("${path.module}/../../Dockerfile")
+  }
 }
 
 resource "docker_container" "postgres" {
@@ -64,9 +69,9 @@ resource "docker_container" "postgres" {
   }
 
   mounts {
-    target = "/docker-entrypoint-initdb.d"
-    source = abspath("${path.module}/../../sql/init")
-    type   = "bind"
+    target    = "/docker-entrypoint-initdb.d"
+    source    = var.sql_init_host_path != "" ? var.sql_init_host_path : abspath("${path.module}/../../sql/init")
+    type      = "bind"
     read_only = true
   }
 }
@@ -74,7 +79,7 @@ resource "docker_container" "postgres" {
 resource "docker_container" "redis" {
   name    = "${var.stack_name}-redis"
   image   = docker_image.redis.image_id
-  command = ["redis-server", "--save", "", "--appendonly", "no"]
+  command = ["sh", "-c", "redis-server --save '' --appendonly no"]
 
   networks_advanced {
     name = docker_network.nexus.name
@@ -103,8 +108,9 @@ resource "docker_container" "minio" {
 }
 
 resource "docker_container" "minio_bootstrap" {
-  name  = "${var.stack_name}-minio-bootstrap"
-  image = docker_image.mc.image_id
+  name     = "${var.stack_name}-minio-bootstrap"
+  image    = docker_image.mc.image_id
+  must_run = false
 
   depends_on = [docker_container.minio]
 
@@ -117,7 +123,7 @@ resource "docker_container" "minio_bootstrap" {
   command = [
     "/bin/sh",
     "-c",
-    "mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$MINIO_BUCKET && mc anonymous set none local/$MINIO_BUCKET"
+    "until mc alias set local http://${docker_container.minio.name}:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do sleep 1; done && mc mb --ignore-existing local/$MINIO_BUCKET && mc anonymous set none local/$MINIO_BUCKET"
   ]
 
   networks_advanced {
@@ -129,7 +135,7 @@ locals {
   common_env = [
     "NODE_ENV=${var.node_env}",
     "HOST=0.0.0.0",
-    "PORT=${var.app_port}",
+    "PORT=4000",
     "APP_BASE_URL=${var.app_base_url}",
     "LOG_LEVEL=${var.log_level}",
     "ARTIFACT_STORAGE_PROVIDER=${var.artifact_storage_provider}",
@@ -137,7 +143,7 @@ locals {
     "ARTIFACT_DOWNLOAD_URL_TTL_SECONDS=${var.artifact_download_url_ttl_seconds}",
     "S3_REGION=${var.s3_region}",
     "S3_BUCKET=${var.s3_bucket}",
-    "S3_ENDPOINT=${var.s3_endpoint}",
+    "S3_ENDPOINT=http://${docker_container.minio.name}:9000",
     "S3_ACCESS_KEY_ID=${var.s3_access_key_id}",
     "S3_SECRET_ACCESS_KEY=${var.s3_secret_access_key}",
     "S3_FORCE_PATH_STYLE=${var.s3_force_path_style}",

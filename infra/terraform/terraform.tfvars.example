@@ -5,3 +5,5 @@ github_draft_sync_enabled = "false"
 github_owner           = ""
 github_repo            = ""
 github_token           = ""
+# Optional when Terraform runs inside a container and Docker bind mounts need a host-visible absolute path.
+# sql_init_host_path    = "/absolute/path/to/AI-Took-My-Job/sql/init"

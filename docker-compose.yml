@@ -72,6 +72,16 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+      APP_BASE_URL: http://127.0.0.1:4000
+      DATABASE_URL: postgres://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${MINIO_BUCKET:-nexus-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
     ports:
       - "4000:4000"
     depends_on:
@@ -79,6 +89,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-create-bucket:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -89,11 +103,22 @@ services:
     command: ["node", "dist/worker.js"]
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgres://nexus:nexus@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${MINIO_BUCKET:-nexus-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-create-bucket:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

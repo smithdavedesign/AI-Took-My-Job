@@ -56,3 +56,7 @@ Terraform packaging is available under `infra/terraform` using the Docker provid
 - Nexus worker container
 
 This is a packaging scaffold for self-hosted Docker targets rather than a cloud-provider-specific deployment module.
+
+The module now builds the Nexus image directly, wires container-internal service discovery for Redis and MinIO, and expects the app to listen on internal port `4000` while exposing a configurable host `app_port`.
+
+If Terraform itself is running inside a container instead of directly on the Docker host, set `sql_init_host_path` to the host-visible absolute path of `sql/init` so PostgreSQL can mount the bootstrap SQL directory correctly.
