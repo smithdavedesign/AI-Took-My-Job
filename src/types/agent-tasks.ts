@@ -44,3 +44,24 @@ export interface StoredAgentTaskReplayValidation {
   baselineSummary: Record<string, unknown>;
   postChangeSummary: Record<string, unknown>;
 }
+
+export interface StoredAgentTaskValidationPolicy {
+  id: string;
+  agentTaskExecutionId: string;
+  policyName: string;
+  status: 'passed' | 'failed';
+  baselineRequirement: string;
+  outcomeRequirement: string;
+  baselineRequirementMet: boolean;
+  outcomeRequirementMet: boolean;
+  details: Record<string, unknown>;
+}
+
+export interface StoredAgentTaskExecutionReview {
+  id: string;
+  agentTaskExecutionId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewerId?: string;
+  notes?: string;
+  reviewedAt?: string;
+}

@@ -7,6 +7,7 @@ import { computeInitialImpactScore } from '../../domain/impact-score.js';
 import { normalizeDatadogWebhook, type DatadogWebhookPayload } from '../../services/observability/datadog.js';
 import { normalizeNewRelicWebhook, type NewRelicWebhookPayload } from '../../services/observability/newrelic.js';
 import { normalizeSentryWebhook, type NormalizedObservabilityEvent, type SentryWebhookPayload } from '../../services/observability/sentry.js';
+import { buildFeedbackReportEmbedding } from '../../services/reports/feedback-report-embedding.js';
 import { redactPayload } from '../../services/redaction/payload-redactor.js';
 import { safeEqual } from '../../support/http.js';
 
@@ -81,7 +82,7 @@ function persistObservabilityEvent(app: FastifyInstance, requestId: string, even
       impactScore
     });
 
-    await app.reports.create({
+    const storedReport = {
       id: reportId,
       source: event.provider,
       title: event.title,
@@ -93,6 +94,13 @@ function persistObservabilityEvent(app: FastifyInstance, requestId: string, even
         redactionCount: sanitized.redactionCount
       },
       ...(event.fingerprint ? { externalId: event.fingerprint } : {})
+    } as const;
+
+    await app.reports.create(storedReport);
+    await app.reportEmbeddings.upsert({
+      id: storedReport.id,
+      feedbackReportId: storedReport.id,
+      ...buildFeedbackReportEmbedding(storedReport)
     });
 
     const queueResult = await app.jobs.enqueue({

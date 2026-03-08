@@ -34,6 +34,14 @@ export async function runReplayValidation(input: {
   baselineStatus: string | null;
   actualStatus: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
   baselineSummary: Record<string, unknown>;
+  policy: {
+    policyName: string;
+    status: 'passed' | 'failed';
+    baselineRequirement: string;
+    outcomeRequirement: string;
+    baselineRequirementMet: boolean;
+    outcomeRequirementMet: boolean;
+  };
   summary: Record<string, unknown>;
 }> {
   const replayRun = await input.replayRuns.findLatestByReportId(input.reportId);
@@ -62,11 +70,24 @@ export async function runReplayValidation(input: {
   });
 
   const baselineStatus = replayRun.replayPlan?.execution?.status ?? null;
+  const baselineRequirement = 'baseline must reproduce before promotion';
+  const outcomeRequirement = `post-change replay must equal ${input.expectation}`;
+  const baselineRequirementMet = baselineStatus === 'reproduced';
+  const outcomeRequirementMet = execution.status === input.expectation;
+
   return {
-    passed: execution.status === input.expectation,
+    passed: baselineRequirementMet && outcomeRequirementMet,
     replayRunId: replayRun.id,
     baselineStatus,
     actualStatus: execution.status,
+    policy: {
+      policyName: 'fail-before-pass-after',
+      status: baselineRequirementMet && outcomeRequirementMet ? 'passed' : 'failed',
+      baselineRequirement,
+      outcomeRequirement,
+      baselineRequirementMet,
+      outcomeRequirementMet
+    },
     baselineSummary: replayRun.replayPlan?.execution
       ? {
         status: replayRun.replayPlan.execution.status,
@@ -80,6 +101,10 @@ export async function runReplayValidation(input: {
       expectedStatus: input.expectation,
       actualStatus: execution.status,
       baselineStatus,
+      baselineRequirement,
+      baselineRequirementMet,
+      outcomeRequirement,
+      outcomeRequirementMet,
       targetOrigin: input.baseUrl ?? null,
       matchedFailingStepOrders: execution.matchedFailingStepOrders,
       failingStepOrders: execution.failingStepOrders,

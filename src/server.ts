@@ -7,8 +7,11 @@ import { createGitHubIntegration, type GitHubIntegration } from './integrations/
 import { createAuditRepository, type AuditRepository } from './repositories/audit-repository.js';
 import { createAgentTaskRepository, type AgentTaskRepository } from './repositories/agent-task-repository.js';
 import { createAgentTaskExecutionRepository, type AgentTaskExecutionRepository } from './repositories/agent-task-execution-repository.js';
+import { createAgentTaskExecutionReviewRepository, type AgentTaskExecutionReviewRepository } from './repositories/agent-task-execution-review-repository.js';
 import { createAgentTaskReplayValidationRepository, type AgentTaskReplayValidationRepository } from './repositories/agent-task-replay-validation-repository.js';
+import { createAgentTaskValidationPolicyRepository, type AgentTaskValidationPolicyRepository } from './repositories/agent-task-validation-policy-repository.js';
 import { createArtifactBundleRepository, type ArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
+import { createFeedbackReportEmbeddingRepository, type FeedbackReportEmbeddingRepository } from './repositories/feedback-report-embedding-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import type { ArtifactStore, ArtifactStoreMetadata } from './services/artifacts/artifact-store.js';
 import { createFeedbackRepository, type FeedbackRepository } from './repositories/feedback-repository.js';
@@ -37,7 +40,10 @@ declare module 'fastify' {
     replayRuns: ReplayRunRepository;
     agentTasks: AgentTaskRepository;
     agentTaskExecutions: AgentTaskExecutionRepository;
+    agentTaskExecutionReviews: AgentTaskExecutionReviewRepository;
     agentTaskReplayValidations: AgentTaskReplayValidationRepository;
+    agentTaskValidationPolicies: AgentTaskValidationPolicyRepository;
+    reportEmbeddings: FeedbackReportEmbeddingRepository;
     githubIssueLinks: GitHubIssueLinkRepository;
     auditRepository: AuditRepository;
     triageJobs: TriageJobRepository;
@@ -75,7 +81,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
   const agentTaskExecutionRepository = createAgentTaskExecutionRepository(database);
+  const agentTaskExecutionReviewRepository = createAgentTaskExecutionReviewRepository(database);
   const agentTaskReplayValidationRepository = createAgentTaskReplayValidationRepository(database);
+  const agentTaskValidationPolicyRepository = createAgentTaskValidationPolicyRepository(database);
+  const feedbackReportEmbeddingRepository = createFeedbackReportEmbeddingRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
   const replayRunRepository = createReplayRunRepository(database);
   const auditRepository = createAuditRepository(database);
@@ -94,7 +103,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('artifacts', artifactBundleRepository);
   app.decorate('agentTasks', agentTaskRepository);
   app.decorate('agentTaskExecutions', agentTaskExecutionRepository);
+  app.decorate('agentTaskExecutionReviews', agentTaskExecutionReviewRepository);
   app.decorate('agentTaskReplayValidations', agentTaskReplayValidationRepository);
+  app.decorate('agentTaskValidationPolicies', agentTaskValidationPolicyRepository);
+  app.decorate('reportEmbeddings', feedbackReportEmbeddingRepository);
   app.decorate('artifactStore', artifactStorage.store);
   app.decorate('artifactStoreMetadata', artifactStorage.metadata);
   app.decorate('replayRuns', replayRunRepository);

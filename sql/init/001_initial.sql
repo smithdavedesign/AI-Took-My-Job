@@ -140,3 +140,47 @@ CREATE TABLE IF NOT EXISTS agent_task_replay_validations (
 
 CREATE INDEX IF NOT EXISTS agent_task_replay_validations_execution_idx
   ON agent_task_replay_validations (agent_task_execution_id);
+
+CREATE TABLE IF NOT EXISTS agent_task_validation_policies (
+  id UUID PRIMARY KEY,
+  agent_task_execution_id UUID NOT NULL UNIQUE REFERENCES agent_task_executions(id) ON DELETE CASCADE,
+  policy_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'failed',
+  baseline_requirement TEXT NOT NULL,
+  outcome_requirement TEXT NOT NULL,
+  baseline_requirement_met BOOLEAN NOT NULL DEFAULT false,
+  outcome_requirement_met BOOLEAN NOT NULL DEFAULT false,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_task_validation_policies_execution_idx
+  ON agent_task_validation_policies (agent_task_execution_id);
+
+CREATE TABLE IF NOT EXISTS agent_task_execution_reviews (
+  id UUID PRIMARY KEY,
+  agent_task_execution_id UUID NOT NULL UNIQUE REFERENCES agent_task_executions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  reviewer_id TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_task_execution_reviews_execution_idx
+  ON agent_task_execution_reviews (agent_task_execution_id);
+
+CREATE TABLE IF NOT EXISTS feedback_report_embeddings (
+  id UUID PRIMARY KEY,
+  feedback_report_id UUID NOT NULL UNIQUE REFERENCES feedback_reports(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  source_text TEXT NOT NULL,
+  embedding vector(1536) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS feedback_report_embeddings_report_idx
+  ON feedback_report_embeddings (feedback_report_id);

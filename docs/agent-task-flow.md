@@ -19,7 +19,7 @@ Current flow:
 6. An internal operator or automation starts an execution attempt for that task.
 7. Nexus queues an `agent-execution` job, prepares an isolated branch and worktree, and stores execution findings plus validation evidence.
 8. If `AGENT_EXECUTION_COMMAND` is configured, Nexus invokes that command inside the prepared worktree with `.nexus/task.md`, `.nexus/context.json`, and `.nexus/output.json` as the contract surface.
-9. If the agent modifies files, Nexus persists a git diff artifact, can run the agent-provided validation command, can optionally rerun the stored HAR against a target base URL, and can optionally open a draft PR when `AGENT_EXECUTION_AUTO_CREATE_PR=true` and the target repository has a usable base branch.
+9. If the agent modifies files, Nexus persists a git diff artifact, can run the agent-provided validation command, can optionally rerun the stored HAR against a target base URL, and stops at a reviewable execution state before any PR is opened.
 
 ## Current API Shape
 
@@ -91,11 +91,31 @@ Response body:
 
 `GET /internal/agent-task-executions/:executionId/replay-validation`
 
+### Inspect the persisted validation policy result for an execution attempt
+
+`GET /internal/agent-task-executions/:executionId/validation-policy`
+
+### Inspect or submit human review for an execution attempt
+
+- `GET /internal/agent-task-executions/:executionId/review`
+- `POST /internal/agent-task-executions/:executionId/review`
+
+### Promote an approved execution into a draft PR
+
+`POST /internal/agent-task-executions/:executionId/promote`
+
+This route requires:
+
+- a completed execution with repository changes
+- an approved human review
+- a non-failed validation result
+- a GitHub-backed target repository with a usable base branch
+
 Execution statuses now distinguish between:
 
 - `completed`: no code changes were produced, but the workspace and execution bundle were prepared
 - `changes-generated`: the agent produced code changes, but no passing validation or PR exists yet
-- `validated`: code changes were produced and the agent-provided validation command passed
+- `validated`: code changes were produced and validation passed, but PR creation is still blocked pending human approval and explicit promotion
 - `pr-opened`: a draft pull request was opened for the execution branch
 
 The `.nexus/output.json` contract can now include:
@@ -133,6 +153,10 @@ npm run e2e:agent-routes
 
 `GET /internal/reports/:reportId/agent-tasks`
 
+### Inspect the persisted embedding for a report
+
+`GET /internal/reports/:reportId/embedding`
+
 ## What This Does Not Do Yet
 
 This is not a full autonomous coding runtime yet.
@@ -141,17 +165,21 @@ Not implemented yet:
 
 - code modification by a downstream coding agent
 - repeated fail-before and pass-after replay verification against a patched build
-- approval workflow for agent-produced changes
+- merge-time policy beyond the current approval-before-promotion gate
 
 Current execution scaffolding notes:
 
 - repository checkout and branch management are now implemented for execution attempts
 - each execution stores branch name, base branch, worktree path, findings, validation evidence, and persisted execution artifacts
 - replay comparisons are also persisted as a first-class execution record with baseline replay status, post-change replay status, expectation, and target origin
+- replay-backed validation now also persists a first-class fail-before/pass-after policy record that captures whether baseline reproduction and post-change expectations were both satisfied
 - the downstream agent contract is file-based and command-driven: `.nexus/task.md`, `.nexus/context.json`, `.nexus/output.json`
+- the repository now includes a reusable downstream writing command at `src/scripts/agents/creative-readme-agent.ts` for README-focused tasks
 - persisted execution artifacts include agent context, agent output, git diff, validation logs, and replay-validation summaries when present
+- executions with changes now carry a pending review record that can be approved or rejected over internal routes
 - replay validation can rerun the stored HAR against a target base URL and compare the result to an expected replay outcome such as `not-reproduced`
-- draft PR creation is now wired for GitHub repositories when auto-create is enabled and the repository has a usable base branch
+- draft PR creation is now wired for GitHub repositories, but only after review approval and an explicit promote call
+- feedback-report embeddings are now persisted at ingestion time so Phase 5 clustering can operate on live vectors
 - GitHub-hosted repository checkout currently requires PAT-backed GitHub auth
 
 ## Why This Shape

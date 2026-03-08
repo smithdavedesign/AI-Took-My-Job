@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { isGitHubRepository, promoteExecutionPullRequest } from '../../services/agent-tasks/pull-request-promotion.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 
 const createAgentTaskSchema = z.object({
@@ -21,6 +22,11 @@ const taskIdParamsSchema = z.object({
 
 const executionIdParamsSchema = z.object({
   executionId: z.string().uuid()
+});
+
+const executionReviewSchema = z.object({
+  status: z.enum(['approved', 'rejected']),
+  notes: z.string().min(1).max(5000).optional()
 });
 
 const reportIdParamsSchema = z.object({
@@ -232,6 +238,231 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     }
 
     return replayValidation;
+  });
+
+  app.get('/internal/agent-task-executions/:executionId/validation-policy', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { executionId } = executionIdParamsSchema.parse(request.params);
+    const execution = await app.agentTaskExecutions.findById(executionId);
+
+    if (!execution) {
+      throw app.httpErrors.notFound('agent task execution not found');
+    }
+
+    const policy = await app.agentTaskValidationPolicies.findByExecutionId(executionId);
+    if (!policy) {
+      throw app.httpErrors.notFound('validation policy not found for execution');
+    }
+
+    return policy;
+  });
+
+  app.get('/internal/agent-task-executions/:executionId/review', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { executionId } = executionIdParamsSchema.parse(request.params);
+    const execution = await app.agentTaskExecutions.findById(executionId);
+
+    if (!execution) {
+      throw app.httpErrors.notFound('agent task execution not found');
+    }
+
+    const review = await app.agentTaskExecutionReviews.findByExecutionId(executionId);
+    if (!review) {
+      return {
+        agentTaskExecutionId: executionId,
+        status: 'pending'
+      };
+    }
+
+    return review;
+  });
+
+  app.post('/internal/agent-task-executions/:executionId/review', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { executionId } = executionIdParamsSchema.parse(request.params);
+    const payload = executionReviewSchema.parse(request.body);
+    const execution = await app.agentTaskExecutions.findById(executionId);
+
+    if (!execution) {
+      throw app.httpErrors.notFound('agent task execution not found');
+    }
+
+    if (['queued', 'running'].includes(execution.status)) {
+      throw app.httpErrors.conflict(`agent task execution cannot be reviewed while status is ${execution.status}`);
+    }
+
+    const review = {
+      id: randomUUID(),
+      agentTaskExecutionId: executionId,
+      status: payload.status,
+      reviewerId: principal.id,
+      reviewedAt: new Date().toISOString(),
+      ...(payload.notes ? { notes: payload.notes } : {})
+    } as const;
+
+    await app.agentTaskExecutionReviews.upsert(review);
+
+    await app.agentTaskExecutions.update({
+      ...execution,
+      resultSummary: {
+        ...execution.resultSummary,
+        reviewStatus: payload.status,
+        reviewUpdatedAt: review.reviewedAt
+      },
+      validationEvidence: {
+        ...execution.validationEvidence,
+        review: {
+          status: payload.status,
+          reviewerId: principal.id,
+          notes: payload.notes ?? null,
+          reviewedAt: review.reviewedAt
+        }
+      }
+    });
+
+    await app.audit.write({
+      eventType: 'agent_task.execution_reviewed',
+      actorType: 'system',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        executionId,
+        status: payload.status,
+        ...(payload.notes ? { notes: payload.notes } : {})
+      }
+    });
+
+    return review;
+  });
+
+  app.post('/internal/agent-task-executions/:executionId/promote', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { executionId } = executionIdParamsSchema.parse(request.params);
+    const execution = await app.agentTaskExecutions.findById(executionId);
+
+    if (!execution) {
+      throw app.httpErrors.notFound('agent task execution not found');
+    }
+
+    if (execution.status === 'pr-opened' || execution.pullRequestUrl) {
+      throw app.httpErrors.conflict('agent task execution already has an opened pull request');
+    }
+
+    if (['queued', 'running', 'failed', 'cancelled'].includes(execution.status)) {
+      throw app.httpErrors.conflict(`agent task execution cannot be promoted while status is ${execution.status}`);
+    }
+
+    const task = await app.agentTasks.findById(execution.agentTaskId);
+    if (!task) {
+      throw app.httpErrors.notFound('agent task not found');
+    }
+
+    if (!app.github.enabled) {
+      throw app.httpErrors.conflict('GitHub draft sync is disabled');
+    }
+
+    if (!isGitHubRepository(task.targetRepository)) {
+      throw app.httpErrors.conflict('agent task target repository does not support GitHub promotion');
+    }
+
+    const review = await app.agentTaskExecutionReviews.findByExecutionId(executionId);
+    if (!review || review.status !== 'approved') {
+      throw app.httpErrors.conflict('agent task execution must be approved before promotion');
+    }
+
+    const validationStatus = typeof execution.resultSummary.validationStatus === 'string'
+      ? execution.resultSummary.validationStatus
+      : 'not-run';
+    if (validationStatus === 'failed') {
+      throw app.httpErrors.conflict('agent task execution cannot be promoted while validation is failed');
+    }
+
+    try {
+      const promoted = await promoteExecutionPullRequest({
+        config: app.config,
+        github: app.github,
+        task,
+        execution
+      });
+
+      const promotedExecution = {
+        ...execution,
+        status: 'pr-opened' as const,
+        pullRequestUrl: promoted.pullRequestUrl,
+        resultSummary: {
+          ...execution.resultSummary,
+          outcome: 'pr-opened',
+          nextAction: 'await-human-review',
+          pullRequestUrl: promoted.pullRequestUrl
+        },
+        validationEvidence: {
+          ...execution.validationEvidence,
+          reviewGate: {
+            required: true,
+            status: 'approved'
+          },
+          pullRequest: {
+            status: 'opened',
+            number: promoted.pullRequestNumber,
+            url: promoted.pullRequestUrl
+          }
+        }
+      };
+
+      await app.agentTaskExecutions.update(promotedExecution);
+      await app.agentTasks.updateStatus(task.id, 'completed', {
+        preparedContext: {
+          ...task.preparedContext,
+          execution: {
+            ...(task.preparedContext.execution && typeof task.preparedContext.execution === 'object'
+              ? task.preparedContext.execution as Record<string, unknown>
+              : {}),
+            executionId,
+            resultSummary: promotedExecution.resultSummary,
+            validationEvidence: promotedExecution.validationEvidence,
+            pullRequestUrl: promoted.pullRequestUrl
+          }
+        }
+      });
+
+      await app.audit.write({
+        eventType: 'agent_task.execution_promoted',
+        actorType: 'system',
+        actorId: principal.id,
+        requestId: request.id,
+        payload: {
+          executionId,
+          agentTaskId: task.id,
+          pullRequestUrl: promoted.pullRequestUrl,
+          pullRequestNumber: promoted.pullRequestNumber
+        }
+      });
+
+      return {
+        promoted: true,
+        executionId,
+        pullRequestNumber: promoted.pullRequestNumber,
+        pullRequestUrl: promoted.pullRequestUrl,
+        status: 'pr-opened'
+      };
+    } catch (error) {
+      await app.agentTaskExecutions.update({
+        ...execution,
+        validationEvidence: {
+          ...execution.validationEvidence,
+          pullRequest: {
+            status: 'failed',
+            error: error instanceof Error ? error.message : 'unknown pull request promotion failure'
+          }
+        }
+      });
+
+      throw error;
+    }
   });
 
   app.get('/internal/reports/:reportId/agent-tasks', async (request) => {

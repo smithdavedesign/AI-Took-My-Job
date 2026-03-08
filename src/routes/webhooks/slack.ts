@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { computeInitialImpactScore } from '../../domain/impact-score.js';
+import { buildFeedbackReportEmbedding } from '../../services/reports/feedback-report-embedding.js';
 
 const slackEnvelopeSchema = z.object({
   type: z.string(),
@@ -71,7 +72,7 @@ export function registerSlackWebhookRoute(app: FastifyInstance): void {
       frequency: 1
     });
 
-    await app.reports.create({
+    const storedReport = {
       id: reportId,
       source: 'slack',
       status: 'received',
@@ -83,6 +84,13 @@ export function registerSlackWebhookRoute(app: FastifyInstance): void {
       ...(payload.event_id ? { externalId: payload.event_id } : {}),
       ...(payload.event?.type ? { title: payload.event.type } : {}),
       ...(payload.event?.user ? { reporterIdentifier: payload.event.user } : {})
+    } as const;
+
+    await app.reports.create(storedReport);
+    await app.reportEmbeddings.upsert({
+      id: storedReport.id,
+      feedbackReportId: storedReport.id,
+      ...buildFeedbackReportEmbedding(storedReport)
     });
 
     const queueResult = await app.jobs.enqueue({

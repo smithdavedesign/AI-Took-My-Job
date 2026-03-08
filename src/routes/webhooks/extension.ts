@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { computeInitialImpactScore } from '../../domain/impact-score.js';
 import type { ArtifactUpload } from '../../services/artifacts/artifact-store.js';
 import { redactPayload } from '../../services/redaction/payload-redactor.js';
+import { buildFeedbackReportEmbedding } from '../../services/reports/feedback-report-embedding.js';
 import { safeEqual } from '../../support/http.js';
 
 const artifactUploadSchema = z.object({
@@ -26,9 +27,40 @@ function normalizeUpload(upload: z.infer<typeof artifactUploadSchema> | undefine
   };
 }
 
+function estimateDecodedBytes(contentBase64: string): number {
+  const normalized = contentBase64.includes(',')
+    ? contentBase64.slice(contentBase64.indexOf(',') + 1)
+    : contentBase64;
+
+  const padding = normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0;
+  return Math.floor((normalized.length * 3) / 4) - padding;
+}
+
+function validateUploadBudgets(app: FastifyInstance, uploads: Array<{ key: string; upload: ArtifactUpload | undefined }>): void {
+  let totalBytes = 0;
+
+  for (const { key, upload } of uploads) {
+    if (!upload) {
+      continue;
+    }
+
+    const sizeBytes = estimateDecodedBytes(upload.contentBase64);
+    if (sizeBytes > app.config.EXTENSION_MAX_INLINE_ARTIFACT_BYTES) {
+      throw app.httpErrors.payloadTooLarge(`${key} exceeds EXTENSION_MAX_INLINE_ARTIFACT_BYTES`);
+    }
+
+    totalBytes += sizeBytes;
+  }
+
+  if (totalBytes > app.config.EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES) {
+    throw app.httpErrors.payloadTooLarge('inline artifacts exceed EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES');
+  }
+}
+
 function summarizeUploads(uploads: {
   screenRecording: ArtifactUpload | undefined;
   har: ArtifactUpload | undefined;
+  consoleLogs: ArtifactUpload | undefined;
   localStorage: ArtifactUpload | undefined;
   sessionStorage: ArtifactUpload | undefined;
 }): Record<string, unknown> {
@@ -64,11 +96,13 @@ const extensionReportSchema = z.object({
   artifacts: z.object({
     hasScreenRecording: z.boolean().default(false),
     hasHar: z.boolean().default(false),
+    hasConsoleLogs: z.boolean().default(false),
     hasLocalStorageSnapshot: z.boolean().default(false),
     hasSessionStorageSnapshot: z.boolean().default(false),
     uploads: z.object({
       screenRecording: artifactUploadSchema.optional(),
       har: artifactUploadSchema.optional(),
+      consoleLogs: artifactUploadSchema.optional(),
       localStorage: artifactUploadSchema.optional(),
       sessionStorage: artifactUploadSchema.optional()
     }).optional()
@@ -99,9 +133,17 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
     const uploads = {
       screenRecording: normalizeUpload(payload.artifacts.uploads?.screenRecording),
       har: normalizeUpload(payload.artifacts.uploads?.har),
+      consoleLogs: normalizeUpload(payload.artifacts.uploads?.consoleLogs),
       localStorage: normalizeUpload(payload.artifacts.uploads?.localStorage),
       sessionStorage: normalizeUpload(payload.artifacts.uploads?.sessionStorage)
     };
+    validateUploadBudgets(app, [
+      { key: 'screenRecording', upload: uploads.screenRecording },
+      { key: 'har', upload: uploads.har },
+      { key: 'consoleLogs', upload: uploads.consoleLogs },
+      { key: 'localStorage', upload: uploads.localStorage },
+      { key: 'sessionStorage', upload: uploads.sessionStorage }
+    ]);
     const derivedFrequency = payload.signals.consoleErrorCount + payload.signals.networkErrorCount;
     const impactScore = computeInitialImpactScore({
       source: 'extension',
@@ -123,7 +165,7 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
       ...payloadForStorage
     });
 
-    await app.reports.create({
+    const storedReport = {
       id: reportId,
       source: 'extension',
       externalId: payload.sessionId,
@@ -135,11 +177,18 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
         ...sanitized.value,
         redactionCount: sanitized.redactionCount
       }
+    } as const;
+
+    await app.reports.create(storedReport);
+    await app.reportEmbeddings.upsert({
+      id: storedReport.id,
+      feedbackReportId: storedReport.id,
+      ...buildFeedbackReportEmbedding(storedReport)
     });
 
     const artifactDefinitions: Array<{
       enabled: boolean;
-      artifactType: 'screen-recording' | 'har' | 'local-storage' | 'session-storage';
+      artifactType: 'screen-recording' | 'har' | 'console-logs' | 'local-storage' | 'session-storage';
       fileName: string;
       upload: ArtifactUpload | undefined;
     }> = [
@@ -154,6 +203,12 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
         artifactType: 'har',
         fileName: uploads.har?.fileName ?? 'network.har',
         upload: uploads.har
+      },
+      {
+        enabled: payload.artifacts.hasConsoleLogs || Boolean(uploads.consoleLogs),
+        artifactType: 'console-logs',
+        fileName: uploads.consoleLogs?.fileName ?? 'console-logs.json',
+        upload: uploads.consoleLogs
       },
       {
         enabled: payload.artifacts.hasLocalStorageSnapshot || Boolean(uploads.localStorage),
@@ -195,6 +250,7 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
           captureStatus: savedArtifact ? 'stored' : 'pending-upload',
           fileName: definition.fileName,
           mimeType: definition.upload?.mimeType ?? null,
+          inlineUploadBytes: definition.upload ? estimateDecodedBytes(definition.upload.contentBase64) : null,
           sizeBytes: savedArtifact?.sizeBytes ?? null,
           sha256: savedArtifact?.sha256 ?? null
         }

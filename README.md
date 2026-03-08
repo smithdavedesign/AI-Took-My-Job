@@ -1,10 +1,20 @@
 # AI-DevOps Nexus
 
-AI-DevOps Nexus is a self-hostable internal engineering intelligence layer. It ingests high-signal internal reports from Slack, observability tooling, and a browser extension, stores them as canonical feedback records, and turns them into triaged issue drafts that can optionally sync to GitHub.
+AI-DevOps Nexus turns messy internal engineering signal into something a team can actually ship against.
 
-## Current Scope
+It is a self-hostable incident-intelligence layer for teams that need more than alert spam, screenshots, and hand-written bug tickets. Nexus captures browser and observability evidence, stores a canonical report, replays the failure path, drafts the issue, and prepares an agent-ready execution bundle.
 
-The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful parts of Phases 2 through 4 from [roadmap.md](roadmap.md):
+The goal is simple: stop losing context between the moment something breaks and the moment someone is finally ready to fix it.
+
+## Why This Exists
+
+Most teams already have the raw ingredients for fast debugging. They just do not have a reliable handoff.
+
+A report arrives from a browser session. Sentry lights up. A HAR file gets attached somewhere. A draft issue appears later with half the evidence missing. Nexus is designed to keep the report, artifacts, replay evidence, draft output, and agent handoff connected as one system instead of five disconnected tools.
+
+## What Exists Today
+
+The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful parts of Phases 2 through 6 from [roadmap.md](roadmap.md):
 
 - Fastify gateway with health checks and protected ingestion routes.
 - PostgreSQL repositories for feedback reports, artifact metadata, triage jobs, audit events, and GitHub draft metadata.
@@ -15,6 +25,9 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Playwright-backed replay execution that verifies whether recorded failing steps still reproduce.
 - Internal service-token auth for internal routes and artifact download URL minting.
 - Optional GitHub sync using either a PAT-backed service account or a GitHub App.
+- Agent-task intake, isolated execution worktrees, persisted execution artifacts, and replay-backed validation routes.
+- Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
+- Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 
@@ -27,9 +40,11 @@ Still planned: richer browser automation, clustering and deduplication, agentic 
 - Phase 2: partial
 - Phase 3: partial
 - Phase 4: partial
-- Phases 5 to 8: not started
+- Phase 5: partial
+- Phase 6: partial
+- Phases 7 to 8: not started
 
-## Architecture
+## How It Works
 
 ### Processes
 
@@ -135,9 +150,14 @@ sequenceDiagram
 - `GET /internal/agent-task-executions/:executionId`
 - `GET /internal/agent-task-executions/:executionId/artifacts`
 - `GET /internal/agent-task-executions/:executionId/replay-validation`
+- `GET /internal/agent-task-executions/:executionId/validation-policy`
+- `GET /internal/agent-task-executions/:executionId/review`
+- `POST /internal/agent-task-executions/:executionId/review`
+- `POST /internal/agent-task-executions/:executionId/promote`
 - `GET /internal/reports/:reportId/draft`
 - `GET /internal/reports/:reportId/agent-tasks`
 - `GET /internal/reports/:reportId/artifacts`
+- `GET /internal/reports/:reportId/embedding`
 - `GET /internal/reports/:reportId/replay`
 - `GET /internal/artifacts/:artifactId/download-url`
 - `GET /artifacts/download/:artifactId`
@@ -181,6 +201,8 @@ Important variables:
 - `AGENT_EXECUTION_ARGS`
 - `AGENT_EXECUTION_TIMEOUT_SECONDS`
 - `AGENT_EXECUTION_AUTO_CREATE_PR`
+- `EXTENSION_MAX_INLINE_ARTIFACT_BYTES`
+- `EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES`
 
 ## GitHub Auth Modes
 
@@ -200,9 +222,11 @@ Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
 
 Agent-task submission and execution flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
 
-If `AGENT_EXECUTION_COMMAND` is configured, the worker will invoke it inside each prepared execution worktree and expect the command to read `.nexus/task.md` and `.nexus/context.json`, then write structured output to `.nexus/output.json`. When `AGENT_EXECUTION_AUTO_CREATE_PR=true`, Nexus will commit agent changes, push the execution branch, and open a draft PR when the target repository has a usable base branch.
+If `AGENT_EXECUTION_COMMAND` is configured, the worker will invoke it inside each prepared execution worktree and expect the command to read `.nexus/task.md` and `.nexus/context.json`, then write structured output to `.nexus/output.json`. When an execution produces promotable changes, Nexus now stops at a reviewed execution state and requires explicit approval plus `POST /internal/agent-task-executions/:executionId/promote` before it will push the branch and open a draft PR.
 
 The `.nexus/output.json` contract can also request replay-backed validation by including a `replayValidation` block with a target `baseUrl` and an expected replay outcome such as `not-reproduced`.
+
+Each stored report now also gets a deterministic `deterministic-hash-v1` embedding at ingestion time, exposed through `GET /internal/reports/:reportId/embedding` so clustering and similarity features can build on live data instead of empty schema scaffolding.
 
 For execution-route verification, start the worker with the built-in fixture command and then run `npm run e2e:agent-routes`:
 
@@ -210,6 +234,14 @@ For execution-route verification, start the worker with the built-in fixture com
 AGENT_EXECUTION_COMMAND=tsx \
 AGENT_EXECUTION_ARGS="[\"$PWD/src/scripts/e2e/agent-execution-fixture.ts\"]" \
 E2E_AGENT_FIXTURE_BASE_URL=http://127.0.0.1:4000 \
+npm run worker
+```
+
+For a reusable README-focused downstream agent command, point the worker at the built-in script:
+
+```bash
+AGENT_EXECUTION_COMMAND=tsx \
+AGENT_EXECUTION_ARGS="[\"$PWD/src/scripts/agents/creative-readme-agent.ts\"]" \
 npm run worker
 ```
 

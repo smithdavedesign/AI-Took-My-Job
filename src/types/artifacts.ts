@@ -4,6 +4,7 @@ export interface StoredArtifactBundle {
   artifactType:
     | 'screen-recording'
     | 'har'
+    | 'console-logs'
     | 'local-storage'
     | 'session-storage'
     | 'agent-task-markdown'
@@ -11,7 +12,8 @@ export interface StoredArtifactBundle {
     | 'agent-output'
     | 'agent-diff'
     | 'agent-validation'
-    | 'agent-replay-validation';
+    | 'agent-replay-validation'
+    | 'agent-validation-policy';
   storageKey: string;
   metadata: Record<string, unknown>;
 }

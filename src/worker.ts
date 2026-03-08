@@ -6,7 +6,9 @@ import { Queue, Worker } from 'bullmq';
 
 import { createGitHubIntegration } from './integrations/github/client.js';
 import { createAgentTaskExecutionRepository } from './repositories/agent-task-execution-repository.js';
+import { createAgentTaskExecutionReviewRepository } from './repositories/agent-task-execution-review-repository.js';
 import { createAgentTaskReplayValidationRepository } from './repositories/agent-task-replay-validation-repository.js';
+import { createAgentTaskValidationPolicyRepository } from './repositories/agent-task-validation-policy-repository.js';
 import { createArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
 import { loadConfig } from './support/config.js';
 import { createDatabaseClient } from './support/database.js';
@@ -18,9 +20,9 @@ import { createTriageJobRepository } from './repositories/triage-job-repository.
 import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
+import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
 import { runReplayValidation } from './services/agent-tasks/replay-validation.js';
 import { prepareRepositoryWorkspace } from './services/agent-tasks/repository-workspace.js';
-import { createRepositoryCommandContext } from './services/agent-tasks/repository-workspace.js';
 import { buildReplayArtifacts, summarizeReplayPlan } from './services/replay/har-replay-plan.js';
 import { executeReplayPlan } from './services/replay/playwright-replay-executor.js';
 import { createIssueDraft } from './services/triage/issue-draft.js';
@@ -90,37 +92,6 @@ async function runGit(worktreePath: string, args: string[], env?: NodeJS.Process
   });
 }
 
-function isGitHubRepository(value: string): boolean {
-  return value.split('/').filter(Boolean).length === 2 && !value.startsWith('/') && !value.startsWith('.');
-}
-
-function buildPullRequestBody(input: {
-  taskTitle: string;
-  taskObjective: string;
-  findings: string[];
-  validationEvidence: Record<string, unknown>;
-  fallbackBody?: string;
-}): string {
-  if (input.fallbackBody) {
-    return input.fallbackBody;
-  }
-
-  return [
-    `## Nexus Agent Task`,
-    '',
-    `- Title: ${input.taskTitle}`,
-    `- Objective: ${input.taskObjective}`,
-    '',
-    '## Findings',
-    ...(input.findings.length > 0 ? input.findings.map((finding) => `- ${finding}`) : ['- No findings supplied.']),
-    '',
-    '## Validation Evidence',
-    '```json',
-    JSON.stringify(input.validationEvidence, null, 2),
-    '```'
-  ].join('\n');
-}
-
 async function readStreamToString(stream: NodeJS.ReadableStream): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream as AsyncIterable<Buffer | string>) {
@@ -145,7 +116,9 @@ async function main(): Promise<void> {
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
   const agentTaskExecutionRepository = createAgentTaskExecutionRepository(database);
+  const agentTaskExecutionReviewRepository = createAgentTaskExecutionReviewRepository(database);
   const agentTaskReplayValidationRepository = createAgentTaskReplayValidationRepository(database);
+  const agentTaskValidationPolicyRepository = createAgentTaskValidationPolicyRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
   const replayRunRepository = createReplayRunRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
@@ -493,6 +466,7 @@ async function main(): Promise<void> {
               status: replayValidationStatus,
               ...replayValidation.summary
             };
+            validationEvidence.validationPolicy = replayValidation.policy;
 
             await agentTaskReplayValidationRepository.upsert({
               id: randomUUID(),
@@ -505,6 +479,18 @@ async function main(): Promise<void> {
               ...(replayValidation.baselineStatus ? { baselineStatus: replayValidation.baselineStatus as 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed' } : {}),
               ...(replayValidation.actualStatus ? { actualStatus: replayValidation.actualStatus } : {}),
               ...(agentRun.output.replayValidation.baseUrl ? { targetOrigin: agentRun.output.replayValidation.baseUrl } : {})
+            });
+
+            await agentTaskValidationPolicyRepository.upsert({
+              id: randomUUID(),
+              agentTaskExecutionId: executionId,
+              policyName: replayValidation.policy.policyName,
+              status: replayValidation.policy.status,
+              baselineRequirement: replayValidation.policy.baselineRequirement,
+              outcomeRequirement: replayValidation.policy.outcomeRequirement,
+              baselineRequirementMet: replayValidation.policy.baselineRequirementMet,
+              outcomeRequirementMet: replayValidation.policy.outcomeRequirementMet,
+              details: replayValidation.summary
             });
 
             await persistExecutionTextArtifact({
@@ -520,6 +506,21 @@ async function main(): Promise<void> {
                 status: replayValidationStatus,
                 expectation: agentRun.output.replayValidation.expectation,
                 baseUrl: agentRun.output.replayValidation.baseUrl ?? null
+              }
+            });
+
+            await persistExecutionTextArtifact({
+              artifacts: artifactBundleRepository,
+              artifactStore: artifactStorage.store,
+              reportId: report.id,
+              executionId,
+              taskId: task.id,
+              artifactType: 'agent-validation-policy',
+              fileName: 'validation-policy.json',
+              content: JSON.stringify(replayValidation.policy, null, 2),
+              metadata: {
+                status: replayValidation.policy.status,
+                policyName: replayValidation.policy.policyName
               }
             });
           }
@@ -584,51 +585,21 @@ async function main(): Promise<void> {
 
             finalStatus = aggregateValidationStatus === 'passed' ? 'validated' : 'changes-generated';
 
-            if (config.AGENT_EXECUTION_AUTO_CREATE_PR && aggregateValidationStatus !== 'failed' && workspace.baseBranch && github.enabled && isGitHubRepository(task.targetRepository)) {
-              const commandContext = await createRepositoryCommandContext(config, task.targetRepository);
+            await agentTaskExecutionReviewRepository.upsert({
+              id: randomUUID(),
+              agentTaskExecutionId: executionId,
+              status: 'pending'
+            });
 
-              try {
-                const pushResult = await runCommand('git', ['-C', workspace.worktreePath, 'push', '-u', 'origin', workspace.branchName], {
-                  cwd: workspace.worktreePath,
-                  ...(commandContext.env ? { env: commandContext.env } : {})
-                });
-                validationEvidence.push = {
-                  status: pushResult.code === 0 ? 'pushed' : 'failed'
-                };
+            validationEvidence.reviewGate = {
+              required: true,
+              status: 'pending'
+            };
 
-                const pullRequest = await github.createPullRequest({
-                  repository: task.targetRepository,
-                  title: agentRun.output.pullRequest?.title ?? `Nexus fix: ${task.title}`,
-                  body: buildPullRequestBody({
-                    taskTitle: task.title,
-                    taskObjective: task.objective,
-                    findings: [
-                      `Prepared isolated git worktree on branch ${workspace.branchName}.`,
-                      ...(agentRun.output.findings ?? [])
-                    ],
-                    validationEvidence,
-                    ...(agentRun.output.pullRequest?.body ? { fallbackBody: agentRun.output.pullRequest.body } : {})
-                  }),
-                  head: workspace.branchName,
-                  base: workspace.baseBranch,
-                  draft: agentRun.output.pullRequest?.draft ?? true
-                });
-
-                pullRequestUrl = pullRequest.url;
-                validationEvidence.pullRequest = {
-                  status: 'opened',
-                  number: pullRequest.number,
-                  url: pullRequest.url
-                };
-                finalStatus = 'pr-opened';
-              } catch (error) {
-                validationEvidence.pullRequest = {
-                  status: 'failed',
-                  error: error instanceof Error ? error.message : 'unknown pull request failure'
-                };
-              } finally {
-                await commandContext.cleanup();
-              }
+            if (aggregateValidationStatus !== 'failed' && workspace.baseBranch && github.enabled && isGitHubRepository(task.targetRepository)) {
+              validationEvidence.pullRequest = {
+                status: 'blocked-awaiting-approval'
+              };
             }
           }
 
@@ -644,15 +615,13 @@ async function main(): Promise<void> {
 
           const completedAt = new Date().toISOString();
           const resultSummary = {
-            outcome: finalStatus === 'pr-opened'
-              ? 'pr-opened'
-              : finalStatus === 'validated'
+            outcome: finalStatus === 'validated'
                 ? 'validated'
                 : hasChanges
                   ? 'fix-proposed'
                   : 'workspace-prepared',
-            nextAction: finalStatus === 'pr-opened'
-              ? 'await-human-review'
+            nextAction: hasChanges && aggregateValidationStatus !== 'failed'
+                ? 'await-human-approval-before-pr'
               : hasChanges
                 ? 'review-agent-output'
                 : 'handoff-to-coding-agent',
