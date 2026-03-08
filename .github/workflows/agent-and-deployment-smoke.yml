@@ -1,0 +1,400 @@
+name: Agent And Deployment Smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  policy-review-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: nexus
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nexus -d nexus"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 4000
+      APP_BASE_URL: http://127.0.0.1:4000
+      LOG_LEVEL: warn
+      ARTIFACT_STORAGE_PROVIDER: local
+      ARTIFACT_STORAGE_PATH: ./var/artifacts
+      ARTIFACT_DOWNLOAD_URL_TTL_SECONDS: 600
+      INTERNAL_SERVICE_TOKENS: '[{"id":"ci","token":"nexus-local-dev-token","scopes":["internal:read","artifacts:download-url","github:draft"]}]'
+      SLACK_SIGNING_SECRET: ci-slack-secret
+      WEBHOOK_SHARED_SECRET: ci-webhook-secret
+      DATABASE_URL: postgres://nexus:nexus@127.0.0.1:5432/nexus
+      REDIS_URL: redis://127.0.0.1:6379
+      GITHUB_DRAFT_SYNC_ENABLED: 'false'
+      GITHUB_AUTH_MODE: pat
+      GITHUB_USE_TEST_REPO: 'false'
+      GITHUB_TOKEN: ghp_ci_placeholder_token
+      E2E_BASE_URL: http://127.0.0.1:4000
+      E2E_AGENT_FIXTURE_BASE_URL: http://127.0.0.1:4000
+      E2E_TARGET_REPOSITORY: smithdavedesign/testRepo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Initialize database
+        run: psql "$DATABASE_URL" -f sql/init/001_initial.sql
+
+      - name: Start API
+        run: node dist/index.js > /tmp/nexus-api.log 2>&1 &
+
+      - name: Start worker with replay fixture
+        run: |
+          AGENT_EXECUTION_COMMAND="$GITHUB_WORKSPACE/node_modules/.bin/tsx" \
+          AGENT_EXECUTION_ARGS="[\"$GITHUB_WORKSPACE/src/scripts/e2e/agent-execution-fixture.ts\"]" \
+          E2E_AGENT_FIXTURE_BASE_URL="$E2E_AGENT_FIXTURE_BASE_URL" \
+          node dist/worker.js > /tmp/nexus-worker.log 2>&1 &
+
+      - name: Wait for health
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time" >&2
+          exit 1
+
+      - name: Run policy review smoke
+        run: npm run e2e:policy-review
+
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          echo '--- API LOG ---'
+          cat /tmp/nexus-api.log || true
+          echo '--- WORKER LOG ---'
+          cat /tmp/nexus-worker.log || true
+
+  promotion-ownership-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: nexus
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nexus -d nexus"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 4000
+      APP_BASE_URL: http://127.0.0.1:4000
+      LOG_LEVEL: warn
+      ARTIFACT_STORAGE_PROVIDER: local
+      ARTIFACT_STORAGE_PATH: ./var/artifacts
+      ARTIFACT_DOWNLOAD_URL_TTL_SECONDS: 600
+      INTERNAL_SERVICE_TOKENS: '[{"id":"ci","token":"nexus-local-dev-token","scopes":["internal:read","artifacts:download-url","github:draft"]}]'
+      SLACK_SIGNING_SECRET: ci-slack-secret
+      WEBHOOK_SHARED_SECRET: ci-webhook-secret
+      DATABASE_URL: postgres://nexus:nexus@127.0.0.1:5432/nexus
+      REDIS_URL: redis://127.0.0.1:6379
+      GITHUB_DRAFT_SYNC_ENABLED: 'true'
+      GITHUB_AUTH_MODE: pat
+      GITHUB_USE_TEST_REPO: 'true'
+      GITHUB_TEST_OWNER: ${{ secrets.E2E_GITHUB_TEST_OWNER }}
+      GITHUB_TEST_REPO: ${{ secrets.E2E_GITHUB_TEST_REPO }}
+      GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+      E2E_BASE_URL: http://127.0.0.1:4000
+      E2E_GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+      E2E_GITHUB_TEST_OWNER: ${{ secrets.E2E_GITHUB_TEST_OWNER }}
+      E2E_GITHUB_TEST_REPO: ${{ secrets.E2E_GITHUB_TEST_REPO }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Check promotion secrets
+        id: promotion-secrets
+        run: |
+          if [[ -z "$E2E_GITHUB_TOKEN" || -z "$E2E_GITHUB_TEST_OWNER" || -z "$E2E_GITHUB_TEST_REPO" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "target_repository=$E2E_GITHUB_TEST_OWNER/$E2E_GITHUB_TEST_REPO" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: npm ci
+
+      - name: Build
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: npm run build
+
+      - name: Initialize database
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: psql "$DATABASE_URL" -f sql/init/001_initial.sql
+
+      - name: Start API
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: node dist/index.js > /tmp/nexus-api.log 2>&1 &
+
+      - name: Start worker with promotable fixture
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: |
+          AGENT_EXECUTION_COMMAND="$GITHUB_WORKSPACE/node_modules/.bin/tsx" \
+          AGENT_EXECUTION_ARGS="[\"$GITHUB_WORKSPACE/src/scripts/e2e/agent-execution-promotable-fixture.ts\"]" \
+          node dist/worker.js > /tmp/nexus-worker.log 2>&1 &
+
+      - name: Wait for health
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time" >&2
+          exit 1
+
+      - name: Run promotion ownership smoke
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: E2E_TARGET_REPOSITORY="${{ steps.promotion-secrets.outputs.target_repository }}" npm run e2e:promotion-ownership
+
+      - name: Report skipped promotion smoke
+        if: steps.promotion-secrets.outputs.available != 'true'
+        run: echo 'Promotion ownership smoke skipped because E2E GitHub test-repo secrets are not configured.'
+
+      - name: Print logs on failure
+        if: failure() && steps.promotion-secrets.outputs.available == 'true'
+        run: |
+          echo '--- API LOG ---'
+          cat /tmp/nexus-api.log || true
+          echo '--- WORKER LOG ---'
+          cat /tmp/nexus-worker.log || true
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write Compose env file
+        run: |
+          cat > .env <<'EOF'
+          NODE_ENV=production
+          HOST=0.0.0.0
+          PORT=4000
+          APP_BASE_URL=http://127.0.0.1:4000
+          LOG_LEVEL=warn
+          ARTIFACT_STORAGE_PROVIDER=s3
+          ARTIFACT_STORAGE_PATH=./var/artifacts
+          ARTIFACT_DOWNLOAD_URL_TTL_SECONDS=600
+          S3_REGION=us-east-1
+          S3_BUCKET=nexus-artifacts
+          S3_ENDPOINT=http://127.0.0.1:9000
+          S3_ACCESS_KEY_ID=minioadmin
+          S3_SECRET_ACCESS_KEY=minioadmin
+          S3_FORCE_PATH_STYLE=true
+          MINIO_ROOT_USER=minioadmin
+          MINIO_ROOT_PASSWORD=minioadmin
+          MINIO_BUCKET=nexus-artifacts
+          INTERNAL_SERVICE_TOKENS=[{"id":"ci","token":"nexus-local-dev-token","scopes":["internal:read","artifacts:download-url","github:draft"]}]
+          SLACK_SIGNING_SECRET=ci-slack-secret
+          WEBHOOK_SHARED_SECRET=ci-webhook-secret
+          DATABASE_URL=postgres://nexus:nexus@localhost:5432/nexus
+          REDIS_URL=redis://localhost:6379
+          GITHUB_DRAFT_SYNC_ENABLED=false
+          GITHUB_AUTH_MODE=pat
+          GITHUB_USE_TEST_REPO=false
+          GITHUB_OWNER=
+          GITHUB_REPO=
+          GITHUB_TEST_OWNER=
+          GITHUB_TEST_REPO=
+          GITHUB_TOKEN=
+          GITHUB_APP_ID=
+          GITHUB_APP_INSTALLATION_ID=
+          GITHUB_APP_PRIVATE_KEY=
+          AGENT_EXECUTION_COMMAND=
+          AGENT_EXECUTION_ARGS=[]
+          AGENT_EXECUTION_TIMEOUT_SECONDS=600
+          AGENT_EXECUTION_AUTO_CREATE_PR=false
+          EXTENSION_MAX_INLINE_ARTIFACT_BYTES=1048576
+          EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES=5242880
+          EOF
+
+      - name: Start Compose stack
+        run: docker compose up -d --build
+
+      - name: Wait for packaged health
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Packaged stack did not become healthy in time" >&2
+          exit 1
+
+      - name: Show Compose status
+        run: docker compose ps
+
+      - name: Print Compose logs on failure
+        if: failure()
+        run: |
+          echo '--- APP LOG ---'
+          docker compose logs app || true
+          echo '--- WORKER LOG ---'
+          docker compose logs worker || true
+
+      - name: Tear down Compose stack
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  terraform-smoke:
+    runs-on: ubuntu-latest
+
+    env:
+      TF_IMAGE: hashicorp/terraform:1.14.6
+      TF_STACK_NAME: nexus-tf-ci
+      TF_APP_PORT: '4100'
+      TF_APP_BASE_URL: http://127.0.0.1:4100
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Terraform formatting
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace/infra/terraform \
+            "$TF_IMAGE" fmt -check
+
+      - name: Initialize Terraform
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -w /workspace/infra/terraform \
+            "$TF_IMAGE" init
+
+      - name: Apply Terraform smoke stack
+        run: |
+          docker run --rm \
+            -e TF_VAR_stack_name="$TF_STACK_NAME" \
+            -e TF_VAR_app_port="$TF_APP_PORT" \
+            -e TF_VAR_app_base_url="$TF_APP_BASE_URL" \
+            -e TF_VAR_sql_init_host_path="$GITHUB_WORKSPACE/sql/init" \
+            -e TF_VAR_internal_service_tokens='[{"id":"ci","token":"nexus-local-dev-token","scopes":["internal:read","artifacts:download-url","github:draft"]}]' \
+            -e TF_VAR_slack_signing_secret=ci-slack-secret \
+            -e TF_VAR_webhook_shared_secret=ci-webhook-secret \
+            -e TF_VAR_github_draft_sync_enabled=false \
+            -e TF_VAR_github_use_test_repo=false \
+            -e TF_VAR_s3_region=us-east-1 \
+            -e TF_VAR_s3_bucket=nexus-artifacts \
+            -e TF_VAR_s3_access_key_id=minioadmin \
+            -e TF_VAR_s3_secret_access_key=minioadmin \
+            -e TF_VAR_s3_force_path_style=true \
+            -e TF_VAR_minio_root_user=minioadmin \
+            -e TF_VAR_minio_root_password=minioadmin \
+            -e TF_VAR_minio_bucket=nexus-artifacts \
+            -v "$PWD:/workspace" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -w /workspace/infra/terraform \
+            "$TF_IMAGE" apply -auto-approve
+
+      - name: Wait for Terraform health
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$TF_APP_BASE_URL/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Terraform-managed stack did not become healthy in time" >&2
+          exit 1
+
+      - name: Destroy Terraform smoke stack
+        if: always()
+        run: |
+          docker run --rm \
+            -e TF_VAR_stack_name="$TF_STACK_NAME" \
+            -e TF_VAR_app_port="$TF_APP_PORT" \
+            -e TF_VAR_app_base_url="$TF_APP_BASE_URL" \
+            -e TF_VAR_sql_init_host_path="$GITHUB_WORKSPACE/sql/init" \
+            -e TF_VAR_internal_service_tokens='[{"id":"ci","token":"nexus-local-dev-token","scopes":["internal:read","artifacts:download-url","github:draft"]}]' \
+            -e TF_VAR_slack_signing_secret=ci-slack-secret \
+            -e TF_VAR_webhook_shared_secret=ci-webhook-secret \
+            -e TF_VAR_github_draft_sync_enabled=false \
+            -e TF_VAR_github_use_test_repo=false \
+            -e TF_VAR_s3_region=us-east-1 \
+            -e TF_VAR_s3_bucket=nexus-artifacts \
+            -e TF_VAR_s3_access_key_id=minioadmin \
+            -e TF_VAR_s3_secret_access_key=minioadmin \
+            -e TF_VAR_s3_force_path_style=true \
+            -e TF_VAR_minio_root_user=minioadmin \
+            -e TF_VAR_minio_root_password=minioadmin \
+            -e TF_VAR_minio_bucket=nexus-artifacts \
+            -v "$PWD:/workspace" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -w /workspace/infra/terraform \
+            "$TF_IMAGE" destroy -auto-approve

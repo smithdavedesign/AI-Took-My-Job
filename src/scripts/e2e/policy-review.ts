@@ -88,6 +88,10 @@ function getSharedSecret(): string {
   return process.env.WEBHOOK_SHARED_SECRET ?? 'replace-me';
 }
 
+function getTargetRepository(): string {
+  return process.env.E2E_TARGET_REPOSITORY ?? 'smithdavedesign/testRepo';
+}
+
 async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -184,6 +188,7 @@ function buildHarBase64(baseUrl: string): string {
 async function main(): Promise<void> {
   const baseUrl = getBaseUrl();
   const token = getToken();
+  const targetRepository = getTargetRepository();
   const authHeaders = { Authorization: `Bearer ${token}` };
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
   assert(health.status === 'ok', 'Health endpoint did not return ok');
@@ -263,7 +268,7 @@ async function main(): Promise<void> {
     },
     body: JSON.stringify({
       reportId: report.reportId,
-      targetRepository: 'smithdavedesign/testRepo',
+      targetRepository,
       title: 'Validate new policy and review routes',
       objective: 'Create a minimal change and persist validation policy plus review state.',
       executionMode: 'fix',

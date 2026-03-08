@@ -139,6 +139,10 @@ function getSharedSecret(): string {
   return process.env.WEBHOOK_SHARED_SECRET ?? 'replace-me';
 }
 
+function getTargetRepository(): string {
+  return process.env.E2E_TARGET_REPOSITORY ?? 'smithdavedesign/testRepo';
+}
+
 async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -214,6 +218,7 @@ async function requestGitHubPullRequest(repository: string, pullRequestNumber: n
 async function main(): Promise<void> {
   const baseUrl = getBaseUrl();
   const authHeaders = { Authorization: `Bearer ${getToken()}` };
+  const targetRepository = getTargetRepository();
   const runId = Date.now();
   const uniqueTitle = `Checkout service latency regression ${runId}`;
   const uniqueCondition = `Checkout API latency ${runId}`;
@@ -291,7 +296,7 @@ async function main(): Promise<void> {
     },
     body: JSON.stringify({
       reportId: targetReport.reportId,
-      targetRepository: 'smithdavedesign/testRepo',
+      targetRepository,
       title: `Promote and merge flow ${runId}`,
       objective: 'Create a minimal code change and validate the PR audit plus merge flow.',
       executionMode: 'fix',
@@ -384,7 +389,7 @@ async function main(): Promise<void> {
     (value) => value.status === 'opened' && typeof value.pullRequestNumber === 'number'
   );
 
-  const githubPullRequest = await requestGitHubPullRequest('smithdavedesign/testRepo', promoted.pullRequestNumber);
+  const githubPullRequest = await requestGitHubPullRequest(targetRepository, promoted.pullRequestNumber);
   if (githubPullRequest) {
     assert(githubPullRequest.body.includes('## Evidence References'), 'GitHub pull request body did not include evidence references');
     assert(githubPullRequest.body.includes(createdExecution.executionId), 'GitHub pull request body did not include the execution id');
