@@ -94,6 +94,9 @@ jobs:
       - name: Run developer context smoke
         run: npm run e2e:developer-context
 
+      - name: Run MCP developer context smoke
+        run: npm run e2e:mcp-developer-context
+
       - name: Print logs on failure
         if: failure()
         run: |

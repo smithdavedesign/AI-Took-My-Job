@@ -6,7 +6,7 @@ import type { TriageJobRepository } from '../repositories/triage-job-repository.
 import type { BullConnectionOptions } from './redis.js';
 
 export interface QueuedJob {
-  type: 'triage' | 'replay' | 'agent-task' | 'agent-execution';
+  type: 'triage' | 'replay' | 'agent-task' | 'agent-execution' | 'shadow-suite-run';
   reportId: string;
   source: string;
   priority: number;

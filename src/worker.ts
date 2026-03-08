@@ -15,6 +15,8 @@ import { loadConfig } from './support/config.js';
 import { createDatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
 import { createReplayRunRepository } from './repositories/replay-run-repository.js';
+import { createShadowSuiteRepository } from './repositories/shadow-suite-repository.js';
+import { createShadowSuiteRunRepository } from './repositories/shadow-suite-run-repository.js';
 import { createFeedbackRepository } from './repositories/feedback-repository.js';
 import { createFeedbackReportEmbeddingRepository } from './repositories/feedback-report-embedding-repository.js';
 import { createGitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
@@ -136,6 +138,8 @@ async function main(): Promise<void> {
   const agentTaskValidationPolicyRepository = createAgentTaskValidationPolicyRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
   const replayRunRepository = createReplayRunRepository(database);
+  const shadowSuiteRepository = createShadowSuiteRepository(database);
+  const shadowSuiteRunRepository = createShadowSuiteRunRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
   const artifactStorage = createArtifactStore(config);
   const github = createGitHubIntegration(config);
@@ -374,6 +378,187 @@ async function main(): Promise<void> {
         } catch (error) {
           await agentTaskRepository.updateStatus(agentTaskId, 'failed', {
             failureReason: error instanceof Error ? error.message : 'unknown agent task preparation failure'
+          });
+          throw error;
+        }
+      }
+
+      if (job.name === 'shadow-suite-run' || job.data.type === 'shadow-suite-run') {
+        const shadowSuiteId = typeof job.data.payload.shadowSuiteId === 'string'
+          ? job.data.payload.shadowSuiteId
+          : null;
+        const shadowSuiteRunId = typeof job.data.payload.shadowSuiteRunId === 'string'
+          ? job.data.payload.shadowSuiteRunId
+          : null;
+        const targetOrigin = typeof job.data.payload.targetOrigin === 'string' && job.data.payload.targetOrigin.length > 0
+          ? job.data.payload.targetOrigin
+          : null;
+
+        if (!shadowSuiteId || !shadowSuiteRunId) {
+          throw new Error('missing shadow suite identifiers in queued payload');
+        }
+
+        const suite = await shadowSuiteRepository.findById(shadowSuiteId);
+        if (!suite) {
+          throw new Error(`missing shadow suite ${shadowSuiteId}`);
+        }
+
+        const run = await shadowSuiteRunRepository.findById(shadowSuiteRunId);
+        if (!run) {
+          throw new Error(`missing shadow suite run ${shadowSuiteRunId}`);
+        }
+
+        const report = await feedbackRepository.findById(suite.feedbackReportId);
+        if (!report) {
+          throw new Error(`missing feedback report ${suite.feedbackReportId}`);
+        }
+
+        const effectiveTargetOrigin = targetOrigin ?? suite.targetOrigin ?? null;
+        if (!effectiveTargetOrigin) {
+          throw new Error(`shadow suite ${shadowSuiteId} has no target origin configured`);
+        }
+
+        const baselineReplay = await replayRunRepository.findLatestByReportId(report.id);
+        const artifacts = await artifactBundleRepository.findByReportId(report.id);
+        const harArtifact = artifacts.find((artifact) => artifact.artifactType === 'har');
+        if (!harArtifact) {
+          throw new Error(`missing HAR artifact for report ${report.id}`);
+        }
+
+        const now = new Date();
+        const startedAt = now.toISOString();
+        await shadowSuiteRunRepository.update({
+          ...run,
+          status: 'processing',
+          targetOrigin: effectiveTargetOrigin,
+          summary: {
+            ...run.summary,
+            startedAt
+          }
+        });
+
+        const replayRunId = randomUUID();
+        await replayRunRepository.create({
+          id: replayRunId,
+          feedbackReportId: report.id,
+          artifactId: harArtifact.id,
+          status: 'processing',
+          summary: {
+            stage: 'shadow-suite-replay',
+            shadowSuiteId,
+            shadowSuiteRunId,
+            targetOrigin: effectiveTargetOrigin
+          }
+        });
+
+        try {
+          const harText = await readStreamToString(await artifactStorage.store.readArtifact(harArtifact.storageKey));
+          const localStorageArtifact = artifacts.find((artifact) => artifact.artifactType === 'local-storage');
+          const sessionStorageArtifact = artifacts.find((artifact) => artifact.artifactType === 'session-storage');
+          const localStorageSnapshot = localStorageArtifact ? await readJsonArtifact(artifactStorage.store, localStorageArtifact.storageKey) : {};
+          const sessionStorageSnapshot = sessionStorageArtifact ? await readJsonArtifact(artifactStorage.store, sessionStorageArtifact.storageKey) : {};
+          const storageState = {
+            localStorageKeys: Object.keys(localStorageSnapshot),
+            sessionStorageKeys: Object.keys(sessionStorageSnapshot)
+          };
+          const builtReplay = buildReplayArtifacts(harText, storageState);
+          const execution = await executeReplayPlan({
+            plan: builtReplay.plan,
+            steps: builtReplay.executionSteps,
+            storageSnapshot: {
+              localStorage: Object.fromEntries(Object.entries(localStorageSnapshot).map(([key, value]) => [key, String(value)])),
+              sessionStorage: Object.fromEntries(Object.entries(sessionStorageSnapshot).map(([key, value]) => [key, String(value)]))
+            },
+            targetOrigin: effectiveTargetOrigin
+          });
+          const replayPlan = {
+            ...builtReplay.plan,
+            execution
+          };
+          const summary = summarizeReplayPlan(replayPlan);
+
+          await replayRunRepository.update({
+            id: replayRunId,
+            feedbackReportId: report.id,
+            artifactId: harArtifact.id,
+            status: 'completed',
+            summary,
+            replayPlan
+          });
+
+          const passed = execution.status === suite.expectedOutcome;
+          const completedAt = new Date().toISOString();
+          await shadowSuiteRunRepository.update({
+            ...run,
+            replayRunId,
+            status: passed ? 'passed' : 'failed',
+            targetOrigin: effectiveTargetOrigin,
+            expectedOutcome: suite.expectedOutcome,
+            actualOutcome: execution.status,
+            summary: {
+              ...summary,
+              baselineStatus: baselineReplay?.replayPlan?.execution?.status ?? null,
+              expectedOutcome: suite.expectedOutcome,
+              actualOutcome: execution.status,
+              targetOrigin: effectiveTargetOrigin,
+              startedAt,
+              completedAt
+            }
+          });
+
+          await shadowSuiteRepository.update({
+            ...suite,
+            replayRunId,
+            lastRunAt: completedAt,
+            nextRunAt: new Date(Date.now() + suite.cadenceSeconds * 1000).toISOString()
+          });
+          await triageJobRepository.updateStatus(job.id, 'completed');
+
+          console.log(JSON.stringify({
+            message: 'shadow suite run completed',
+            jobId: job.id,
+            shadowSuiteId,
+            shadowSuiteRunId,
+            replayRunId,
+            expectedOutcome: suite.expectedOutcome,
+            actualOutcome: execution.status,
+            passed,
+            targetOrigin: effectiveTargetOrigin
+          }));
+
+          return;
+        } catch (error) {
+          const failureReason = error instanceof Error ? error.message : 'unknown shadow suite replay failure';
+          await replayRunRepository.update({
+            id: replayRunId,
+            feedbackReportId: report.id,
+            artifactId: harArtifact.id,
+            status: 'failed',
+            summary: {
+              stage: 'shadow-suite-failed',
+              shadowSuiteId,
+              shadowSuiteRunId,
+              targetOrigin: effectiveTargetOrigin
+            },
+            failureReason
+          });
+          await shadowSuiteRunRepository.update({
+            ...run,
+            replayRunId,
+            status: 'failed',
+            targetOrigin: effectiveTargetOrigin,
+            expectedOutcome: suite.expectedOutcome,
+            summary: {
+              ...run.summary,
+              startedAt,
+              targetOrigin: effectiveTargetOrigin
+            },
+            failureReason
+          });
+          await shadowSuiteRepository.update({
+            ...suite,
+            lastRunAt: new Date().toISOString(),
+            nextRunAt: new Date(Date.now() + suite.cadenceSeconds * 1000).toISOString()
           });
           throw error;
         }

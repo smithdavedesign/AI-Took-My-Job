@@ -79,6 +79,48 @@ CREATE TABLE IF NOT EXISTS replay_runs (
 CREATE INDEX IF NOT EXISTS replay_runs_report_idx
   ON replay_runs (feedback_report_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS shadow_suites (
+  id UUID PRIMARY KEY,
+  feedback_report_id UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,
+  replay_run_id UUID REFERENCES replay_runs(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  environment TEXT NOT NULL DEFAULT 'staging',
+  target_origin TEXT,
+  cadence_seconds INTEGER NOT NULL DEFAULT 3600,
+  expected_outcome TEXT NOT NULL DEFAULT 'reproduced',
+  status TEXT NOT NULL DEFAULT 'active',
+  retention_reason TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_run_at TIMESTAMPTZ,
+  next_run_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS shadow_suites_status_idx
+  ON shadow_suites (status, environment, next_run_at ASC);
+
+CREATE INDEX IF NOT EXISTS shadow_suites_report_idx
+  ON shadow_suites (feedback_report_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS shadow_suite_runs (
+  id UUID PRIMARY KEY,
+  shadow_suite_id UUID NOT NULL REFERENCES shadow_suites(id) ON DELETE CASCADE,
+  replay_run_id UUID REFERENCES replay_runs(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  target_origin TEXT,
+  expected_outcome TEXT NOT NULL,
+  actual_outcome TEXT,
+  triggered_by TEXT,
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  failure_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS shadow_suite_runs_suite_idx
+  ON shadow_suite_runs (shadow_suite_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS agent_tasks (
   id UUID PRIMARY KEY,
   feedback_report_id UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,

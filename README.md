@@ -178,9 +178,17 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/embedding`
 - `GET /internal/reports/:reportId/history`
 - `GET /internal/reports/:reportId/impact`
+- `GET /internal/reports/:reportId/developer-summary`
 - `GET /internal/reports/:reportId/ownership`
 - `GET /internal/reports/:reportId/similar`
 - `GET /internal/reports/:reportId/replay`
+- `GET /internal/shadow-suites`
+- `POST /internal/shadow-suites`
+- `GET /internal/shadow-suites/:suiteId`
+- `POST /internal/shadow-suites/:suiteId/status`
+- `GET /internal/shadow-suites/:suiteId/runs`
+- `POST /internal/shadow-suites/:suiteId/run`
+- `POST /internal/shadow-suites/run-due`
 - `GET /internal/artifacts/:artifactId/download-url`
 - `GET /artifacts/download/:artifactId`
 - `GET /learn`
@@ -253,6 +261,14 @@ For older reports, run `npm run backfill:report-index` to persist the same index
 Detailed setup, examples, and a VS Code MCP configuration snippet are documented in [docs/mcp-developer-context.md](docs/mcp-developer-context.md).
 
 A dedicated smoke path now exists as `npm run e2e:developer-context`, and GitHub Actions runs it through [.github/workflows/developer-context-smoke.yml](.github/workflows/developer-context-smoke.yml).
+
+`npm run e2e:mcp-developer-context` now validates the stdio MCP server itself with the SDK client, including the compact engineering summary tool.
+
+## Shadow Suite And Distribution
+
+Phase 8 now includes retained shadow-suite management and queued replay execution for staging or preview environments. Use `npm run e2e:shadow-suite` to validate the retained replay flow locally, and `npm run shadow-suite:tick` to enqueue due suites from a scheduler.
+
+Distribution support now includes a dedicated `worker` service in [docker-compose.yml](docker-compose.yml) and a Terraform Docker-provider scaffold under [infra/terraform/main.tf](infra/terraform/main.tf). The full Phase 8 operator notes are in [docs/shadow-suite.md](docs/shadow-suite.md).
 
 ## GitHub Auth Modes
 

@@ -55,6 +55,8 @@ export function buildExecutionCloseout(input: {
   const replayStatus = typeof replayValidation.status === 'string'
     ? replayValidation.status
     : 'not-run';
+  const replayContext = toObject(input.task.preparedContext.replay);
+  const replayRequired = Object.keys(replayContext).length > 0;
   const reviewStatus = input.review?.status ?? (hasChanges ? 'pending' : 'not-applicable');
   const reportedChangedFiles = toStringArray(contract.reportedChangedFiles);
   const actualChangedFiles = toStringArray(contract.actualChangedFiles);
@@ -79,6 +81,10 @@ export function buildExecutionCloseout(input: {
     blockers.push('One or more requested validations failed.');
   }
 
+  if (hasChanges && replayRequired && replayStatus !== 'passed') {
+    blockers.push('Replay-backed validation must pass before promotion when replay evidence exists.');
+  }
+
   if (hasChanges && reviewStatus !== 'approved') {
     blockers.push(reviewStatus === 'rejected'
       ? 'Human review rejected this execution.'
@@ -94,6 +100,7 @@ export function buildExecutionCloseout(input: {
     && !input.pullRequest
     && reviewStatus === 'approved'
     && validationStatus !== 'failed'
+    && (!replayRequired || replayStatus === 'passed')
     && contractStatus !== 'failed'
     && Boolean(input.execution.baseBranch);
 
@@ -172,6 +179,7 @@ export function buildExecutionCloseout(input: {
       },
       replayValidation: {
         status: replayStatus,
+        required: replayRequired,
         expectation: typeof replayValidation.expectation === 'string' ? replayValidation.expectation : null
       },
       review: {

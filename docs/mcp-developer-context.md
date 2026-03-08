@@ -27,6 +27,7 @@ The MCP process reads the same environment contract as the API server. At minimu
 - `nexus_issue_context`: fetch aggregated report context, signed artifact URLs, and optional inline previews.
 - `nexus_reproduction_status`: inspect the latest replay-backed reproduction result for a report.
 - `nexus_observability_context`: fetch normalized observability payload context for a report.
+- `nexus_engineering_summary`: fetch a compact ownership, clustering, and reproduction summary for editor-first triage.
 
 ## Example Calls
 
@@ -119,3 +120,5 @@ These are useful for onboarding teammates who need the product framing or a visu
 - the seeded report exposes persisted `reportIndex` data through both `active-issues` and report context
 
 The same path runs in CI through `.github/workflows/developer-context-smoke.yml`.
+
+`npm run e2e:mcp-developer-context` additionally spawns the stdio MCP server and verifies live tool calls through the MCP SDK client.

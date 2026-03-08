@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { classifyReport } from '../../services/reports/report-classification.js';
+import { buildDeveloperSummary } from '../../services/reports/developer-summary.js';
 import { resolveDuplicateReports } from '../../services/reports/report-duplicates.js';
 import { resolveRefinedImpactAssessment } from '../../services/reports/report-impact.js';
 import { resolveReportHistory } from '../../services/reports/report-history.js';
@@ -98,6 +99,8 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         continue;
       }
 
+      const replay = await app.replayRuns.findLatestByReportId(report.id);
+
       const ownership = await resolveOwnershipCandidates({
         report,
         ...(draft.repository ? { repository: draft.repository } : {})
@@ -137,6 +140,12 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         issueNumber: draft.issueNumber ?? null,
         issueUrl: draft.issueUrl ?? null,
         ownershipCandidates: ownership.candidates,
+        developerSummary: buildDeveloperSummary({
+          ownershipCandidates: ownership.candidates,
+          replay,
+          impactScore: typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null,
+          agentTaskCount: 0
+        }),
         reportIndex,
         pathHints,
         matchedPaths: fileMatch.matchedPaths,
@@ -253,6 +262,14 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       duplicates,
       history,
       impact,
+      developerSummary: buildDeveloperSummary({
+        ownershipCandidates: ownership.candidates,
+        similarCandidates: similar.candidates,
+        duplicateCandidates: duplicates.candidates,
+        replay,
+        impactScore: typeof impact.score === 'number' ? impact.score : null,
+        agentTaskCount: tasks.length
+      }),
       reportIndex: readPersistedReportIndex(report.payload) ?? buildReportIndex(report),
       observabilityContext: summarizeObservabilityContext(report),
       agentTasks: executionsByTask.map((entry) => ({
@@ -450,6 +467,78 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     return {
       reportId,
       ...impact
+    };
+  });
+
+  app.get('/internal/reports/:reportId/developer-summary', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const { reportId } = reportIdParamsSchema.parse(request.params);
+    const report = await app.reports.findById(reportId);
+    if (!report) {
+      throw app.httpErrors.notFound('report not found');
+    }
+
+    const [embedding, draft, replay, tasks] = await Promise.all([
+      app.reportEmbeddings.findByReportId(reportId),
+      app.githubIssueLinks.findByReportId(reportId),
+      app.replayRuns.findLatestByReportId(reportId),
+      app.agentTasks.findByReportId(reportId)
+    ]);
+
+    const [ownership, similar, duplicates, impact] = await Promise.all([
+      resolveOwnershipCandidates({
+        report,
+        ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => app.reports.findById(neighborReportId)
+        } : {})
+      }),
+      embedding
+        ? resolveSimilarReports({
+          report,
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => app.reports.findById(neighborReportId),
+          loadIssueLinkByReportId: (neighborReportId) => app.githubIssueLinks.findByReportId(neighborReportId)
+        })
+        : Promise.resolve({ candidates: [] }),
+      resolveDuplicateReports({
+        report,
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => app.reports.findById(neighborReportId)
+        } : {}),
+        loadIssueLinkByReportId: (linkedReportId) => app.githubIssueLinks.findByReportId(linkedReportId)
+      }),
+      resolveRefinedImpactAssessment({
+        report,
+        ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => app.reports.findById(neighborReportId)
+        } : {}),
+        loadIssueLinkByReportId: (linkedReportId) => app.githubIssueLinks.findByReportId(linkedReportId),
+        loadTasksByReportId: (linkedReportId) => app.agentTasks.findByReportId(linkedReportId),
+        loadExecutionsByTaskId: (agentTaskId) => app.agentTaskExecutions.findByTaskId(agentTaskId),
+        loadPullRequestByExecutionId: (executionId) => app.agentTaskExecutionPullRequests.findByExecutionId(executionId)
+      })
+    ]);
+
+    return {
+      reportId,
+      developerSummary: buildDeveloperSummary({
+        ownershipCandidates: ownership.candidates,
+        similarCandidates: similar.candidates,
+        duplicateCandidates: duplicates.candidates,
+        replay,
+        impactScore: typeof impact.score === 'number' ? impact.score : null,
+        agentTaskCount: tasks.length
+      })
     };
   });
 }

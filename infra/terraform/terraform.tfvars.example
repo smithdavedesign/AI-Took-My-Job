@@ -1,0 +1,7 @@
+internal_service_tokens = "[{\"id\":\"terraform\",\"token\":\"replace-me-service-token\",\"scopes\":[\"internal:read\",\"artifacts:download-url\",\"github:draft\"]}]"
+slack_signing_secret   = "replace-me"
+webhook_shared_secret  = "replace-me"
+github_draft_sync_enabled = "false"
+github_owner           = ""
+github_repo            = ""
+github_token           = ""

@@ -34,17 +34,17 @@ Status legend:
 
 ### Next
 
-- [-] Continue Phase 7 MCP developer context.
+- [x] Continue Phase 7 MCP developer context.
 - [x] Publish dedicated MCP setup docs and learn-more hosting routes.
 - [x] Add a report-index backfill path and CI smoke coverage for developer context.
-- [ ] Start Phase 8 shadow-suite retention and distribution.
+- [x] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 
 ### Blocked
 
-- [-] Agentic PR generation should remain blocked until replay validation is trustworthy enough to prove fixes.
-- [-] MCP developer context should remain blocked until issue clustering, ownership, and reproduction summaries are stable enough to expose.
-- [-] Shadow-suite distribution work should remain blocked until replay retention and execution policies are defined.
+- [x] Agentic PR generation now requires approved replay-backed validation before promotion when replay evidence exists.
+- [x] MCP developer context now exposes compact ownership, clustering, and reproduction summaries plus SDK-backed smoke coverage.
+- [x] Shadow-suite distribution now has retained replay routes, scheduler entrypoint, worker execution, Compose worker support, and Terraform packaging.
 
 ### [x] Phase 0: Foundation
 
@@ -159,37 +159,38 @@ Exit criteria:
 
 - [x] Nexus can produce a draft PR with linked evidence and validation status.
 
-### [-] Phase 7: MCP Developer Context
+### [x] Phase 7: MCP Developer Context
 
 Objective: surface active issue intelligence directly in the IDE.
 
 Deliverables:
 
-- [-] MCP server with active issues by file or service, including persisted repository file-path and service indexing.
-- [-] Issue context tool returning logs, artifacts, triage summaries, and inline previewable artifact context.
+- [x] MCP server with active issues by file or service, including persisted repository file-path and service indexing.
+- [x] Issue context tool returning logs, artifacts, triage summaries, and inline previewable artifact context.
 - [x] Async reproduction status lookup.
 - [x] Linked observability context.
 - [x] Hosted learn-more pages for the PRD and developer workbench preview.
 - [x] Backfill utility and CI smoke coverage for persisted developer-context indexing.
+- [x] Compact engineering summary for ownership, clustering, and reproduction context plus MCP smoke coverage.
 
 Exit criteria:
 
-- [-] Developers can query active issue context from the IDE without leaving their editor.
+- [x] Developers can query active issue context from the IDE without leaving their editor.
 
-### [ ] Phase 8: Shadow Suite And Distribution
+### [x] Phase 8: Shadow Suite And Distribution
 
 Objective: turn validated reproductions into durable regression coverage and make deployment portable.
 
 Deliverables:
 
-- [ ] Shadow test library management.
-- [ ] Continuous replay against staging or preview environments.
-- [ ] Supported Docker Compose distribution.
-- [ ] Terraform packaging once runtime topology stabilizes.
+- [x] Shadow test library management.
+- [x] Continuous replay against staging or preview environments.
+- [x] Supported Docker Compose distribution.
+- [x] Terraform packaging once runtime topology stabilizes.
 
 Exit criteria:
 
-- [ ] Teams can self-host Nexus and continuously run retained reproductions in shadow mode.
+- [x] Teams can self-host Nexus and continuously run retained reproductions in shadow mode.
 
 ## Current Sprint
 
@@ -203,8 +204,8 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [-] Continue Phase 7 MCP developer context.
-2. [ ] Start Phase 8 retained replay and distribution work.
+1. [x] Continue Phase 7 MCP developer context.
+2. [x] Start Phase 8 retained replay and distribution work.
 
 ## Open Questions
 

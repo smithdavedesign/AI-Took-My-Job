@@ -339,6 +339,17 @@ async function main(): Promise<void> {
     });
   });
 
+  server.registerTool('nexus_engineering_summary', {
+    title: 'Nexus Engineering Summary',
+    description: 'Return a compact ownership, clustering, and reproduction summary for an issue so developers can triage from the editor quickly.',
+    inputSchema: {
+      reportId: z.string().uuid().describe('Nexus report id.')
+    }
+  }, async ({ reportId }) => {
+    const summary = await requestJson<Record<string, unknown>>(`/internal/reports/${reportId}/developer-summary`);
+    return textResult(summary);
+  });
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

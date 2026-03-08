@@ -18,6 +18,8 @@ import type { ArtifactStore, ArtifactStoreMetadata } from './services/artifacts/
 import { createFeedbackRepository, type FeedbackRepository } from './repositories/feedback-repository.js';
 import { createGitHubIssueLinkRepository, type GitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
 import { createReplayRunRepository, type ReplayRunRepository } from './repositories/replay-run-repository.js';
+import { createShadowSuiteRepository, type ShadowSuiteRepository } from './repositories/shadow-suite-repository.js';
+import { createShadowSuiteRunRepository, type ShadowSuiteRunRepository } from './repositories/shadow-suite-run-repository.js';
 import { createTriageJobRepository, type TriageJobRepository } from './repositories/triage-job-repository.js';
 import { loadConfig, type AppConfig } from './support/config.js';
 import { createDatabaseClient, type DatabaseClient } from './support/database.js';
@@ -40,6 +42,8 @@ declare module 'fastify' {
     artifactStore: ArtifactStore;
     artifactStoreMetadata: ArtifactStoreMetadata;
     replayRuns: ReplayRunRepository;
+    shadowSuites: ShadowSuiteRepository;
+    shadowSuiteRuns: ShadowSuiteRunRepository;
     agentTasks: AgentTaskRepository;
     agentTaskExecutions: AgentTaskExecutionRepository;
     agentTaskExecutionPullRequests: AgentTaskExecutionPullRequestRepository;
@@ -91,6 +95,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   const feedbackReportEmbeddingRepository = createFeedbackReportEmbeddingRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
   const replayRunRepository = createReplayRunRepository(database);
+  const shadowSuiteRepository = createShadowSuiteRepository(database);
+  const shadowSuiteRunRepository = createShadowSuiteRunRepository(database);
   const auditRepository = createAuditRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
   const artifactStorage = createArtifactStore(config);
@@ -115,6 +121,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('artifactStore', artifactStorage.store);
   app.decorate('artifactStoreMetadata', artifactStorage.metadata);
   app.decorate('replayRuns', replayRunRepository);
+  app.decorate('shadowSuites', shadowSuiteRepository);
+  app.decorate('shadowSuiteRuns', shadowSuiteRunRepository);
   app.decorate('githubIssueLinks', githubIssueLinkRepository);
   app.decorate('auditRepository', auditRepository);
   app.decorate('triageJobs', triageJobRepository);

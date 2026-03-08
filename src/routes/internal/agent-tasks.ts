@@ -448,6 +448,16 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.conflict('agent task execution cannot be promoted while the agent output contract is mismatched');
     }
 
+    const replayContext = task.preparedContext.replay && typeof task.preparedContext.replay === 'object'
+      ? task.preparedContext.replay as Record<string, unknown>
+      : null;
+    const replayValidation = execution.validationEvidence.replayValidation && typeof execution.validationEvidence.replayValidation === 'object'
+      ? execution.validationEvidence.replayValidation as Record<string, unknown>
+      : null;
+    if (replayContext && (!replayValidation || replayValidation.status !== 'passed')) {
+      throw app.httpErrors.conflict('agent task execution cannot be promoted until replay-backed validation has passed');
+    }
+
     const existingPullRequest = await app.agentTaskExecutionPullRequests.findByExecutionId(executionId);
 
     try {
