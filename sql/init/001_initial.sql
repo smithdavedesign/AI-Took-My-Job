@@ -63,3 +63,18 @@ CREATE TABLE IF NOT EXISTS audit_events (
 
 CREATE INDEX IF NOT EXISTS audit_events_type_idx
   ON audit_events (event_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS replay_runs (
+  id UUID PRIMARY KEY,
+  feedback_report_id UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,
+  artifact_id UUID NOT NULL REFERENCES artifact_bundles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued',
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  replay_plan JSONB,
+  failure_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS replay_runs_report_idx
+  ON replay_runs (feedback_report_id, created_at DESC);

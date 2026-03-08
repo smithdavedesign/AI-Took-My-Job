@@ -5,13 +5,18 @@ import sensible from '@fastify/sensible';
 
 import { createGitHubIntegration, type GitHubIntegration } from './integrations/github/client.js';
 import { createAuditRepository, type AuditRepository } from './repositories/audit-repository.js';
+import { createArtifactBundleRepository, type ArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
+import { createArtifactStore } from './services/artifacts/index.js';
+import type { ArtifactStore, ArtifactStoreMetadata } from './services/artifacts/artifact-store.js';
 import { createFeedbackRepository, type FeedbackRepository } from './repositories/feedback-repository.js';
 import { createGitHubIssueLinkRepository, type GitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
+import { createReplayRunRepository, type ReplayRunRepository } from './repositories/replay-run-repository.js';
 import { createTriageJobRepository, type TriageJobRepository } from './repositories/triage-job-repository.js';
 import { loadConfig, type AppConfig } from './support/config.js';
 import { createDatabaseClient, type DatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerArtifactRoutes } from './routes/artifacts.js';
 import { registerInternalRoutes } from './routes/internal/index.js';
 import { registerWebhookRoutes } from './routes/webhooks/index.js';
 import { createAuditLogger, type AuditLogger } from './support/audit-log.js';
@@ -23,6 +28,10 @@ declare module 'fastify' {
     db: DatabaseClient;
     redis: Redis;
     reports: FeedbackRepository;
+    artifacts: ArtifactBundleRepository;
+    artifactStore: ArtifactStore;
+    artifactStoreMetadata: ArtifactStoreMetadata;
+    replayRuns: ReplayRunRepository;
     githubIssueLinks: GitHubIssueLinkRepository;
     auditRepository: AuditRepository;
     triageJobs: TriageJobRepository;
@@ -57,9 +66,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   const redis = createRedisConnection(config.REDIS_URL);
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
+  const artifactBundleRepository = createArtifactBundleRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
+  const replayRunRepository = createReplayRunRepository(database);
   const auditRepository = createAuditRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
+  const artifactStorage = createArtifactStore(config);
   const app = Fastify({
     logger: buildLoggerOptions(config),
     bodyLimit: 5 * 1024 * 1024,
@@ -70,6 +82,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('db', database);
   app.decorate('redis', redis);
   app.decorate('reports', feedbackRepository);
+  app.decorate('artifacts', artifactBundleRepository);
+  app.decorate('artifactStore', artifactStorage.store);
+  app.decorate('artifactStoreMetadata', artifactStorage.metadata);
+  app.decorate('replayRuns', replayRunRepository);
   app.decorate('githubIssueLinks', githubIssueLinkRepository);
   app.decorate('auditRepository', auditRepository);
   app.decorate('triageJobs', triageJobRepository);
@@ -96,6 +112,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   registerHealthRoutes(app);
+  registerArtifactRoutes(app);
   registerInternalRoutes(app);
   registerWebhookRoutes(app);
 

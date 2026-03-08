@@ -19,11 +19,42 @@ const optionalString = z.preprocess((value) => {
   return value;
 }, z.string().optional());
 
+const internalServiceTokenSchema = z.object({
+  id: z.string().min(1),
+  token: z.string().min(12),
+  scopes: z.array(z.string().min(1)).min(1)
+});
+
+const internalServiceTokensSchema = z.preprocess((value) => {
+  if (value === '' || value === undefined) {
+    return [];
+  }
+
+  if (typeof value === 'string') {
+    return JSON.parse(value);
+  }
+
+  return value;
+}, z.array(internalServiceTokenSchema).default([]));
+
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  ARTIFACT_STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
+  ARTIFACT_STORAGE_PATH: z.string().default('./var/artifacts'),
+  ARTIFACT_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+  S3_REGION: optionalString,
+  S3_BUCKET: optionalString,
+  S3_ENDPOINT: optionalString,
+  S3_ACCESS_KEY_ID: optionalString,
+  S3_SECRET_ACCESS_KEY: optionalString,
+  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  MINIO_ROOT_USER: z.string().default('minioadmin'),
+  MINIO_ROOT_PASSWORD: z.string().default('minioadmin'),
+  MINIO_BUCKET: z.string().default('nexus-artifacts'),
+  INTERNAL_SERVICE_TOKENS: internalServiceTokensSchema,
   SLACK_SIGNING_SECRET: z.string().min(1, 'SLACK_SIGNING_SECRET is required'),
   WEBHOOK_SHARED_SECRET: z.string().min(1, 'WEBHOOK_SHARED_SECRET is required'),
   DATABASE_URL: z.url({ protocol: /^postgres/ }),
@@ -36,6 +67,27 @@ const configSchema = z.object({
   GITHUB_APP_ID: optionalPositiveInt,
   GITHUB_APP_INSTALLATION_ID: optionalPositiveInt,
   GITHUB_APP_PRIVATE_KEY: optionalString
+}).superRefine((config, context) => {
+  if (config.ARTIFACT_STORAGE_PROVIDER !== 's3') {
+    return;
+  }
+
+  const requiredS3Fields: Array<keyof Pick<typeof config, 'S3_REGION' | 'S3_BUCKET' | 'S3_ACCESS_KEY_ID' | 'S3_SECRET_ACCESS_KEY'>> = [
+    'S3_REGION',
+    'S3_BUCKET',
+    'S3_ACCESS_KEY_ID',
+    'S3_SECRET_ACCESS_KEY'
+  ];
+
+  for (const field of requiredS3Fields) {
+    if (!config[field]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} is required when ARTIFACT_STORAGE_PROVIDER=s3`
+      });
+    }
+  }
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

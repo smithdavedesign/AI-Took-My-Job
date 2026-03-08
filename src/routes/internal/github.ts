@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { safeEqual } from '../../support/http.js';
+import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 
 const githubIssueDraftSchema = z.object({
   title: z.string().min(1).max(200),
@@ -11,21 +11,7 @@ const githubIssueDraftSchema = z.object({
 
 export function registerGitHubInternalRoutes(app: FastifyInstance): void {
   app.post('/internal/github/issues/draft', async (request, reply) => {
-    const sharedSecret = request.headers['x-nexus-shared-secret'];
-
-    if (typeof sharedSecret !== 'string' || !safeEqual(sharedSecret, app.config.WEBHOOK_SHARED_SECRET)) {
-      await app.audit.write({
-        eventType: 'github.signature_rejected',
-        actorType: 'integration',
-        actorId: 'github',
-        requestId: request.id,
-        payload: {
-          headers: request.headers
-        }
-      });
-
-      throw app.httpErrors.unauthorized('invalid shared secret');
-    }
+    const principal = requireInternalServiceAuth(app, request, ['github:draft']);
 
     const payload = githubIssueDraftSchema.parse(request.body);
 
@@ -42,7 +28,7 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
     await app.audit.write({
       eventType: 'github.issue_draft_created',
       actorType: 'system',
-      actorId: app.github.mode,
+      actorId: principal.id,
       requestId: request.id,
       payload: {
         issueNumber: created.number,
@@ -61,6 +47,8 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
   });
 
   app.get('/internal/reports/:reportId/draft', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
     const paramsSchema = z.object({
       reportId: z.string().uuid()
     });
@@ -73,5 +61,16 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
     }
 
     return draft;
+  });
+
+  app.get('/internal/reports/:reportId/artifacts', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+
+    const paramsSchema = z.object({
+      reportId: z.string().uuid()
+    });
+
+    const { reportId } = paramsSchema.parse(request.params);
+    return app.artifacts.findByReportId(reportId);
   });
 }

@@ -7,6 +7,8 @@ export function registerHealthRoutes(app: FastifyInstance): void {
       service: 'nexus-gateway',
       timestamp: new Date().toISOString(),
       environment: app.config.NODE_ENV,
+      artifactStorageProvider: app.artifactStoreMetadata.provider,
+      artifactStorageLocation: app.artifactStoreMetadata.location,
       githubAuthMode: app.github.mode,
       githubDraftSyncEnabled: app.github.enabled
     };
