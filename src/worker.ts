@@ -27,6 +27,7 @@ import { classifyReport } from './services/reports/report-classification.js';
 import { resolveDuplicateReports } from './services/reports/report-duplicates.js';
 import { resolveRefinedImpactAssessment } from './services/reports/report-impact.js';
 import { resolveReportHistory } from './services/reports/report-history.js';
+import { buildReportIndex } from './services/reports/report-index.js';
 import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from './services/reports/similar-reports.js';
 import { runReplayValidation } from './services/agent-tasks/replay-validation.js';
@@ -861,6 +862,7 @@ async function main(): Promise<void> {
         ...report.payload,
         classification,
         duplicates,
+        reportIndex: buildReportIndex(report),
         impactScore: refinedImpact.score,
         impactAssessment: refinedImpact
       };

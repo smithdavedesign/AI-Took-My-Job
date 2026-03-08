@@ -29,7 +29,8 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Agent executions now expose an explicit closeout view with contract, validation, review, promotion, and merge gates.
 - Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
 - A Phase 7 MCP stdio server now exposes active issue lookup, issue context, reproduction status, and observability context for IDE integrations.
-- The active-issue lookup now supports repository file-path heuristics, and the MCP issue-context tool can inline previews for logs, storage snapshots, HARs, and execution JSON artifacts.
+- The active-issue lookup now supports persisted report indexing for services and repository file paths, and the MCP issue-context tool can inline previews for logs, storage snapshots, HARs, and execution JSON artifacts.
+- Public learn-more pages are now hosted at `/learn`, `/learn/prd`, and `/learn/developer-workbench`.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
 - Ownership candidate inference from explicit report metadata, linked repository context, and nearest-neighbor reports.
@@ -40,7 +41,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, plus meaningful
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 
-Still planned: richer browser automation, clustering and deduplication, agentic PR workflows, and MCP developer context.
+Still planned: richer browser automation, clustering and deduplication, agentic PR workflows, and the remaining MCP + shadow-suite work.
 
 ## Status Snapshot
 
@@ -182,6 +183,9 @@ sequenceDiagram
 - `GET /internal/reports/:reportId/replay`
 - `GET /internal/artifacts/:artifactId/download-url`
 - `GET /artifacts/download/:artifactId`
+- `GET /learn`
+- `GET /learn/prd`
+- `GET /learn/developer-workbench`
 - `GET /health`
 
 ## Environment
@@ -241,6 +245,10 @@ It uses Nexus internal APIs to expose:
 - linked observability context for normalized reports
 
 The issue-context tool can also inline compact previews for previewable artifacts such as `console-logs`, `local-storage`, `session-storage`, `har`, and JSON execution artifacts.
+
+Triage now persists a lightweight `reportIndex` into report payloads so service and repository file-path searches can reuse stable metadata instead of relying only on ad hoc text scans.
+
+Detailed setup, examples, and a VS Code MCP configuration snippet are documented in [docs/mcp-developer-context.md](docs/mcp-developer-context.md).
 
 ## GitHub Auth Modes
 

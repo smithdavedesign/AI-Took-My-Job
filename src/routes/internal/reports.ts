@@ -5,6 +5,7 @@ import { classifyReport } from '../../services/reports/report-classification.js'
 import { resolveDuplicateReports } from '../../services/reports/report-duplicates.js';
 import { resolveRefinedImpactAssessment } from '../../services/reports/report-impact.js';
 import { resolveReportHistory } from '../../services/reports/report-history.js';
+import { buildReportIndex, readPersistedReportIndex } from '../../services/reports/report-index.js';
 import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from '../../services/reports/similar-reports.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
@@ -18,8 +19,6 @@ const activeIssuesQuerySchema = z.object({
   file: z.string().min(1).max(1000).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional()
 });
-
-const filePathPattern = /(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+/g;
 
 function normalizedText(value: unknown): string {
   if (typeof value === 'string') {
@@ -35,20 +34,6 @@ function normalizedText(value: unknown): string {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-function extractPathHints(values: string[]): string[] {
-  const hints: string[] = [];
-
-  for (const value of values) {
-    for (const match of value.matchAll(filePathPattern)) {
-      if (typeof match[0] === 'string' && match[0].length > 0) {
-        hints.push(match[0].toLowerCase());
-      }
-    }
-  }
-
-  return uniqueStrings(hints);
 }
 
 function matchesFileNeedle(fileNeedle: string, pathHints: string[], haystack: string): { matched: boolean; matchedPaths: string[] } {
@@ -124,15 +109,12 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         draft.draftBody,
         normalizedText(report.payload)
       ].join('\n').toLowerCase();
-      const pathHints = extractPathHints([
-        report.title ?? '',
-        draft.draftTitle,
-        draft.draftBody,
-        normalizedText(report.payload)
-      ]);
+      const reportIndex = readPersistedReportIndex(report.payload) ?? buildReportIndex(report);
+      const pathHints = uniqueStrings(reportIndex.filePaths);
 
       if (serviceNeedle) {
         const serviceMatch = ownership.candidates.some((candidate) => candidate.label.toLowerCase().includes(serviceNeedle))
+          || reportIndex.services.some((service) => service.includes(serviceNeedle))
           || haystack.includes(serviceNeedle);
         if (!serviceMatch) {
           continue;
@@ -155,6 +137,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         issueNumber: draft.issueNumber ?? null,
         issueUrl: draft.issueUrl ?? null,
         ownershipCandidates: ownership.candidates,
+        reportIndex,
         pathHints,
         matchedPaths: fileMatch.matchedPaths,
         contextPath: `/internal/reports/${report.id}/context`
@@ -270,6 +253,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       duplicates,
       history,
       impact,
+      reportIndex: readPersistedReportIndex(report.payload) ?? buildReportIndex(report),
       observabilityContext: summarizeObservabilityContext(report),
       agentTasks: executionsByTask.map((entry) => ({
         id: entry.task.id,

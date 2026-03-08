@@ -25,6 +25,7 @@ import { createBullConnectionOptions, createRedisConnection } from './support/re
 import { registerHealthRoutes } from './routes/health.js';
 import { registerArtifactRoutes } from './routes/artifacts.js';
 import { registerInternalRoutes } from './routes/internal/index.js';
+import { registerLearnRoutes } from './routes/learn.js';
 import { registerWebhookRoutes } from './routes/webhooks/index.js';
 import { createAuditLogger, type AuditLogger } from './support/audit-log.js';
 import { createJobPublisher, type JobPublisher } from './support/job-publisher.js';
@@ -140,6 +141,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   registerHealthRoutes(app);
+  registerLearnRoutes(app);
   registerArtifactRoutes(app);
   registerInternalRoutes(app);
   registerWebhookRoutes(app);

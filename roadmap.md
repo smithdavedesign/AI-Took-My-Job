@@ -35,6 +35,7 @@ Status legend:
 ### Next
 
 - [-] Continue Phase 7 MCP developer context.
+- [-] Publish dedicated MCP setup docs and learn-more hosting routes.
 - [ ] Start Phase 8 shadow-suite retention and distribution.
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 
@@ -163,10 +164,11 @@ Objective: surface active issue intelligence directly in the IDE.
 
 Deliverables:
 
-- [-] MCP server with active issues by file or service, including repository file-path heuristics.
+- [-] MCP server with active issues by file or service, including persisted repository file-path and service indexing.
 - [-] Issue context tool returning logs, artifacts, triage summaries, and inline previewable artifact context.
 - [x] Async reproduction status lookup.
 - [x] Linked observability context.
+- [x] Hosted learn-more pages for the PRD and developer workbench preview.
 
 Exit criteria:
 
