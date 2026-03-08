@@ -78,3 +78,24 @@ CREATE TABLE IF NOT EXISTS replay_runs (
 
 CREATE INDEX IF NOT EXISTS replay_runs_report_idx
   ON replay_runs (feedback_report_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_tasks (
+  id UUID PRIMARY KEY,
+  feedback_report_id UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,
+  processing_job_id UUID,
+  requested_by TEXT NOT NULL,
+  target_repository TEXT NOT NULL,
+  title TEXT NOT NULL,
+  objective TEXT NOT NULL,
+  execution_mode TEXT NOT NULL DEFAULT 'fix',
+  acceptance_criteria JSONB NOT NULL DEFAULT '[]'::jsonb,
+  context_notes TEXT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  prepared_context JSONB NOT NULL DEFAULT '{}'::jsonb,
+  failure_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_tasks_report_idx
+  ON agent_tasks (feedback_report_id, created_at DESC);

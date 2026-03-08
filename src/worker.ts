@@ -15,6 +15,7 @@ import { createArtifactStore } from './services/artifacts/index.js';
 import { buildReplayArtifacts, summarizeReplayPlan } from './services/replay/har-replay-plan.js';
 import { executeReplayPlan } from './services/replay/playwright-replay-executor.js';
 import { createIssueDraft } from './services/triage/issue-draft.js';
+import { createAgentTaskRepository } from './repositories/agent-task-repository.js';
 
 async function readStreamToString(stream: NodeJS.ReadableStream): Promise<string> {
   const chunks: Buffer[] = [];
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
+  const agentTaskRepository = createAgentTaskRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
   const replayRunRepository = createReplayRunRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
@@ -132,6 +134,86 @@ async function main(): Promise<void> {
               stage: 'failed'
             },
             failureReason
+          });
+          throw error;
+        }
+      }
+
+      if (job.name === 'agent-task' || job.data.type === 'agent-task') {
+        const report = await feedbackRepository.findById(job.data.reportId);
+
+        if (!report) {
+          throw new Error(`missing feedback report ${job.data.reportId}`);
+        }
+
+        const agentTaskId = typeof job.data.payload.agentTaskId === 'string'
+          ? job.data.payload.agentTaskId
+          : null;
+
+        if (!agentTaskId) {
+          throw new Error('missing agentTaskId in queued agent-task payload');
+        }
+
+        await agentTaskRepository.updateStatus(agentTaskId, 'preparing');
+
+        try {
+          const draft = await githubIssueLinkRepository.findByReportId(report.id);
+          const replay = await replayRunRepository.findLatestByReportId(report.id);
+          const artifacts = await artifactBundleRepository.findByReportId(report.id);
+          const preparedContext = {
+            report: {
+              id: report.id,
+              source: report.source,
+              title: report.title ?? null,
+              severity: report.severity,
+              reporterIdentifier: report.reporterIdentifier ?? null,
+              status: report.status
+            },
+            objective: job.data.payload.objective,
+            executionMode: job.data.payload.executionMode,
+            acceptanceCriteria: job.data.payload.acceptanceCriteria ?? [],
+            contextNotes: job.data.payload.contextNotes ?? null,
+            githubDraft: draft ? {
+              repository: draft.repository,
+              issueNumber: draft.issueNumber ?? null,
+              issueUrl: draft.issueUrl ?? null,
+              state: draft.state,
+              title: draft.draftTitle,
+              labels: draft.draftLabels
+            } : null,
+            replay: replay ? {
+              status: replay.status,
+              summary: replay.summary,
+              executionStatus: replay.replayPlan?.execution?.status ?? null,
+              matchedFailingStepOrders: replay.replayPlan?.execution?.matchedFailingStepOrders ?? []
+            } : null,
+            artifacts: artifacts.map((artifact) => ({
+              id: artifact.id,
+              artifactType: artifact.artifactType,
+              storageKey: artifact.storageKey,
+              metadata: artifact.metadata
+            }))
+          };
+
+          await agentTaskRepository.updateStatus(agentTaskId, 'ready', {
+            preparedContext
+          });
+          await triageJobRepository.updateStatus(job.id, 'completed');
+
+          console.log(JSON.stringify({
+            message: 'agent task prepared',
+            jobId: job.id,
+            agentTaskId,
+            reportId: report.id,
+            hasDraft: Boolean(draft),
+            hasReplay: Boolean(replay),
+            artifactCount: artifacts.length
+          }));
+
+          return;
+        } catch (error) {
+          await agentTaskRepository.updateStatus(agentTaskId, 'failed', {
+            failureReason: error instanceof Error ? error.message : 'unknown agent task preparation failure'
           });
           throw error;
         }

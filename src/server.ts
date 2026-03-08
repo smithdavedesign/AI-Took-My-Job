@@ -5,6 +5,7 @@ import sensible from '@fastify/sensible';
 
 import { createGitHubIntegration, type GitHubIntegration } from './integrations/github/client.js';
 import { createAuditRepository, type AuditRepository } from './repositories/audit-repository.js';
+import { createAgentTaskRepository, type AgentTaskRepository } from './repositories/agent-task-repository.js';
 import { createArtifactBundleRepository, type ArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import type { ArtifactStore, ArtifactStoreMetadata } from './services/artifacts/artifact-store.js';
@@ -32,6 +33,7 @@ declare module 'fastify' {
     artifactStore: ArtifactStore;
     artifactStoreMetadata: ArtifactStoreMetadata;
     replayRuns: ReplayRunRepository;
+    agentTasks: AgentTaskRepository;
     githubIssueLinks: GitHubIssueLinkRepository;
     auditRepository: AuditRepository;
     triageJobs: TriageJobRepository;
@@ -67,6 +69,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
+  const agentTaskRepository = createAgentTaskRepository(database);
   const githubIssueLinkRepository = createGitHubIssueLinkRepository(database);
   const replayRunRepository = createReplayRunRepository(database);
   const auditRepository = createAuditRepository(database);
@@ -83,6 +86,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('redis', redis);
   app.decorate('reports', feedbackRepository);
   app.decorate('artifacts', artifactBundleRepository);
+  app.decorate('agentTasks', agentTaskRepository);
   app.decorate('artifactStore', artifactStorage.store);
   app.decorate('artifactStoreMetadata', artifactStorage.metadata);
   app.decorate('replayRuns', replayRunRepository);

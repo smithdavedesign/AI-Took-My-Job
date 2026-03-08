@@ -128,7 +128,10 @@ sequenceDiagram
 ## Internal Routes
 
 - `POST /internal/github/issues/draft`
+- `POST /internal/agent-tasks`
+- `GET /internal/agent-tasks/:taskId`
 - `GET /internal/reports/:reportId/draft`
+- `GET /internal/reports/:reportId/agent-tasks`
 - `GET /internal/reports/:reportId/artifacts`
 - `GET /internal/reports/:reportId/replay`
 - `GET /internal/artifacts/:artifactId/download-url`
@@ -185,6 +188,8 @@ For automated end-to-end runs, GitHub sync can be redirected to a disposable tes
 When this is enabled, all draft sync during smoke tests goes to the test repository instead of the primary `GITHUB_OWNER` and `GITHUB_REPO` target.
 
 Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
+
+Agent-task submission flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
 
 ## Internal Route Auth
 
@@ -417,6 +422,26 @@ curl -X POST http://127.0.0.1:4000/internal/github/issues/draft \
   }'
 ```
 
+### Submit an Agent Task For A Report
+
+```bash
+curl -X POST http://127.0.0.1:4000/internal/agent-tasks \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer nexus-local-dev-token' \
+  --data '{
+    "reportId": "<report-id>",
+    "objective": "Investigate the replay evidence and prepare a fix task.",
+    "executionMode": "fix",
+    "acceptanceCriteria": [
+      "Use the replay evidence as the starting context.",
+      "Link the likely failure path.",
+      "Prepare the task for a future code agent runtime."
+    ]
+  }'
+```
+
+This currently prepares a persisted context bundle for a future coding agent. It does not yet execute code changes or open a PR.
+
 ### Create an Authenticated Artifact Download URL
 
 ```bash
@@ -443,6 +468,7 @@ The replay payload includes normalized steps, detected cookie names, auth-refres
 - Replay jobs now execute through Playwright request contexts and record whether the failing steps were reproduced.
 - A committed `npm run e2e:smoke` runner now validates the full local stack end to end.
 - GitHub sync for smoke testing can now be redirected to a disposable test repository instead of the primary target.
+- Internal operators can now submit report-linked agent tasks that prepare a structured execution bundle for future coding agents.
 
 ## Current Limitations
 
@@ -452,6 +478,7 @@ The replay payload includes normalized steps, detected cookie names, auth-refres
 - Full runtime validation requires Docker because PostgreSQL and Redis are expected to run through Compose.
 - GitHub sync is optional and disabled by default.
 - Intent classification, deduplication, ownership mapping, and semantic clustering are not implemented yet.
+- Agent tasks currently stop at prepared context; there is no live code-agent execution, branch orchestration, or PR generation yet.
 
 ## Next Recommended Work
 
