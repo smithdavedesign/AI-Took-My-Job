@@ -103,8 +103,33 @@ interface ReviewQueueResponse {
     reviewPath: string;
     contextPath: string;
     issueState: string;
+    availableRepositories?: string[];
     assignedReviewerId?: string | null;
   }>;
+}
+
+interface ProjectOperationsResponse {
+  repositories: {
+    available: string[];
+    defaultRepository: string | null;
+  };
+  reports: {
+    pendingReviewCount: number;
+  };
+}
+
+interface CreatedServiceIdentityResponse {
+  identity: {
+    id: string;
+    revokedAt?: string;
+  };
+  token: string;
+}
+
+interface RepoConnectionResponse {
+  id: string;
+  repository: string;
+  isDefault: boolean;
 }
 
 interface ReviewResponse {
@@ -309,6 +334,27 @@ async function main(): Promise<void> {
   assert(serviceIdentity.id === token.id, 'Service identity self-check did not resolve the active principal');
 
   const { workspace, project } = await createWorkspaceAndProject(baseUrl, authHeaders, suffix);
+  const projectOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
+    headers: authHeaders
+  });
+  assert(Array.isArray(projectOperations.repositories.available), 'Project operations did not expose repository availability');
+
+  const manualIdentity = await requestJson<CreatedServiceIdentityResponse>(`${baseUrl}/internal/service-identities`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      scopes: ['internal:read']
+    })
+  });
+  assert(typeof manualIdentity.token === 'string' && manualIdentity.token.length > 10, 'Manual service identity token was not returned');
+  await requestJson(`${baseUrl}/internal/service-identities/${encodeURIComponent(manualIdentity.identity.id)}/revoke`, {
+    method: 'POST',
+    headers: authHeaders
+  });
+
   const githubInstallationId = Number(process.env.GITHUB_APP_INSTALLATION_ID ?? '');
   let strictProjectScopedSyncExpected = false;
   if (Number.isFinite(githubInstallationId) && githubInstallationId > 0) {
@@ -341,6 +387,28 @@ async function main(): Promise<void> {
       assert(installationLookup.installation.installationId === githubInstallationId, 'Installation lookup did not return the conflicted installation');
       assert(installationLookup.workspace.id !== workspace.id, 'Installation lookup should point at the existing mapped workspace during conflict');
     }
+  }
+
+  const refreshedOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
+    headers: authHeaders
+  });
+  if (refreshedOperations.repositories.available.length === 0) {
+    const seededConnection = await requestJson<RepoConnectionResponse>(`${baseUrl}/internal/repo-connections`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        projectId: project.id,
+        repository: targetRepository,
+        isDefault: true,
+        config: {
+          source: 'hosted-feedback-review-smoke'
+        }
+      })
+    });
+    assert(seededConnection.repository === targetRepository, 'Seeded repo connection did not persist the expected repository');
   }
 
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/widget`, 401);
@@ -376,6 +444,7 @@ async function main(): Promise<void> {
   assert(queuedRejected.filters?.sort === 'impact', 'Review queue did not echo the requested sort');
   assert((queuedRejected.summary?.totalItems ?? 0) >= 1, 'Review queue summary did not include queued items');
   assert((queuedRejected.summary?.projectSummaries ?? []).some((entry) => entry.project?.id === project.id), 'Review queue project summaries did not include the created project');
+  assert(Array.isArray(rejectedItem.availableRepositories), 'Review queue did not expose available repositories for queued reports');
 
   const assignedQueue = await requestJson<ReviewQueueResponse>(
     `${baseUrl}/internal/reports/review-queue/actions`,

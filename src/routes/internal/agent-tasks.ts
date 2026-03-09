@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { buildExecutionCloseout } from '../../services/agent-tasks/execution-closeout.js';
 import { isGitHubRepository, promoteExecutionPullRequest } from '../../services/agent-tasks/pull-request-promotion.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
+import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 
 const promoteExecutionSchema = z.object({
   draft: z.boolean().optional()
@@ -68,10 +69,29 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('report not found');
     }
 
+    const projectScope = report.projectId
+      ? await resolveProjectRepositoryScope({
+        projectId: report.projectId,
+        repository: payload.targetRepository,
+        projects: app.projects,
+        repoConnections: app.repoConnections
+      })
+      : null;
+
+    let approvedHostedFeedbackRepository: string | undefined;
     if (report.source === 'hosted-feedback') {
       const review = await app.reportReviews.findByReportId(report.id);
       if (!review || review.status !== 'approved') {
         throw app.httpErrors.conflict('hosted feedback reports require an approved review before agent tasks can be created');
+      }
+
+      if (!review.repository) {
+        throw app.httpErrors.conflict('hosted feedback reports must be approved against a concrete project repository before agent tasks can be created');
+      }
+
+      approvedHostedFeedbackRepository = review.repository;
+      if (payload.targetRepository && payload.targetRepository !== review.repository) {
+        throw app.httpErrors.conflict('hosted feedback agent tasks must target the repository approved during review');
       }
     }
 
@@ -82,9 +102,15 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     });
     const taskId = randomUUID();
     const targetRepository = payload.targetRepository
+      ?? approvedHostedFeedbackRepository
       ?? existingDraft?.repository
       ?? defaultRepository
       ?? 'local-only';
+
+    if (projectScope && isGitHubRepository(targetRepository) && !projectScope.availableRepositories.includes(targetRepository)) {
+      throw app.httpErrors.conflict('agent task target repository is not an active connection for this project');
+    }
+
     const title = payload.title ?? report.title ?? `Agent task for report ${report.id}`;
 
     await app.agentTasks.create({

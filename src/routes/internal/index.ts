@@ -6,6 +6,7 @@ import { registerGitHubInternalRoutes } from './github.js';
 import { registerOnboardingInternalRoutes } from './onboarding.js';
 import { registerReportInternalRoutes } from './reports.js';
 import { registerReplayInternalRoutes } from './replay.js';
+import { registerServiceIdentityInternalRoutes } from './service-identities.js';
 import { registerShadowSuiteInternalRoutes } from './shadow-suites.js';
 
 export function registerInternalRoutes(app: FastifyInstance): void {
@@ -25,5 +26,6 @@ export function registerInternalRoutes(app: FastifyInstance): void {
   registerOnboardingInternalRoutes(app);
   registerReportInternalRoutes(app);
   registerReplayInternalRoutes(app);
+  registerServiceIdentityInternalRoutes(app);
   registerShadowSuiteInternalRoutes(app);
 }

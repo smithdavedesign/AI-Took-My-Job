@@ -3,7 +3,9 @@ import { Octokit } from '@octokit/rest';
 
 import type { AppConfig } from '../../support/config.js';
 import type { GitHubInstallationRepository } from '../../repositories/github-installation-repository.js';
+import type { ProjectRepository } from '../../repositories/project-repository.js';
 import type { RepoConnectionRepository } from '../../repositories/repo-connection-repository.js';
+import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 
 export interface GitHubIssueDraftInput {
   title: string;
@@ -367,6 +369,7 @@ export function createGitHubIntegrationResolver(input: {
   config: AppConfig;
   repoConnections: RepoConnectionRepository;
   githubInstallations: GitHubInstallationRepository;
+  projects: ProjectRepository;
 }): GitHubIntegrationResolver {
   const defaultIntegration = createGitHubIntegration(input.config);
 
@@ -375,14 +378,14 @@ export function createGitHubIntegrationResolver(input: {
       return null;
     }
 
-    if (repository) {
-      const exactConnection = await input.repoConnections.findByProjectIdAndRepository(projectId, repository);
-      if (exactConnection) {
-        return exactConnection;
-      }
-    }
+    const scope = await resolveProjectRepositoryScope({
+      projectId,
+      repository,
+      repoConnections: input.repoConnections,
+      projects: input.projects
+    });
 
-    return input.repoConnections.findDefaultByProjectId(projectId);
+    return scope.selectedConnection;
   }
 
   return {

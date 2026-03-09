@@ -48,6 +48,7 @@ export interface ReplayExecutionStepResult {
 export interface ReplayExecutionResult {
   executedAt: string;
   status: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
+  executionMode?: 'browser-context' | 'request-context';
   isolatedThirdPartyRequests: number;
   failingStepOrders: number[];
   matchedFailingStepOrders: number[];

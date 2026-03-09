@@ -12,6 +12,7 @@ import { buildReportIndex, readPersistedReportIndex } from '../../services/repor
 import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from '../../services/reports/similar-reports.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
+import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 
 const reportIdParamsSchema = z.object({
   reportId: z.string().uuid()
@@ -156,6 +157,42 @@ function summarizeObservabilityContext(report: { source: string; externalId?: st
 }
 
 export function registerReportInternalRoutes(app: FastifyInstance): void {
+  async function resolveApprovedProjectRepository(input: {
+    report: NonNullable<Awaited<ReturnType<FastifyInstance['reports']['findById']>>>;
+    requestedRepository?: string | undefined;
+    currentRepository?: string | undefined;
+  }): Promise<string> {
+    if (!input.report.projectId) {
+      return input.requestedRepository ?? input.currentRepository ?? 'local-only';
+    }
+
+    const scope = await resolveProjectRepositoryScope({
+      projectId: input.report.projectId,
+      repository: input.requestedRepository ?? input.currentRepository,
+      projects: app.projects,
+      repoConnections: app.repoConnections
+    });
+
+    if (scope.availableRepositories.length === 0) {
+      throw app.httpErrors.conflict('project has no active repository connections');
+    }
+
+    const resolvedRepository = input.requestedRepository
+      ?? input.currentRepository
+      ?? scope.defaultConnection?.repository
+      ?? null;
+
+    if (!resolvedRepository) {
+      throw app.httpErrors.conflict('project has multiple repositories; select an active repository explicitly');
+    }
+
+    if (!scope.availableRepositories.includes(resolvedRepository)) {
+      throw app.httpErrors.conflict('selected repository is not an active connection for this project');
+    }
+
+    return resolvedRepository;
+  }
+
   async function applyReviewDecision(input: {
     principalId: string;
     requestId: string;
@@ -217,7 +254,13 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       };
     }
 
-    const repository = input.payload.repository ?? draft.repository;
+    const repository = input.payload.status === 'approved'
+      ? await resolveApprovedProjectRepository({
+        report,
+        requestedRepository: input.payload.repository,
+        currentRepository: draft.repository
+      })
+      : (input.payload.repository ?? draft.repository);
     const github = await app.github.resolve({
       projectId: report.projectId,
       repository,
@@ -335,6 +378,15 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         return null;
       }
 
+      const repoScope = report.projectId
+        ? await resolveProjectRepositoryScope({
+          projectId: report.projectId,
+          repoConnections: app.repoConnections,
+          projects: app.projects,
+          repository: draft.repository
+        })
+        : null;
+
       const impactScore = typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null;
       const ageHours = computeAgeHours(report.createdAt ?? null);
       const item = {
@@ -349,6 +401,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         status: report.status,
         issueState: draft.state,
         repository: draft.repository,
+        availableRepositories: repoScope?.availableRepositories ?? [],
         impactScore,
         reporterIdentifier: report.reporterIdentifier ?? null,
         assignedReviewerId: review?.reviewerId ?? null,

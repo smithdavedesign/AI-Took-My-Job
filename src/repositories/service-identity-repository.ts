@@ -21,7 +21,22 @@ export interface ServiceIdentityRepository {
     scopes: string[];
     metadata?: Record<string, unknown>;
   }): Promise<StoredServiceIdentity>;
+  createManualPrincipal(input: {
+    id: string;
+    token: string;
+    scopes: string[];
+    metadata?: Record<string, unknown>;
+  }): Promise<StoredServiceIdentity>;
+  rotatePrincipal(input: {
+    id: string;
+    token: string;
+    scopes?: string[];
+    metadata?: Record<string, unknown>;
+  }): Promise<StoredServiceIdentity | null>;
+  findById(id: string): Promise<StoredServiceIdentity | null>;
   listActive(): Promise<StoredServiceIdentity[]>;
+  listAll(): Promise<StoredServiceIdentity[]>;
+  revoke(id: string): Promise<StoredServiceIdentity | null>;
 }
 
 interface ServiceIdentityRow {
@@ -103,6 +118,65 @@ export function createServiceIdentityRepository(database: DatabaseClient): Servi
 
       return mapRow(result.rows[0] as ServiceIdentityRow);
     },
+    async createManualPrincipal(input) {
+      const result = await database.query<ServiceIdentityRow>(
+        `INSERT INTO service_identities (
+          id,
+          token_hash,
+          scopes,
+          source,
+          metadata,
+          revoked_at
+        ) VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, NULL)
+        RETURNING id, token_hash, scopes, source, metadata, created_at, updated_at, revoked_at`,
+        [
+          input.id,
+          hashServiceToken(input.token),
+          JSON.stringify(input.scopes),
+          'manual',
+          JSON.stringify(input.metadata ?? {})
+        ]
+      );
+
+      return mapRow(result.rows[0] as ServiceIdentityRow);
+    },
+    async rotatePrincipal(input) {
+      const current = await this.findById(input.id);
+      if (!current) {
+        return null;
+      }
+
+      const result = await database.query<ServiceIdentityRow>(
+        `UPDATE service_identities
+         SET token_hash = $2,
+             scopes = $3::jsonb,
+             metadata = $4::jsonb,
+             revoked_at = NULL,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, token_hash, scopes, source, metadata, created_at, updated_at, revoked_at`,
+        [
+          input.id,
+          hashServiceToken(input.token),
+          JSON.stringify(input.scopes ?? current.scopes),
+          JSON.stringify(input.metadata ?? current.metadata)
+        ]
+      );
+
+      const row = result.rows[0];
+      return row ? mapRow(row) : null;
+    },
+    async findById(id) {
+      const result = await database.query<ServiceIdentityRow>(
+        `SELECT id, token_hash, scopes, source, metadata, created_at, updated_at, revoked_at
+         FROM service_identities
+         WHERE id = $1`,
+        [id]
+      );
+
+      const row = result.rows[0];
+      return row ? mapRow(row) : null;
+    },
     async listActive() {
       const result = await database.query<ServiceIdentityRow>(
         `SELECT id, token_hash, scopes, source, metadata, created_at, updated_at, revoked_at
@@ -112,6 +186,28 @@ export function createServiceIdentityRepository(database: DatabaseClient): Servi
       );
 
       return result.rows.map(mapRow);
+    },
+    async listAll() {
+      const result = await database.query<ServiceIdentityRow>(
+        `SELECT id, token_hash, scopes, source, metadata, created_at, updated_at, revoked_at
+         FROM service_identities
+         ORDER BY created_at ASC`
+      );
+
+      return result.rows.map(mapRow);
+    },
+    async revoke(id) {
+      const result = await database.query<ServiceIdentityRow>(
+        `UPDATE service_identities
+         SET revoked_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, token_hash, scopes, source, metadata, created_at, updated_at, revoked_at`,
+        [id]
+      );
+
+      const row = result.rows[0];
+      return row ? mapRow(row) : null;
     }
   };
 }

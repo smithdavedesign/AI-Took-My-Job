@@ -168,6 +168,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('jobs', createJobPublisher(app.log as FastifyBaseLogger, bullConnection, triageJobRepository));
   app.decorate('github', createGitHubIntegrationResolver({
     config,
+    projects: projectRepository,
     repoConnections: repoConnectionRepository,
     githubInstallations: githubInstallationRepository
   }));

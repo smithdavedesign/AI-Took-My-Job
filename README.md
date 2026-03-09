@@ -38,16 +38,20 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Deterministic report classification and duplicate detection wired into triage and agent preparation.
 - Extension capture now validates explicit screen recording and console-log artifacts with enforced inline upload budgets.
 - Replay execution restores cookie and storage context and records restored-state evidence in replay output.
+- Replay execution now prefers a full browser context with cookie, localStorage, and sessionStorage hydration, and falls back to request-context execution when browser binaries are unavailable.
 - Committed end-to-end smoke automation with safe GitHub test-repository routing.
 - Docker Compose topology for PostgreSQL, Redis, and optional MinIO.
 - Workspace, project, GitHub installation, and repository-connection persistence is now live for project-scoped onboarding.
 - Internal onboarding routes can now create workspaces, projects, repository connections, signed hosted-widget sessions, and GitHub App install links that land on a callback-backed installation sync flow.
 - Runtime GitHub resolution is now project-aware for issue drafting, promotion, merge, and repository checkout.
+- Project-scoped GitHub resolution now supports multiple active repo connections, explicit default reassignment, and strict hosted-feedback repository approval before downstream agent tasks can target GitHub.
 - Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget` and an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`, both gated by short-lived signed widget sessions.
 - Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
 - The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, queue aging metrics, review activity history, full context loading, and single-report approve/reject actions.
+- The onboarding console at `/learn/onboarding` now exposes project operations summaries plus service-identity list, create, rotate, and revoke controls.
+- Durable service identities now support explicit lifecycle management through internal routes instead of startup-only env seeding.
 
-Still planned: broader customer-facing operations surfaces around onboarding and support workflows.
+Still planned: broader support workflows around customer operations and richer repo-connection administration beyond the current onboarding console.
 
 ## Status Snapshot
 
@@ -210,13 +214,23 @@ sequenceDiagram
 - `GET /internal/workspaces/:workspaceId/projects`
 - `GET /internal/workspaces/:workspaceId/github-installations`
 - `POST /internal/workspaces/:workspaceId/github-app/install-link`
+- `POST /internal/workspaces/:workspaceId/github-app/reconcile`
+- `POST /internal/workspaces/:workspaceId/github-app/transfer-installation`
 - `POST /internal/projects`
 - `GET /internal/projects/:projectId`
+- `GET /internal/projects/:projectId/operations`
 - `GET /internal/projects/key/:projectKey`
+- `GET /internal/github-app/installations/:installationId`
 - `POST /internal/github/installations`
 - `POST /internal/repo-connections`
+- `PATCH /internal/repo-connections/:repoConnectionId`
 - `GET /internal/projects/:projectId/repo-connections`
 - `POST /internal/projects/:projectId/widget-session`
+- `GET /internal/service-identity/self`
+- `GET /internal/service-identities`
+- `POST /internal/service-identities`
+- `POST /internal/service-identities/:identityId/rotate`
+- `POST /internal/service-identities/:identityId/revoke`
 - `POST /internal/github/issues/draft`
 - `POST /internal/agent-tasks`
 - `GET /internal/agent-tasks/:taskId`
@@ -268,6 +282,7 @@ sequenceDiagram
 ## Validation Notes
 
 - `npm run e2e:hosted-feedback-review` now verifies signed widget access, the embeddable bootstrap route, queue assignment filters, queue activity history, the paged review-queue API, rejection gating, approval flow, and post-approval agent-task creation.
+- `npm run e2e:replay-browser-context` now verifies replay reproduction with storage hydration and asserts `browser-context` execution mode when Playwright browser binaries are installed.
 
 ## Environment
 
@@ -376,14 +391,15 @@ Detailed setup notes are in [docs/github-auth.md](docs/github-auth.md).
 The first customer-onboarding slice is now live behind internal routes and a public project-scoped feedback endpoint.
 
 - Workspace admins can create a workspace and project, mint a GitHub App install link, let GitHub call back into Nexus to persist the installation, and connect or update the project repository binding without a PAT.
+- Operators can inspect project operations, active/default repository scope, and service-identity lifecycle directly from `/learn/onboarding` instead of stitching together raw internal API calls.
 - Public feedback can now be submitted to `POST /public/projects/:projectKey/feedback` through a signed widget session and is persisted with `project_id` before triage begins.
-- Runtime GitHub resolution now uses project repo connections first and only falls back to global env configuration when a project-scoped connection does not exist.
+- Runtime GitHub resolution now uses project repo connections first, supports multiple active repositories with explicit default selection, and only falls back to global env configuration when a project-scoped connection does not exist.
 - Hosted feedback now lands in `/internal/reports/review-queue`, and `POST /internal/reports/:reportId/review` is the approval gate for GitHub issue creation.
-- The operator review queue now exposes queue aging metrics and report-level review activity history sourced from persisted audit events.
+- The operator review queue now exposes queue aging metrics, report-level review activity history sourced from persisted audit events, and the set of allowed project repositories for review approval.
 
 Live local validation on 2026-03-08 created a workspace, project, signed widget session, and hosted-feedback reports, confirmed review-gated processing end to end, and verified the stored report rows carried the correct `project_id`.
 
-The review gate is now live end to end: `npm run e2e:hosted-feedback-review` validates queue listing, rejection, approval, and hosted-feedback agent-task gating, and the CI smoke workflow runs it alongside the existing policy-review path.
+The review gate is now live end to end: `npm run e2e:hosted-feedback-review` validates queue listing, rejection, approval, hosted-feedback agent-task gating, project operations loading, and service-identity lifecycle coverage in the same smoke path.
 
 Agent-task submission and execution flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
 
@@ -403,7 +419,7 @@ Refined impact is now exposed through `GET /internal/reports/:reportId/impact` a
 
 Classification is now exposed through `GET /internal/reports/:reportId/classification`, and duplicate candidates are exposed through `GET /internal/reports/:reportId/duplicates`. Triage persists both into report payloads and agent-task prepared context, and high-confidence duplicates can reuse an existing synced GitHub issue instead of creating another one.
 
-The committed full-stack E2E now validates explicit screen-recording and console-log artifact capture, plus bounded inline upload rejection. Replay execution also restores cookie and storage context and persists restored-state evidence such as cookie names, storage keys, and placeholder-resolution counts.
+The committed full-stack E2E now validates explicit screen-recording and console-log artifact capture, plus bounded inline upload rejection. Replay execution also restores cookie and storage context, prefers browser-context execution when available, and persists restored-state evidence such as cookie names, storage keys, and placeholder-resolution counts.
 
 Promoted PRs now include execution evidence references, validation status, refined impact, and ownership hints in the PR body. When `APP_BASE_URL` is configured, those evidence references become fully qualified links back into Nexus internal routes.
 
@@ -554,6 +570,8 @@ The committed smoke runner validates:
 - internal bearer-auth routes
 - direct GitHub draft creation
 - Sentry, Datadog, and New Relic ingestion through persisted drafts
+
+The dedicated replay execution-mode smoke runs separately as `npm run e2e:replay-browser-context`.
 
 If GitHub sync is enabled, the smoke runner refuses to hit the primary repository unless one of these is true:
 
@@ -724,8 +742,8 @@ The replay payload includes normalized steps, detected cookie names, auth-refres
 ## Current Limitations
 
 - Slack signature verification currently uses parsed request bodies and should be upgraded to raw-body verification before production use.
-- Replay execution currently uses Playwright request contexts, not full browser-context restoration with cookies, storage hydration, and pass-after fix validation.
-- Artifact downloads are signed and time-limited, but there is not yet a durable user or service identity model beyond env-defined service tokens.
+- Replay execution now has browser-context restoration, but the dedicated browser smoke is not yet promoted into CI environments that do not ship Playwright browser binaries.
+- Service identities are now durable and auditable, but the operator surface is still centered on onboarding rather than a broader admin console.
 - Full runtime validation requires Docker because PostgreSQL and Redis are expected to run through Compose.
 - GitHub sync is optional and disabled by default.
 - Intent classification, deduplication, ownership mapping, and semantic clustering are not implemented yet.
@@ -733,7 +751,7 @@ The replay payload includes normalized steps, detected cookie names, auth-refres
 
 ## Next Recommended Work
 
-1. Restore replay into a full browser context with cookie and storage hydration, then validate fail-before and pass-after behavior.
-2. Replace env-defined service tokens with a durable service identity and audit model.
-3. Add semantic clustering, deterministic deduplication, and ownership mapping.
-4. Start the agentic PR pipeline only after reproduction is stable enough to trust.
+1. Promote the replay browser-context smoke into CI environments with browser binaries so the preferred execution mode stays enforced.
+2. Broaden the operator surface beyond onboarding into repo-connection editing and customer support workflows.
+3. Add semantic clustering, deterministic deduplication, and ownership mapping where gaps remain.
+4. Continue strengthening the agentic PR pipeline only where replay-backed validation remains trustworthy.

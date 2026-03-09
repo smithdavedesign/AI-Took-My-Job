@@ -41,8 +41,10 @@ Status legend:
 - [x] Add a review gate before GitHub writes are treated as production-ready workflow.
 - [x] Plan Phase 9 customer onboarding and repository connection.
 - [x] Define workspace, project, and repository-connection data model.
-- [-] Refactor GitHub auth toward runtime project-scoped GitHub App resolution.
-- [-] Ship the hosted feedback widget and embed bootstrap, and continue hardening the project-scoped submission flow.
+- [x] Refactor GitHub auth toward runtime project-scoped GitHub App resolution.
+- [x] Ship the hosted feedback widget and embed bootstrap, and continue hardening the project-scoped submission flow.
+- [ ] Add broader operator workflows for repo-connection editing and support-oriented customer operations.
+- [ ] Promote the new replay browser-context smoke into regular CI coverage where Playwright browser binaries are available.
 
 ### Blocked
 
@@ -202,17 +204,23 @@ Objective: make Nexus easy for external teams to adopt by connecting a GitHub re
 
 Deliverables:
 
-- [-] Workspace and project model with project-scoped report routing.
-- [-] GitHub App-based repository connection flow.
-- [-] Runtime repository-to-installation resolution for GitHub writes.
-- [-] Hosted feedback widget, embed bootstrap, and public submission surface for lightweight user feedback.
-- [-] Project-scoped review queue before GitHub issue creation or downstream agent actions, including operator-facing queue controls and assignment workflows.
+- [x] Workspace and project model with project-scoped report routing.
+- [x] GitHub App-based repository connection flow.
+- [x] Runtime repository-to-installation resolution for GitHub writes.
+- [x] Hosted feedback widget, embed bootstrap, and public submission surface for lightweight user feedback.
+- [x] Project-scoped review queue before GitHub issue creation or downstream agent actions, including operator-facing queue controls and assignment workflows.
+- [x] Multi-repository project support with active/default repository resolution and strict hosted-feedback task targeting.
+- [x] Operator-facing project operations and onboarding surface for installs, repo scope, widget handoff, and service identity lifecycle.
+- [x] Replay execution now prefers full browser-context restoration with request-context fallback.
 
 Recent Phase 9 progress:
 
 - Signed project-scoped widget sessions now gate both `/public/projects/:projectKey/widget` and `/public/projects/:projectKey/embed.js`, and the public feedback submission path now requires the same short-lived token.
 - Internal onboarding can now mint GitHub App install links via `POST /internal/workspaces/:workspaceId/github-app/install-link`, and `/github/app/install/callback` persists installation metadata plus project repo bindings when repository access matches.
 - The operator review queue now exposes assignment health, queue aging metrics, and per-report review activity pulled from persisted audit events.
+- Project repo routing now supports multiple active connections, explicit default reassignment, project-operations summaries, and strict customer-review repository scoping before GitHub issue creation or agent-task execution.
+- Service identities are now durable lifecycle-managed principals with list, create, rotate, and revoke routes, and the onboarding console exposes those flows directly for operators.
+- A dedicated replay browser-context smoke now validates execution-mode selection when Playwright browser binaries are installed while preserving request-context fallback behavior elsewhere.
 
 Phase 9 architecture snapshot:
 
@@ -238,10 +246,10 @@ flowchart LR
 
 Exit criteria:
 
-- [ ] A new customer can connect a repository without creating a PAT.
+- [x] A new customer can connect a repository without creating a PAT.
 - [ ] A user can submit actionable feedback in under 60 seconds.
-- [ ] Nexus routes the report to the correct project and repository scope before any GitHub write.
-- [ ] Customer-originated issue and PR generation remain review-gated.
+- [x] Nexus routes the report to the correct project and repository scope before any GitHub write.
+- [x] Customer-originated issue and PR generation remain review-gated.
 
 ## Current Sprint
 
@@ -255,9 +263,9 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [x] Continue Phase 7 MCP developer context.
-2. [x] Start Phase 8 retained replay and distribution work.
-3. [x] Plan Phase 9 customer onboarding and repository connection.
+1. [ ] Broaden operator support workflows and repo-connection administration beyond the current onboarding console.
+2. [ ] Promote the replay browser-context smoke into CI environments with browser binaries.
+3. [ ] Time-box and validate the hosted customer handoff against the under-60-second onboarding target.
 4. [x] Define the initial workspace, project, and repository-connection schema.
 5. [-] Ship internal onboarding endpoints plus the first public project feedback intake route.
 6. [-] Continue runtime GitHub App resolution and project-scoped review flow.

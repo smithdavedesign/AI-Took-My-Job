@@ -1,4 +1,4 @@
-import { request } from 'playwright-core';
+import { chromium, request } from 'playwright-core';
 import { URL } from 'node:url';
 
 import type { ReplayCookieRecord, ReplayExecutionResult, ReplayExecutionStepResult, ReplayPlan } from '../../types/replay.js';
@@ -139,6 +139,148 @@ function computeVerificationStatus(stepResults: ReplayExecutionStepResult[]): Re
   return 'not-reproduced';
 }
 
+async function executeInBrowserContext(input: {
+  steps: ReplayExecutionInputStep[];
+  resolvedOrigin: string;
+  restoredCookies: ReplayCookieRecord[];
+  restoredState: {
+    cookies: Record<string, string>;
+    localStorage: Record<string, string>;
+    sessionStorage: Record<string, string>;
+  };
+  targetOrigin?: string;
+}): Promise<{ stepResults: ReplayExecutionStepResult[]; resolvedStateReferenceCount: number }> {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    storageState: {
+      cookies: input.restoredCookies.map((cookie) => ({
+        name: cookie.name,
+        value: String(cookie.value ?? ''),
+        domain: cookie.domain ?? new URL(input.resolvedOrigin).hostname,
+        path: cookie.path ?? '/',
+        expires: toCookieExpiry(cookie.expiresAt),
+        httpOnly: cookie.httpOnly ?? false,
+        secure: cookie.secure ?? false,
+        sameSite: cookie.sameSite ?? 'Lax'
+      })),
+      origins: Object.keys(input.restoredState.localStorage).length > 0
+        ? [{
+          origin: input.resolvedOrigin,
+          localStorage: Object.entries(input.restoredState.localStorage).map(([name, value]) => ({ name, value }))
+        }]
+        : []
+    }
+  });
+  const page = await context.newPage();
+  const stepResults: ReplayExecutionStepResult[] = [];
+  let resolvedStateReferenceCount = 0;
+
+  try {
+    await page.goto(input.resolvedOrigin, {
+      waitUntil: 'domcontentloaded',
+      timeout: 15000
+    }).catch(() => undefined);
+
+    if (Object.keys(input.restoredState.sessionStorage).length > 0) {
+      await page.evaluate((sessionEntries) => {
+        for (const [key, value] of sessionEntries) {
+          window.sessionStorage.setItem(key, value);
+        }
+      }, Object.entries(input.restoredState.sessionStorage));
+    }
+
+    for (const step of input.steps) {
+      if (step.isThirdParty) {
+        stepResults.push({
+          order: step.order,
+          method: step.method,
+          url: step.url,
+          expectedStatus: step.expectedStatus,
+          result: 'skipped-third-party'
+        });
+        continue;
+      }
+
+      const startedAt = Date.now();
+      const restoredUrl = replaceStatePlaceholders(step.url, input.restoredState);
+      resolvedStateReferenceCount += restoredUrl.replacements;
+      const requestUrl = input.targetOrigin
+        ? (() => {
+          const original = new URL(restoredUrl.value);
+          const target = new URL(input.targetOrigin);
+          target.pathname = original.pathname;
+          target.search = original.search;
+          return target.toString();
+        })()
+        : restoredUrl.value;
+      const resolvedHeaders = Object.fromEntries(Object.entries(filterHeaders(step.headers)).map(([key, value]) => {
+        const resolved = replaceStatePlaceholders(value, input.restoredState);
+        resolvedStateReferenceCount += resolved.replacements;
+        return [key, resolved.value];
+      }));
+      const resolvedBody = step.bodyText
+        ? replaceStatePlaceholders(step.bodyText, input.restoredState)
+        : null;
+      if (resolvedBody) {
+        resolvedStateReferenceCount += resolvedBody.replacements;
+      }
+
+      try {
+        const response = await page.evaluate(async (requestInput) => {
+          const init: RequestInit = {
+            method: requestInput.method,
+            headers: requestInput.headers,
+            credentials: 'include'
+          };
+          if (requestInput.body !== null) {
+            init.body = requestInput.body;
+          }
+
+          const response = await fetch(requestInput.url, init);
+
+          return {
+            status: response.status
+          };
+        }, {
+          url: requestUrl,
+          method: step.method,
+          headers: resolvedHeaders,
+          body: resolvedBody?.value ?? null
+        });
+
+        stepResults.push({
+          order: step.order,
+          method: step.method,
+          url: requestUrl,
+          expectedStatus: step.expectedStatus,
+          actualStatus: response.status,
+          durationMs: Date.now() - startedAt,
+          result: response.status === step.expectedStatus ? 'matched' : 'mismatched'
+        });
+      } catch (error) {
+        stepResults.push({
+          order: step.order,
+          method: step.method,
+          url: requestUrl,
+          expectedStatus: step.expectedStatus,
+          durationMs: Date.now() - startedAt,
+          result: 'network-error',
+          errorMessage: error instanceof Error ? error.message : 'unknown browser context error'
+        });
+      }
+    }
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+
+  return {
+    stepResults,
+    resolvedStateReferenceCount
+  };
+}
+
 export async function executeReplayPlan(input: {
   plan: ReplayPlan;
   steps: ReplayExecutionInputStep[];
@@ -173,103 +315,123 @@ export async function executeReplayPlan(input: {
     resolvedOrigin,
     cookieMap
   });
-  const hasStorageState = resolvedOrigin && (Object.keys(cookieMap).length > 0 || Object.keys(localStorage).length > 0);
-  const client = await request.newContext({
-    ignoreHTTPSErrors: true,
-    ...(hasStorageState ? {
-      storageState: {
-        cookies: restoredCookies.map((cookie) => ({
-          name: cookie.name,
-          value: String(cookie.value ?? ''),
-          domain: cookie.domain ?? new URL(resolvedOrigin).hostname,
-          path: cookie.path ?? '/',
-          expires: toCookieExpiry(cookie.expiresAt),
-          httpOnly: cookie.httpOnly ?? false,
-          secure: cookie.secure ?? false,
-          sameSite: cookie.sameSite ?? 'Lax'
-        })),
-        origins: Object.keys(localStorage).length > 0
-          ? [{
-            origin: resolvedOrigin,
-            localStorage: Object.entries(localStorage).map(([name, value]) => ({ name, value }))
-          }]
-          : []
-      }
-    } : {})
-  });
-
-  const stepResults: ReplayExecutionStepResult[] = [];
+  let stepResults: ReplayExecutionStepResult[] = [];
   let resolvedStateReferenceCount = 0;
+  let executionMode: ReplayExecutionResult['executionMode'] = 'request-context';
 
-  try {
-    for (const step of input.steps) {
-      if (step.isThirdParty) {
-        stepResults.push({
-          order: step.order,
-          method: step.method,
-          url: step.url,
-          expectedStatus: step.expectedStatus,
-          result: 'skipped-third-party'
-        });
-        continue;
-      }
-
-      const startedAt = Date.now();
-      const restoredUrl = replaceStatePlaceholders(step.url, restoredState);
-      resolvedStateReferenceCount += restoredUrl.replacements;
-      const requestUrl = input.targetOrigin
-        ? (() => {
-          const original = new URL(restoredUrl.value);
-          const target = new URL(input.targetOrigin);
-          target.pathname = original.pathname;
-          target.search = original.search;
-          return target.toString();
-        })()
-        : restoredUrl.value;
-      const resolvedHeaders = Object.fromEntries(Object.entries(filterHeaders(step.headers)).map(([key, value]) => {
-        const resolved = replaceStatePlaceholders(value, restoredState);
-        resolvedStateReferenceCount += resolved.replacements;
-        return [key, resolved.value];
-      }));
-      const resolvedBody = step.bodyText
-        ? replaceStatePlaceholders(step.bodyText, restoredState)
-        : null;
-      if (resolvedBody) {
-        resolvedStateReferenceCount += resolvedBody.replacements;
-      }
-
-      try {
-        const response = await client.fetch(requestUrl, {
-          method: step.method,
-          headers: resolvedHeaders,
-          ...(resolvedBody ? { data: resolvedBody.value } : {}),
-          failOnStatusCode: false
-        });
-
-        const actualStatus = response.status();
-        stepResults.push({
-          order: step.order,
-          method: step.method,
-          url: requestUrl,
-          expectedStatus: step.expectedStatus,
-          actualStatus,
-          durationMs: Date.now() - startedAt,
-          result: actualStatus === step.expectedStatus ? 'matched' : 'mismatched'
-        });
-      } catch (error) {
-        stepResults.push({
-          order: step.order,
-          method: step.method,
-          url: requestUrl,
-          expectedStatus: step.expectedStatus,
-          durationMs: Date.now() - startedAt,
-          result: 'network-error',
-          errorMessage: error instanceof Error ? error.message : 'unknown network error'
-        });
-      }
+  if (resolvedOrigin) {
+    try {
+      const browserExecution = await executeInBrowserContext({
+        steps: input.steps,
+        resolvedOrigin,
+        restoredCookies,
+        restoredState,
+        ...(input.targetOrigin ? { targetOrigin: input.targetOrigin } : {})
+      });
+      stepResults = browserExecution.stepResults;
+      resolvedStateReferenceCount = browserExecution.resolvedStateReferenceCount;
+      executionMode = 'browser-context';
+    } catch {
+      executionMode = 'request-context';
     }
-  } finally {
-    await client.dispose();
+  }
+
+  if (stepResults.length === 0) {
+    const hasStorageState = resolvedOrigin && (Object.keys(cookieMap).length > 0 || Object.keys(localStorage).length > 0);
+    const client = await request.newContext({
+      ignoreHTTPSErrors: true,
+      ...(hasStorageState ? {
+        storageState: {
+          cookies: restoredCookies.map((cookie) => ({
+            name: cookie.name,
+            value: String(cookie.value ?? ''),
+            domain: cookie.domain ?? new URL(resolvedOrigin).hostname,
+            path: cookie.path ?? '/',
+            expires: toCookieExpiry(cookie.expiresAt),
+            httpOnly: cookie.httpOnly ?? false,
+            secure: cookie.secure ?? false,
+            sameSite: cookie.sameSite ?? 'Lax'
+          })),
+          origins: Object.keys(localStorage).length > 0
+            ? [{
+              origin: resolvedOrigin,
+              localStorage: Object.entries(localStorage).map(([name, value]) => ({ name, value }))
+            }]
+            : []
+        }
+      } : {})
+    });
+
+    try {
+      for (const step of input.steps) {
+        if (step.isThirdParty) {
+          stepResults.push({
+            order: step.order,
+            method: step.method,
+            url: step.url,
+            expectedStatus: step.expectedStatus,
+            result: 'skipped-third-party'
+          });
+          continue;
+        }
+
+        const startedAt = Date.now();
+        const restoredUrl = replaceStatePlaceholders(step.url, restoredState);
+        resolvedStateReferenceCount += restoredUrl.replacements;
+        const requestUrl = input.targetOrigin
+          ? (() => {
+            const original = new URL(restoredUrl.value);
+            const target = new URL(input.targetOrigin);
+            target.pathname = original.pathname;
+            target.search = original.search;
+            return target.toString();
+          })()
+          : restoredUrl.value;
+        const resolvedHeaders = Object.fromEntries(Object.entries(filterHeaders(step.headers)).map(([key, value]) => {
+          const resolved = replaceStatePlaceholders(value, restoredState);
+          resolvedStateReferenceCount += resolved.replacements;
+          return [key, resolved.value];
+        }));
+        const resolvedBody = step.bodyText
+          ? replaceStatePlaceholders(step.bodyText, restoredState)
+          : null;
+        if (resolvedBody) {
+          resolvedStateReferenceCount += resolvedBody.replacements;
+        }
+
+        try {
+          const response = await client.fetch(requestUrl, {
+            method: step.method,
+            headers: resolvedHeaders,
+            ...(resolvedBody ? { data: resolvedBody.value } : {}),
+            failOnStatusCode: false
+          });
+
+          const actualStatus = response.status();
+          stepResults.push({
+            order: step.order,
+            method: step.method,
+            url: requestUrl,
+            expectedStatus: step.expectedStatus,
+            actualStatus,
+            durationMs: Date.now() - startedAt,
+            result: actualStatus === step.expectedStatus ? 'matched' : 'mismatched'
+          });
+        } catch (error) {
+          stepResults.push({
+            order: step.order,
+            method: step.method,
+            url: requestUrl,
+            expectedStatus: step.expectedStatus,
+            durationMs: Date.now() - startedAt,
+            result: 'network-error',
+            errorMessage: error instanceof Error ? error.message : 'unknown network error'
+          });
+        }
+      }
+    } finally {
+      await client.dispose();
+    }
   }
 
   const verificationStatus = computeVerificationStatus(stepResults);
@@ -277,6 +439,7 @@ export async function executeReplayPlan(input: {
   return {
     executedAt: new Date().toISOString(),
     status: verificationStatus,
+    executionMode,
     isolatedThirdPartyRequests: stepResults.filter((step) => step.result === 'skipped-third-party').length,
     failingStepOrders: stepResults.filter((step) => step.expectedStatus >= 400).map((step) => step.order),
     matchedFailingStepOrders: stepResults

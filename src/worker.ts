@@ -134,7 +134,7 @@ async function main(): Promise<void> {
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
   createWorkspaceRepository(database);
-  createProjectRepository(database);
+  const projectRepository = createProjectRepository(database);
   const githubInstallationRepository = createGitHubInstallationRepository(database);
   const repoConnectionRepository = createRepoConnectionRepository(database);
   const reportReviewRepository = createReportReviewRepository(database);
@@ -154,6 +154,7 @@ async function main(): Promise<void> {
   const artifactStorage = createArtifactStore(config);
   const githubResolver = createGitHubIntegrationResolver({
     config,
+    projects: projectRepository,
     repoConnections: repoConnectionRepository,
     githubInstallations: githubInstallationRepository
   });

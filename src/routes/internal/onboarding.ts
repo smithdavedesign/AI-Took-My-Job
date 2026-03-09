@@ -8,6 +8,7 @@ import {
   getGitHubAppInstallationDetails,
   listGitHubInstallationRepositories
 } from '../../integrations/github/client.js';
+import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 import { createGitHubAppInstallState, verifyGitHubAppInstallState } from '../../support/github-app-install-state.js';
 import { createPublicWidgetSessionToken } from '../../support/public-widget-access.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
@@ -26,6 +27,10 @@ const projectIdParamsSchema = z.object({
 
 const projectKeyParamsSchema = z.object({
   projectKey: z.string().min(3).max(80)
+});
+
+const repoConnectionIdParamsSchema = z.object({
+  repoConnectionId: z.string().uuid()
 });
 
 const widgetSessionSchema = z.object({
@@ -89,6 +94,12 @@ const createRepoConnectionSchema = z.object({
   isDefault: z.boolean().optional(),
   config: z.record(z.string(), z.unknown()).optional()
 });
+
+const updateRepoConnectionSchema = z.object({
+  isDefault: z.boolean().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+  config: z.record(z.string(), z.unknown()).optional()
+}).refine((value) => Object.keys(value).length > 0, 'at least one update field is required');
 
 function slugify(value: string): string {
   return value
@@ -419,6 +430,77 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     return project;
   });
 
+  app.get('/internal/projects/:projectId/operations', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+    const { projectId } = projectIdParamsSchema.parse(request.params);
+    const project = await app.projects.findById(projectId);
+    if (!project) {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const workspace = await app.workspaces.findById(project.workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.conflict('project workspace not found');
+    }
+
+    const repoScope = await resolveProjectRepositoryScope({
+      projectId: project.id,
+      projects: app.projects,
+      repoConnections: app.repoConnections
+    });
+    const installations = await app.githubInstallations.findByWorkspaceId(workspace.id);
+    const recentReports = (await app.reports.listRecent(100)).filter((report) => report.projectId === project.id);
+    const pendingReviewCount = recentReports.filter((report) => report.source === 'hosted-feedback' && report.status === 'awaiting-review').length;
+    const reportStatusCounts = recentReports.reduce<Record<string, number>>((counts, report) => {
+      counts[report.status] = (counts[report.status] ?? 0) + 1;
+      return counts;
+    }, {});
+    const agentTasks = await Promise.all(recentReports.map((report) => app.agentTasks.findByReportId(report.id)));
+    const flattenedTasks = agentTasks.flat();
+    const taskStatusCounts = flattenedTasks.reduce<Record<string, number>>((counts, task) => {
+      counts[task.status] = (counts[task.status] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    return {
+      workspace,
+      project,
+      repositories: {
+        available: repoScope.availableRepositories,
+        defaultRepository: repoScope.defaultConnection?.repository ?? null,
+        connections: repoScope.activeConnections
+      },
+      githubInstallations: installations.map((installation) => ({
+        ...installation,
+        installationId: Number(installation.installationId)
+      })),
+      reports: {
+        total: recentReports.length,
+        pendingReviewCount,
+        statusCounts: reportStatusCounts,
+        recent: recentReports.slice(0, 10).map((report) => ({
+          id: report.id,
+          source: report.source,
+          title: report.title ?? null,
+          status: report.status,
+          severity: report.severity,
+          createdAt: report.createdAt ?? null
+        }))
+      },
+      agentTasks: {
+        total: flattenedTasks.length,
+        statusCounts: taskStatusCounts,
+        recent: flattenedTasks.slice(0, 10).map((task) => ({
+          id: task.id,
+          title: task.title,
+          targetRepository: task.targetRepository,
+          status: task.status,
+          executionMode: task.executionMode
+        }))
+      }
+    };
+  });
+
   app.get('/internal/projects/key/:projectKey', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
@@ -495,7 +577,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     const existingConnections = await app.repoConnections.findByProjectId(project.id);
     const isDefault = payload.isDefault ?? existingConnections.length === 0;
     if (isDefault && existingConnections.some((connection) => connection.isDefault)) {
-      throw app.httpErrors.conflict('project already has a default repository connection');
+      await app.repoConnections.clearDefaultByProjectId(project.id);
     }
 
     const connection = {
@@ -519,6 +601,44 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     });
 
     return reply.code(201).send(connection);
+  });
+
+  app.patch('/internal/repo-connections/:repoConnectionId', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { repoConnectionId } = repoConnectionIdParamsSchema.parse(request.params);
+    const payload = updateRepoConnectionSchema.parse(request.body ?? {});
+    const existing = await app.repoConnections.findById(repoConnectionId);
+    if (!existing) {
+      throw app.httpErrors.notFound('repo connection not found');
+    }
+
+    if (payload.isDefault) {
+      await app.repoConnections.clearDefaultByProjectId(existing.projectId);
+    }
+
+    const updated = await app.repoConnections.update(repoConnectionId, {
+      ...(typeof payload.isDefault === 'boolean' ? { isDefault: payload.isDefault } : {}),
+      ...(payload.status ? { status: payload.status } : {}),
+      ...(payload.config ? { config: payload.config } : {})
+    });
+
+    if (!updated) {
+      throw app.httpErrors.notFound('repo connection not found');
+    }
+
+    await app.audit.write({
+      eventType: 'repo_connection.updated',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        repoConnectionId,
+        projectId: existing.projectId,
+        updates: payload
+      }
+    });
+
+    return updated;
   });
 
   app.get('/internal/projects/:projectId/repo-connections', async (request) => {
