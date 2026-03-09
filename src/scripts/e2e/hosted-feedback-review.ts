@@ -116,6 +116,12 @@ interface ProjectOperationsResponse {
   reports: {
     pendingReviewCount: number;
   };
+  support?: {
+    readiness?: string;
+    recentHostedFeedback?: Array<{
+      id: string;
+    }>;
+  };
 }
 
 interface CreatedServiceIdentityResponse {
@@ -130,6 +136,12 @@ interface RepoConnectionResponse {
   id: string;
   repository: string;
   isDefault: boolean;
+  status?: 'active' | 'inactive';
+}
+
+interface ProjectLookupResponse {
+  project: ProjectResponse & { workspaceId: string };
+  workspace: WorkspaceResponse;
 }
 
 interface ReviewResponse {
@@ -327,6 +339,7 @@ async function main(): Promise<void> {
 
   await assertHtmlPage(baseUrl, '/learn');
   await assertHtmlPage(baseUrl, '/learn/onboarding');
+  await assertHtmlPage(baseUrl, '/learn/support-ops');
   await assertHtmlPage(baseUrl, '/learn/review-queue');
   const serviceIdentity = await requestJson<ServiceIdentitySelfResponse>(`${baseUrl}/internal/service-identity/self`, {
     headers: authHeaders
@@ -334,6 +347,11 @@ async function main(): Promise<void> {
   assert(serviceIdentity.id === token.id, 'Service identity self-check did not resolve the active principal');
 
   const { workspace, project } = await createWorkspaceAndProject(baseUrl, authHeaders, suffix);
+  const projectLookup = await requestJson<ProjectLookupResponse>(`${baseUrl}/internal/projects/key/${encodeURIComponent(project.projectKey)}`, {
+    headers: authHeaders
+  });
+  assert(projectLookup.project.id === project.id, 'Project key lookup did not resolve the created project');
+  assert(projectLookup.workspace.id === workspace.id, 'Project key lookup did not include the project workspace');
   const projectOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
     headers: authHeaders
   });
@@ -409,7 +427,45 @@ async function main(): Promise<void> {
       })
     });
     assert(seededConnection.repository === targetRepository, 'Seeded repo connection did not persist the expected repository');
+
+    const updatedConnection = await requestJson<RepoConnectionResponse>(`${baseUrl}/internal/repo-connections/${seededConnection.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        status: 'inactive',
+        isDefault: false,
+        repository: `${targetRepository}-shadow`
+      })
+    });
+    assert(updatedConnection.repository === `${targetRepository}-shadow`, 'Repo connection update did not persist repository edits');
+    assert(updatedConnection.status === 'inactive', 'Repo connection update did not persist inactive status');
+
+    const restoredConnection = await requestJson<RepoConnectionResponse>(`${baseUrl}/internal/repo-connections/${seededConnection.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        status: 'active',
+        isDefault: true,
+        repository: targetRepository,
+        config: {
+          source: 'hosted-feedback-review-smoke-restored'
+        }
+      })
+    });
+    assert(restoredConnection.repository === targetRepository, 'Repo connection restore did not return to the expected repository');
+    assert(restoredConnection.isDefault, 'Repo connection restore did not reassign the default');
   }
+
+  const supportReadyOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
+    headers: authHeaders
+  });
+  assert(supportReadyOperations.support?.readiness === 'ready', `Expected support readiness to become ready, received ${supportReadyOperations.support?.readiness ?? 'missing'}`);
 
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/widget`, 401);
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/embed.js`, 401);

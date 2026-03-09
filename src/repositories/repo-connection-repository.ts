@@ -136,7 +136,10 @@ export function createRepoConnectionRepository(database: DatabaseClient): RepoCo
 
       const next = {
         ...current,
-        ...(input.githubInstallationId ? { githubInstallationId: input.githubInstallationId } : {}),
+        ...('githubInstallationId' in input
+          ? (input.githubInstallationId ? { githubInstallationId: input.githubInstallationId } : { githubInstallationId: undefined })
+          : {}),
+        ...(input.repository ? { repository: input.repository } : {}),
         ...(typeof input.isDefault === 'boolean' ? { isDefault: input.isDefault } : {}),
         ...(input.status ? { status: input.status } : {}),
         config: input.config ? { ...current.config, ...input.config } : current.config
@@ -145,15 +148,17 @@ export function createRepoConnectionRepository(database: DatabaseClient): RepoCo
       const result = await database.query<RepoConnectionRow>(
         `UPDATE repo_connections
          SET github_installation_id = $2,
-             is_default = $3,
-             status = $4,
-             config = $5::jsonb,
+             repository = $3,
+             is_default = $4,
+             status = $5,
+             config = $6::jsonb,
              updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, github_installation_id, provider, repository, is_default, status, config`,
         [
           id,
           next.githubInstallationId ?? null,
+          next.repository,
           next.isDefault,
           next.status,
           JSON.stringify(next.config)

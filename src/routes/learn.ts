@@ -15,200 +15,1057 @@ const learnPages = {
 } as const;
 
 function buildOnboardingConsolePage(): string {
-  return [
-    '<!DOCTYPE html>',
-    '<html lang="en">',
-    '<head>',
-    '  <meta charset="utf-8" />',
-    '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
-    '  <title>Nexus Onboarding Console</title>',
-    '  <style>',
-    '    :root { color-scheme: light; --bg-top: #f6efe1; --bg-bottom: #d7e3de; --ink: #16212c; --muted: rgba(22,33,44,0.7); --panel: rgba(255,255,255,0.88); --panel-strong: rgba(255,255,255,0.95); --line: rgba(22,33,44,0.12); --accent: #0d695b; --accent-soft: rgba(13,105,91,0.12); --warning: #8b6208; --shadow: 0 24px 64px rgba(22,33,44,0.12); }',
-    '    * { box-sizing: border-box; }',
-    '    body { margin: 0; font-family: "Avenir Next", "Segoe UI", sans-serif; color: var(--ink); background: radial-gradient(circle at top left, #fff8ec 0%, var(--bg-top) 40%, var(--bg-bottom) 100%); }',
-    '    main { max-width: 1280px; margin: 0 auto; padding: 36px 18px 64px; }',
-    '    h1 { margin: 0; font-size: clamp(2.8rem, 6vw, 5rem); line-height: 0.93; max-width: 11ch; }',
-    '    p { color: var(--muted); line-height: 1.6; max-width: 78ch; }',
-    '    .eyebrow { display: inline-flex; margin-bottom: 14px; padding: 8px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 0.76rem/1.1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.08em; }',
-    '    .hero { display: grid; gap: 14px; margin-bottom: 28px; }',
-    '    .shell { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 18px; }',
-    '    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 28px; box-shadow: var(--shadow); overflow: hidden; }',
-    '    .controls { display: grid; gap: 12px; padding: 18px; }',
-    '    .workspace { display: grid; gap: 16px; padding: 18px; min-height: 760px; }',
-    '    .grid { display: grid; gap: 12px; }',
-    '    .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }',
-    '    label { display: grid; gap: 6px; font-size: 0.92rem; color: var(--muted); }',
-    '    input, select, textarea, button { font: inherit; }',
-    '    input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; background: var(--panel-strong); color: var(--ink); }',
-    '    textarea { min-height: 130px; resize: vertical; }',
-    '    button { border: none; border-radius: 14px; padding: 12px 14px; cursor: pointer; transition: transform 140ms ease, opacity 140ms ease; }',
-    '    button:hover { transform: translateY(-1px); }',
-    '    button.primary { background: var(--accent); color: #fffaf4; }',
-    '    button.secondary { background: rgba(255,255,255,0.9); border: 1px solid var(--line); color: var(--ink); }',
-    '    .row { display: flex; gap: 10px; flex-wrap: wrap; }',
-    '    .section { border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,0.6); padding: 16px; display: grid; gap: 12px; }',
-    '    .section-title { margin: 0; font: 700 0.86rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }',
-    '    .helper { color: var(--muted); font-size: 0.9rem; }',
-    '    .status { padding: 12px 14px; border-top: 1px solid var(--line); min-height: 48px; color: var(--muted); background: rgba(22,33,44,0.03); }',
-    '    .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }',
-    '    .card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }',
-    '    .card strong { display: block; font-size: 1.6rem; line-height: 1; margin-top: 8px; }',
-    '    pre { margin: 0; padding: 14px; border-radius: 18px; background: #201d1f; color: #f7efe3; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }',
-    '    .result { display: grid; gap: 14px; }',
-    '    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }',
-    '    .pill { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: rgba(13,105,91,0.1); color: var(--accent); font: 600 0.8rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }',
-    '    .warning { color: var(--warning); }',
-    '    a.inline-link { color: var(--accent); text-decoration: none; }',
-    '    @media (max-width: 1120px) { .shell, .split, .summary-grid { grid-template-columns: 1fr; } }',
-    '  </style>',
-    '</head>',
-    '<body>',
-    '  <main>',
-    '    <section class="hero">',
-    '      <span class="eyebrow">Operator Onboarding Console</span>',
-    '      <h1>Link installs, bind repos, and hand off the widget.</h1>',
-    '      <p>This page wraps the project onboarding APIs into one operator surface. Use it to create a signed GitHub App install link, reconcile a manual installation to the right workspace or project, inspect current bindings, manage service identities, and mint a widget session URL you can hand to a customer immediately.</p>',
-    '    </section>',
-    '    <section class="shell">',
-    '      <aside class="panel">',
-    '        <div class="controls">',
-    '          <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>',
-    '          <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>',
-    '          <label>Workspace Id<input id="workspaceId" value="" placeholder="workspace UUID" /></label>',
-    '          <label>Project Id<input id="projectId" value="" placeholder="project UUID" /></label>',
-    '          <label>Repository<input id="repository" value="" placeholder="owner/repo" /></label>',
-    '          <label>Installation Id<input id="installationId" value="" placeholder="114991268" /></label>',
-    '          <label>Service Identity Id<input id="serviceIdentityId" value="" placeholder="service-operator" /></label>',
-    '          <label>Service Identity Scopes<input id="serviceIdentityScopes" value="internal:read" placeholder="internal:read, github:draft" /></label>',
-    '          <div class="split">',
-    '            <label>Widget Origin<input id="origin" value="" placeholder="https://customer.example" /></label>',
-    '            <label>Widget Mode<select id="mode"><option value="embed">embed</option><option value="widget">widget</option></select></label>',
-    '          </div>',
-    '          <div class="row">',
-    '            <button id="loadContext" class="secondary">Load Context</button>',
-    '            <button id="loadOperations" class="secondary">Load Operations</button>',
-    '            <button id="createInstallLink" class="primary">Create Install Link</button>',
-    '          </div>',
-    '          <div class="row">',
-    '            <button id="lookupInstall" class="secondary">Lookup Install</button>',
-    '            <button id="reconcileInstall" class="primary">Reconcile Install</button>',
-    '          </div>',
-    '          <div class="row">',
-    '            <button id="transferInstall" class="primary">Transfer Install</button>',
-    '            <button id="mintWidget" class="secondary">Mint Widget Session</button>',
-    '          </div>',
-    '          <div class="row">',
-    '            <button id="listServiceIdentities" class="secondary">List Service Identities</button>',
-    '            <button id="createServiceIdentity" class="primary">Create Identity</button>',
-    '          </div>',
-    '          <div class="row">',
-    '            <button id="rotateServiceIdentity" class="secondary">Rotate Identity</button>',
-    '            <button id="revokeServiceIdentity" class="secondary">Revoke Identity</button>',
-    '          </div>',
-    '        </div>',
-    '        <div id="status" class="status">Waiting for operator input.</div>',
-    '      </aside>',
-    '      <section class="panel workspace">',
-    '        <div class="summary-grid">',
-    '          <article class="card"><span class="helper">Installations</span><strong id="installationCount">0</strong><span class="helper">GitHub App installs mapped to this workspace.</span></article>',
-    '          <article class="card"><span class="helper">Projects</span><strong id="projectCount">0</strong><span class="helper">Projects currently loaded for the workspace.</span></article>',
-    '          <article class="card"><span class="helper">Repo Links</span><strong id="connectionCount">0</strong><span class="helper">Active repo connections for the selected project.</span></article>',
-    '        </div>',
-    '        <div class="section">',
-    '          <h2 class="section-title">Current Bindings</h2>',
-    '          <div id="bindings" class="pill-list"></div>',
-    '          <div id="bindingNotes" class="helper">Load a workspace and project to inspect their current install and repository bindings.</div>',
-    '        </div>',
-    '        <div class="result">',
-    '          <section class="section">',
-    '            <h2 class="section-title">Project Operations</h2>',
-    '            <div id="operationsSummary" class="helper">No project operations loaded yet.</div>',
-    '            <pre id="operationsResult">// project operations summary appears here</pre>',
-    '          </section>',
-    '          <section class="section">',
-    '            <h2 class="section-title">Service Identities</h2>',
-    '            <div id="serviceIdentitySummary" class="helper">No service identity action run yet.</div>',
-    '            <pre id="serviceIdentityResult">// service identity responses appear here</pre>',
-    '          </section>',
-    '          <section class="section">',
-    '            <h2 class="section-title">Install Link</h2>',
-    '            <div id="installLinkSummary" class="helper">No install link generated yet.</div>',
-    '            <pre id="installLinkResult">// install-link response appears here</pre>',
-    '          </section>',
-    '          <section class="section">',
-    '            <h2 class="section-title">Installation Lookup</h2>',
-    '            <div id="lookupSummary" class="helper">No installation lookup run yet.</div>',
-    '            <pre id="lookupResult">// installation lookup appears here</pre>',
-    '          </section>',
-    '          <section class="section">',
-    '            <h2 class="section-title">Reconciliation</h2>',
-    '            <div id="reconcileSummary" class="helper">No manual reconciliation run yet.</div>',
-    '            <pre id="reconcileResult">// reconcile response appears here</pre>',
-    '          </section>',
-    '          <section class="section">',
-    '            <h2 class="section-title">Transfer</h2>',
-    '            <div id="transferSummary" class="helper">No installation transfer run yet.</div>',
-    '            <pre id="transferResult">// transfer response appears here</pre>',
-    '          </section>',
-    '          <section class="section">',
-    '            <h2 class="section-title">Widget Handoff</h2>',
-    '            <div id="widgetSummary" class="helper">No widget session minted yet.</div>',
-    '            <pre id="widgetResult">// widget-session response appears here</pre>',
-    '          </section>',
-    '        </div>',
-    '      </section>',
-    '    </section>',
-    '  </main>',
-    '  <script>',
-    '    const storageKey = "nexus-onboarding-console";',
-    '    const els = {',
-    '      baseUrl: document.getElementById("baseUrl"), token: document.getElementById("token"), workspaceId: document.getElementById("workspaceId"), projectId: document.getElementById("projectId"), repository: document.getElementById("repository"), installationId: document.getElementById("installationId"), serviceIdentityId: document.getElementById("serviceIdentityId"), serviceIdentityScopes: document.getElementById("serviceIdentityScopes"), origin: document.getElementById("origin"), mode: document.getElementById("mode"), loadContext: document.getElementById("loadContext"), loadOperations: document.getElementById("loadOperations"), createInstallLink: document.getElementById("createInstallLink"), lookupInstall: document.getElementById("lookupInstall"), reconcileInstall: document.getElementById("reconcileInstall"), transferInstall: document.getElementById("transferInstall"), mintWidget: document.getElementById("mintWidget"), listServiceIdentities: document.getElementById("listServiceIdentities"), createServiceIdentity: document.getElementById("createServiceIdentity"), rotateServiceIdentity: document.getElementById("rotateServiceIdentity"), revokeServiceIdentity: document.getElementById("revokeServiceIdentity"), status: document.getElementById("status"), installationCount: document.getElementById("installationCount"), projectCount: document.getElementById("projectCount"), connectionCount: document.getElementById("connectionCount"), bindings: document.getElementById("bindings"), bindingNotes: document.getElementById("bindingNotes"), operationsSummary: document.getElementById("operationsSummary"), operationsResult: document.getElementById("operationsResult"), serviceIdentitySummary: document.getElementById("serviceIdentitySummary"), serviceIdentityResult: document.getElementById("serviceIdentityResult"), installLinkSummary: document.getElementById("installLinkSummary"), installLinkResult: document.getElementById("installLinkResult"), lookupSummary: document.getElementById("lookupSummary"), lookupResult: document.getElementById("lookupResult"), reconcileSummary: document.getElementById("reconcileSummary"), reconcileResult: document.getElementById("reconcileResult"), transferSummary: document.getElementById("transferSummary"), transferResult: document.getElementById("transferResult"), widgetSummary: document.getElementById("widgetSummary"), widgetResult: document.getElementById("widgetResult")',
-    '    };',
-    '    function setStatus(message) { els.status.textContent = message; }',
-    '    function authHeaders() { const token = els.token.value.trim(); return token ? { Authorization: `Bearer ${token}` } : {}; }',
-    '    function saveState() { localStorage.setItem(storageKey, JSON.stringify({ baseUrl: els.baseUrl.value.trim(), token: els.token.value.trim(), workspaceId: els.workspaceId.value.trim(), projectId: els.projectId.value.trim(), repository: els.repository.value.trim(), installationId: els.installationId.value.trim(), serviceIdentityId: els.serviceIdentityId.value.trim(), serviceIdentityScopes: els.serviceIdentityScopes.value.trim(), origin: els.origin.value.trim(), mode: els.mode.value })); }',
-    '    function readState() { try { return JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch { return {}; } }',
-    '    async function request(path, init) { const response = await fetch((els.baseUrl.value.trim() || window.location.origin) + path, init); const text = await response.text(); if (!response.ok) { throw new Error(`${init && init.method ? init.method : "GET"} ${path} failed: ${response.status} ${text}`); } return JSON.parse(text); }',
-    '    function writeJson(target, data) { target.textContent = JSON.stringify(data, null, 2); }',
-    '    function parseScopes() { return els.serviceIdentityScopes.value.split(",").map((value) => value.trim()).filter(Boolean); }',
-    '    function renderBindings(projects, installations, repoConnections) { els.projectCount.textContent = String(projects.length); els.installationCount.textContent = String(installations.length); els.connectionCount.textContent = String(repoConnections.length); els.bindings.innerHTML = ""; const pills = []; for (const project of projects) { pills.push(`project:${project.name} (${project.projectKey})`); } for (const installation of installations) { pills.push(`install:${installation.installationId}${installation.accountLogin ? ` @${installation.accountLogin}` : ""}`); } for (const connection of repoConnections) { pills.push(`repo:${connection.repository}${connection.githubInstallationId ? " linked" : " unlinked"}${connection.isDefault ? " default" : ""}`); } if (!pills.length) { els.bindingNotes.innerHTML = "No bindings found for the current ids yet. Manual reconcile is the fastest way to attach an installation to a project repository."; return; } els.bindingNotes.innerHTML = `Loaded ${projects.length} project(s), ${installations.length} installation(s), and ${repoConnections.length} repo connection(s).`; for (const value of pills) { const pill = document.createElement("span"); pill.className = "pill"; pill.textContent = value; els.bindings.appendChild(pill); } }',
-    '    async function loadContext() { saveState(); const workspaceId = els.workspaceId.value.trim(); if (!workspaceId) { setStatus("Workspace Id is required."); return; } setStatus(`Loading workspace context for ${workspaceId}...`); try { const [projects, installations, repoConnections] = await Promise.all([ request(`/internal/workspaces/${workspaceId}/projects`, { headers: authHeaders() }), request(`/internal/workspaces/${workspaceId}/github-installations`, { headers: authHeaders() }), els.projectId.value.trim() ? request(`/internal/projects/${els.projectId.value.trim()}/repo-connections`, { headers: authHeaders() }) : Promise.resolve([]) ]); renderBindings(Array.isArray(projects) ? projects : [], Array.isArray(installations) ? installations : [], Array.isArray(repoConnections) ? repoConnections : []); setStatus(`Loaded onboarding context for workspace ${workspaceId}.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to load onboarding context."); } }',
-    '    async function loadOperations() { saveState(); const projectId = els.projectId.value.trim(); if (!projectId) { setStatus("Project Id is required."); return; } setStatus(`Loading operations for ${projectId}...`); try { const result = await request(`/internal/projects/${projectId}/operations`, { headers: authHeaders() }); writeJson(els.operationsResult, result); const defaultRepository = result.repositories && result.repositories.defaultRepository ? result.repositories.defaultRepository : "none"; const pendingReviewCount = result.reports && typeof result.reports.pendingReviewCount === "number" ? result.reports.pendingReviewCount : 0; const taskCount = result.agentTasks && typeof result.agentTasks.total === "number" ? result.agentTasks.total : 0; els.operationsSummary.textContent = `Default repo ${defaultRepository}. Pending review ${pendingReviewCount}. Agent tasks ${taskCount}.`; setStatus(`Operations loaded for ${projectId}.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to load project operations."); } }',
-    '    async function listServiceIdentities() { saveState(); setStatus("Loading service identities..."); try { const result = await request(`/internal/service-identities`, { headers: authHeaders() }); writeJson(els.serviceIdentityResult, result); els.serviceIdentitySummary.textContent = `Loaded ${Array.isArray(result) ? result.length : 0} service identit${Array.isArray(result) && result.length === 1 ? "y" : "ies"}.`; setStatus("Service identities loaded."); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to load service identities."); } }',
-    '    async function createServiceIdentity() { saveState(); const scopes = parseScopes(); if (!scopes.length) { setStatus("At least one service identity scope is required."); return; } setStatus("Creating service identity..."); try { const payload = { id: els.serviceIdentityId.value.trim() || undefined, scopes }; const result = await request(`/internal/service-identities`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) }); writeJson(els.serviceIdentityResult, result); els.serviceIdentitySummary.textContent = `Created ${result.identity && result.identity.id ? result.identity.id : "service identity"}. Copy token from the response panel.`; if (result.identity && result.identity.id) { els.serviceIdentityId.value = result.identity.id; } setStatus("Service identity created."); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to create service identity."); } }',
-    '    async function rotateServiceIdentity() { saveState(); const identityId = els.serviceIdentityId.value.trim(); const scopes = parseScopes(); if (!identityId) { setStatus("Service Identity Id is required."); return; } setStatus(`Rotating ${identityId}...`); try { const payload = scopes.length ? { scopes } : {}; const result = await request(`/internal/service-identities/${encodeURIComponent(identityId)}/rotate`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) }); writeJson(els.serviceIdentityResult, result); els.serviceIdentitySummary.textContent = `Rotated ${identityId}. New token is shown in the response panel.`; setStatus(`Service identity ${identityId} rotated.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to rotate service identity."); } }',
-    '    async function revokeServiceIdentity() { saveState(); const identityId = els.serviceIdentityId.value.trim(); if (!identityId) { setStatus("Service Identity Id is required."); return; } setStatus(`Revoking ${identityId}...`); try { const result = await request(`/internal/service-identities/${encodeURIComponent(identityId)}/revoke`, { method: "POST", headers: authHeaders() }); writeJson(els.serviceIdentityResult, result); els.serviceIdentitySummary.textContent = `Revoked ${identityId}.`; setStatus(`Service identity ${identityId} revoked.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to revoke service identity."); } }',
-    '    async function createInstallLink() { saveState(); const workspaceId = els.workspaceId.value.trim(); if (!workspaceId) { setStatus("Workspace Id is required."); return; } setStatus("Creating GitHub App install link..."); try { const payload = { projectId: els.projectId.value.trim() || undefined, repository: els.repository.value.trim() || undefined, isDefault: true }; const result = await request(`/internal/workspaces/${workspaceId}/github-app/install-link`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) }); writeJson(els.installLinkResult, result); els.installLinkSummary.innerHTML = result.installUrl ? `<a class="inline-link" href="${result.installUrl}" target="_blank" rel="noreferrer">Open GitHub install flow</a> | callback ${result.callbackUrl}` : "Install link created."; setStatus("GitHub App install link generated."); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to create install link."); } }',
-    '    async function lookupInstall() { saveState(); const installationId = els.installationId.value.trim(); if (!installationId) { setStatus("Installation Id is required."); return; } setStatus(`Looking up installation ${installationId}...`); try { const result = await request(`/internal/github-app/installations/${installationId}`, { headers: authHeaders() }); writeJson(els.lookupResult, result); els.lookupSummary.textContent = result.workspace ? `Mapped to ${result.workspace.name} with ${Array.isArray(result.linkedProjects) ? result.linkedProjects.length : 0} linked project binding(s).` : "Installation lookup completed."; setStatus(`Installation ${installationId} loaded.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to look up installation."); } }',
-    '    async function reconcileInstall() { saveState(); const workspaceId = els.workspaceId.value.trim(); const installationId = els.installationId.value.trim(); if (!workspaceId || !installationId) { setStatus("Workspace Id and Installation Id are required."); return; } setStatus(`Reconciling installation ${installationId}...`); try { const payload = { installationId, projectId: els.projectId.value.trim() || undefined, repository: els.repository.value.trim() || undefined, isDefault: true }; const result = await request(`/internal/workspaces/${workspaceId}/github-app/reconcile`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) }); writeJson(els.reconcileResult, result); els.reconcileSummary.textContent = result.repositoryLink ? `${result.repositoryLink.result}. Linked repo: ${result.repositoryLink.linked || "none"}.` : "Installation reconciled."; await loadContext(); setStatus(`Installation ${installationId} reconciled.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to reconcile install."); } }',
-    '    async function transferInstall() { saveState(); const workspaceId = els.workspaceId.value.trim(); const installationId = els.installationId.value.trim(); if (!workspaceId || !installationId) { setStatus("Workspace Id and Installation Id are required."); return; } setStatus(`Transferring installation ${installationId}...`); try { const payload = { installationId, projectId: els.projectId.value.trim() || undefined, repository: els.repository.value.trim() || undefined, isDefault: true }; const result = await request(`/internal/workspaces/${workspaceId}/github-app/transfer-installation`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) }); writeJson(els.transferResult, result); els.transferSummary.textContent = `Transferred from ${result.sourceWorkspace ? result.sourceWorkspace.name : "unknown"} to ${result.targetWorkspace ? result.targetWorkspace.name : "unknown"}. Deactivated ${Array.isArray(result.deactivatedConnectionIds) ? result.deactivatedConnectionIds.length : 0} source connection(s).`; await loadContext(); setStatus(`Installation ${installationId} transferred.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to transfer install."); } }',
-    '    async function mintWidget() { saveState(); const projectId = els.projectId.value.trim(); if (!projectId) { setStatus("Project Id is required to mint a widget session."); return; } setStatus(`Minting widget session for ${projectId}...`); try { const payload = { origin: els.origin.value.trim() || undefined, mode: els.mode.value }; const result = await request(`/internal/projects/${projectId}/widget-session`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) }); writeJson(els.widgetResult, result); const links = [result.widgetUrl ? `widget ${result.widgetUrl}` : null, result.embedScriptUrl ? `embed ${result.embedScriptUrl}` : null].filter(Boolean).join(" | "); els.widgetSummary.innerHTML = links || "Widget session minted."; setStatus(`Widget session minted for ${projectId}.`); } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to mint widget session."); } }',
-    '    const saved = readState();',
-    '    els.baseUrl.value = saved.baseUrl || window.location.origin;',
-    '    els.token.value = saved.token || "";',
-    '    els.workspaceId.value = saved.workspaceId || "";',
-    '    els.projectId.value = saved.projectId || "";',
-    '    els.repository.value = saved.repository || "";',
-    '    els.installationId.value = saved.installationId || "";',
-    '    els.serviceIdentityId.value = saved.serviceIdentityId || "";',
-    '    els.serviceIdentityScopes.value = saved.serviceIdentityScopes || "internal:read";',
-    '    els.origin.value = saved.origin || "";',
-    '    els.mode.value = saved.mode || "embed";',
-    '    els.loadContext.addEventListener("click", loadContext);',
-    '    els.loadOperations.addEventListener("click", loadOperations);',
-    '    els.createInstallLink.addEventListener("click", createInstallLink);',
-    '    els.lookupInstall.addEventListener("click", lookupInstall);',
-    '    els.reconcileInstall.addEventListener("click", reconcileInstall);',
-    '    els.transferInstall.addEventListener("click", transferInstall);',
-    '    els.mintWidget.addEventListener("click", mintWidget);',
-    '    els.listServiceIdentities.addEventListener("click", listServiceIdentities);',
-    '    els.createServiceIdentity.addEventListener("click", createServiceIdentity);',
-    '    els.rotateServiceIdentity.addEventListener("click", rotateServiceIdentity);',
-    '    els.revokeServiceIdentity.addEventListener("click", revokeServiceIdentity);',
-    '  </script>',
-    '</body>',
-    '</html>'
-  ].join('\n');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexus Onboarding Console</title>
+  <style>
+    :root { color-scheme: light; --bg-top: #f6efe1; --bg-bottom: #d7e3de; --ink: #16212c; --muted: rgba(22,33,44,0.7); --panel: rgba(255,255,255,0.88); --panel-strong: rgba(255,255,255,0.95); --line: rgba(22,33,44,0.12); --accent: #0d695b; --accent-soft: rgba(13,105,91,0.12); --warning: #8b6208; --shadow: 0 24px 64px rgba(22,33,44,0.12); }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Avenir Next", "Segoe UI", sans-serif; color: var(--ink); background: radial-gradient(circle at top left, #fff8ec 0%, var(--bg-top) 40%, var(--bg-bottom) 100%); }
+    main { max-width: 1380px; margin: 0 auto; padding: 36px 18px 64px; }
+    h1 { margin: 0; font-size: clamp(2.8rem, 6vw, 5rem); line-height: 0.93; max-width: 11ch; }
+    p { color: var(--muted); line-height: 1.6; max-width: 78ch; }
+    .eyebrow { display: inline-flex; margin-bottom: 14px; padding: 8px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 0.76rem/1.1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.08em; }
+    .hero { display: grid; gap: 14px; margin-bottom: 28px; }
+    .shell { display: grid; grid-template-columns: 430px minmax(0, 1fr); gap: 18px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 28px; box-shadow: var(--shadow); overflow: hidden; }
+    .controls { display: grid; gap: 12px; padding: 18px; }
+    .workspace { display: grid; gap: 16px; padding: 18px; min-height: 760px; }
+    .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    label { display: grid; gap: 6px; font-size: 0.92rem; color: var(--muted); }
+    input, select, textarea, button { font: inherit; }
+    input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; background: var(--panel-strong); color: var(--ink); }
+    textarea { min-height: 96px; resize: vertical; }
+    button { border: none; border-radius: 14px; padding: 12px 14px; cursor: pointer; transition: transform 140ms ease, opacity 140ms ease; }
+    button:hover { transform: translateY(-1px); }
+    button.primary { background: var(--accent); color: #fffaf4; }
+    button.secondary { background: rgba(255,255,255,0.9); border: 1px solid var(--line); color: var(--ink); }
+    button.mini { padding: 8px 10px; border-radius: 10px; font-size: 0.84rem; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .section { border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,0.6); padding: 16px; display: grid; gap: 12px; }
+    .section-title { margin: 0; font: 700 0.86rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .helper { color: var(--muted); font-size: 0.9rem; }
+    .status { padding: 12px 14px; border-top: 1px solid var(--line); min-height: 48px; color: var(--muted); background: rgba(22,33,44,0.03); }
+    .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
+    .card strong { display: block; font-size: 1.6rem; line-height: 1; margin-top: 8px; }
+    .card .warning { display: block; margin-top: 8px; }
+    pre { margin: 0; padding: 14px; border-radius: 18px; background: #201d1f; color: #f7efe3; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .result { display: grid; gap: 14px; }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: rgba(13,105,91,0.1); color: var(--accent); font: 600 0.8rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .warning { color: var(--warning); }
+    a.inline-link { color: var(--accent); text-decoration: none; }
+    .button-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .button-list button { text-align: left; }
+    @media (max-width: 1120px) { .shell, .split, .summary-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <span class="eyebrow">Operator Onboarding Console</span>
+      <h1>Support onboarding, repo scope, and customer handoff from one surface.</h1>
+      <p>This console now covers project-key lookup, repo-connection create and update flows, GitHub App install and transfer work, service identity lifecycle, and a support snapshot showing whether the project is actually ready to receive customer feedback.</p>
+    </section>
+    <section class="shell">
+      <aside class="panel">
+        <div class="controls">
+          <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>
+          <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
+          <div class="split">
+            <label>Workspace Id<input id="workspaceId" value="" placeholder="workspace UUID" /></label>
+            <label>Project Id<input id="projectId" value="" placeholder="project UUID" /></label>
+          </div>
+          <label>Project Key<input id="projectKey" value="" placeholder="checkout-prod" /></label>
+          <label>Repository<input id="repository" value="" placeholder="owner/repo" /></label>
+          <div class="split">
+            <label>Installation Id<input id="installationId" value="" placeholder="114991268" /></label>
+            <label>Installation Record Id<input id="githubInstallationRecordId" value="" placeholder="github_installations UUID" /></label>
+          </div>
+          <div class="split">
+            <label>Repo Connection Id<input id="repoConnectionId" value="" placeholder="repo_connections UUID" /></label>
+            <label>Repo Status<select id="repoConnectionStatus"><option value="">leave unchanged</option><option value="active">active</option><option value="inactive">inactive</option></select></label>
+          </div>
+          <div class="split">
+            <label>Default Behavior<select id="repoConnectionDefault"><option value="auto">leave unchanged</option><option value="true">set default</option><option value="false">clear default</option></select></label>
+            <label>Widget Mode<select id="mode"><option value="embed">embed</option><option value="widget">widget</option></select></label>
+          </div>
+          <label>Repo Connection Config (JSON)<textarea id="repoConnectionConfig" placeholder='{"supportOwner":"ops"}'></textarea></label>
+          <div class="split">
+            <label>Widget Origin<input id="origin" value="" placeholder="https://customer.example" /></label>
+            <label>Service Identity Id<input id="serviceIdentityId" value="" placeholder="service-operator" /></label>
+          </div>
+          <label>Service Identity Scopes<input id="serviceIdentityScopes" value="internal:read" placeholder="internal:read, github:draft" /></label>
+          <div class="row">
+            <button id="lookupProject" class="secondary">Lookup Project</button>
+            <button id="loadContext" class="secondary">Load Context</button>
+            <button id="loadOperations" class="secondary">Load Support Snapshot</button>
+          </div>
+          <div class="row">
+            <button id="createRepoConnection" class="primary">Create Repo Connection</button>
+            <button id="updateRepoConnection" class="secondary">Update Repo Connection</button>
+          </div>
+          <div class="row">
+            <button id="createInstallLink" class="primary">Create Install Link</button>
+            <button id="lookupInstall" class="secondary">Lookup Install</button>
+            <button id="reconcileInstall" class="primary">Reconcile Install</button>
+          </div>
+          <div class="row">
+            <button id="transferInstall" class="primary">Transfer Install</button>
+            <button id="mintWidget" class="secondary">Mint Widget Session</button>
+          </div>
+          <div class="row">
+            <button id="listServiceIdentities" class="secondary">List Service Identities</button>
+            <button id="createServiceIdentity" class="primary">Create Identity</button>
+          </div>
+          <div class="row">
+            <button id="rotateServiceIdentity" class="secondary">Rotate Identity</button>
+            <button id="revokeServiceIdentity" class="secondary">Revoke Identity</button>
+          </div>
+        </div>
+        <div id="status" class="status">Waiting for operator input.</div>
+      </aside>
+      <section class="panel workspace">
+        <div class="summary-grid">
+          <article class="card"><span class="helper">Installations</span><strong id="installationCount">0</strong><span class="helper">GitHub App installs mapped to this workspace.</span></article>
+          <article class="card"><span class="helper">Projects</span><strong id="projectCount">0</strong><span class="helper">Projects currently loaded for the workspace.</span></article>
+          <article class="card"><span class="helper">Repo Links</span><strong id="connectionCount">0</strong><span class="helper">Repo connections loaded for the selected project.</span></article>
+          <article class="card"><span class="helper">Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a support snapshot to score project readiness.</span></article>
+        </div>
+        <div class="section">
+          <h2 class="section-title">Current Bindings</h2>
+          <div id="bindings" class="pill-list"></div>
+          <div id="bindingNotes" class="helper">Load a workspace and project to inspect their current install and repository bindings.</div>
+        </div>
+        <div class="section">
+          <h2 class="section-title">Repo Connections</h2>
+          <div id="repoConnectionList" class="button-list"></div>
+          <div id="repoConnectionSummary" class="helper">Select a repo connection to preload the editor, or create one from the controls panel.</div>
+          <pre id="repoConnectionResult">// repo-connection responses appear here</pre>
+        </div>
+        <div class="result">
+          <section class="section">
+            <h2 class="section-title">Customer Support Snapshot</h2>
+            <div id="supportSummary" class="helper">No support snapshot loaded yet.</div>
+            <pre id="supportResult">// support readiness appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Project Operations</h2>
+            <div id="operationsSummary" class="helper">No project operations loaded yet.</div>
+            <pre id="operationsResult">// project operations summary appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Service Identities</h2>
+            <div id="serviceIdentitySummary" class="helper">No service identity action run yet.</div>
+            <pre id="serviceIdentityResult">// service identity responses appear here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Install Link</h2>
+            <div id="installLinkSummary" class="helper">No install link generated yet.</div>
+            <pre id="installLinkResult">// install-link response appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Installation Lookup</h2>
+            <div id="lookupSummary" class="helper">No installation lookup run yet.</div>
+            <pre id="lookupResult">// installation lookup appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Reconciliation</h2>
+            <div id="reconcileSummary" class="helper">No manual reconciliation run yet.</div>
+            <pre id="reconcileResult">// reconcile response appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Transfer</h2>
+            <div id="transferSummary" class="helper">No installation transfer run yet.</div>
+            <pre id="transferResult">// transfer response appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Widget Handoff</h2>
+            <div id="widgetSummary" class="helper">No widget session minted yet.</div>
+            <pre id="widgetResult">// widget-session response appears here</pre>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script>
+    const storageKey = 'nexus-onboarding-console';
+    const contextState = { projects: [], installations: [], repoConnections: [] };
+    const els = {
+      baseUrl: document.getElementById('baseUrl'),
+      token: document.getElementById('token'),
+      workspaceId: document.getElementById('workspaceId'),
+      projectId: document.getElementById('projectId'),
+      projectKey: document.getElementById('projectKey'),
+      repository: document.getElementById('repository'),
+      installationId: document.getElementById('installationId'),
+      githubInstallationRecordId: document.getElementById('githubInstallationRecordId'),
+      repoConnectionId: document.getElementById('repoConnectionId'),
+      repoConnectionStatus: document.getElementById('repoConnectionStatus'),
+      repoConnectionDefault: document.getElementById('repoConnectionDefault'),
+      repoConnectionConfig: document.getElementById('repoConnectionConfig'),
+      origin: document.getElementById('origin'),
+      mode: document.getElementById('mode'),
+      serviceIdentityId: document.getElementById('serviceIdentityId'),
+      serviceIdentityScopes: document.getElementById('serviceIdentityScopes'),
+      lookupProject: document.getElementById('lookupProject'),
+      loadContext: document.getElementById('loadContext'),
+      loadOperations: document.getElementById('loadOperations'),
+      createRepoConnection: document.getElementById('createRepoConnection'),
+      updateRepoConnection: document.getElementById('updateRepoConnection'),
+      createInstallLink: document.getElementById('createInstallLink'),
+      lookupInstall: document.getElementById('lookupInstall'),
+      reconcileInstall: document.getElementById('reconcileInstall'),
+      transferInstall: document.getElementById('transferInstall'),
+      mintWidget: document.getElementById('mintWidget'),
+      listServiceIdentities: document.getElementById('listServiceIdentities'),
+      createServiceIdentity: document.getElementById('createServiceIdentity'),
+      rotateServiceIdentity: document.getElementById('rotateServiceIdentity'),
+      revokeServiceIdentity: document.getElementById('revokeServiceIdentity'),
+      status: document.getElementById('status'),
+      installationCount: document.getElementById('installationCount'),
+      projectCount: document.getElementById('projectCount'),
+      connectionCount: document.getElementById('connectionCount'),
+      readinessValue: document.getElementById('readinessValue'),
+      readinessNote: document.getElementById('readinessNote'),
+      bindings: document.getElementById('bindings'),
+      bindingNotes: document.getElementById('bindingNotes'),
+      repoConnectionList: document.getElementById('repoConnectionList'),
+      repoConnectionSummary: document.getElementById('repoConnectionSummary'),
+      repoConnectionResult: document.getElementById('repoConnectionResult'),
+      supportSummary: document.getElementById('supportSummary'),
+      supportResult: document.getElementById('supportResult'),
+      operationsSummary: document.getElementById('operationsSummary'),
+      operationsResult: document.getElementById('operationsResult'),
+      serviceIdentitySummary: document.getElementById('serviceIdentitySummary'),
+      serviceIdentityResult: document.getElementById('serviceIdentityResult'),
+      installLinkSummary: document.getElementById('installLinkSummary'),
+      installLinkResult: document.getElementById('installLinkResult'),
+      lookupSummary: document.getElementById('lookupSummary'),
+      lookupResult: document.getElementById('lookupResult'),
+      reconcileSummary: document.getElementById('reconcileSummary'),
+      reconcileResult: document.getElementById('reconcileResult'),
+      transferSummary: document.getElementById('transferSummary'),
+      transferResult: document.getElementById('transferResult'),
+      widgetSummary: document.getElementById('widgetSummary'),
+      widgetResult: document.getElementById('widgetResult')
+    };
+
+    function setStatus(message) { els.status.textContent = message; }
+    function authHeaders() {
+      const token = els.token.value.trim();
+      return token ? { Authorization: 'Bearer ' + token } : {};
+    }
+    function readState() {
+      try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; }
+    }
+    function saveState() {
+      localStorage.setItem(storageKey, JSON.stringify({
+        baseUrl: els.baseUrl.value.trim(),
+        token: els.token.value.trim(),
+        workspaceId: els.workspaceId.value.trim(),
+        projectId: els.projectId.value.trim(),
+        projectKey: els.projectKey.value.trim(),
+        repository: els.repository.value.trim(),
+        installationId: els.installationId.value.trim(),
+        githubInstallationRecordId: els.githubInstallationRecordId.value.trim(),
+        repoConnectionId: els.repoConnectionId.value.trim(),
+        repoConnectionStatus: els.repoConnectionStatus.value,
+        repoConnectionDefault: els.repoConnectionDefault.value,
+        repoConnectionConfig: els.repoConnectionConfig.value,
+        origin: els.origin.value.trim(),
+        mode: els.mode.value,
+        serviceIdentityId: els.serviceIdentityId.value.trim(),
+        serviceIdentityScopes: els.serviceIdentityScopes.value.trim()
+      }));
+    }
+    async function request(path, init) {
+      const response = await fetch((els.baseUrl.value.trim() || window.location.origin) + path, init);
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error((init && init.method ? init.method : 'GET') + ' ' + path + ' failed: ' + response.status + ' ' + text);
+      }
+      return JSON.parse(text);
+    }
+    function writeJson(target, data) { target.textContent = JSON.stringify(data, null, 2); }
+    function parseScopes() {
+      return els.serviceIdentityScopes.value.split(',').map(function (value) { return value.trim(); }).filter(Boolean);
+    }
+    function parseDefaultSelection() {
+      if (els.repoConnectionDefault.value === 'true') {
+        return true;
+      }
+      if (els.repoConnectionDefault.value === 'false') {
+        return false;
+      }
+      return undefined;
+    }
+    function parseRepoConfig() {
+      const raw = els.repoConnectionConfig.value.trim();
+      if (!raw) {
+        return undefined;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Repo Connection Config must be a JSON object.');
+      }
+      return parsed;
+    }
+    function setReadiness(value, note) {
+      els.readinessValue.textContent = value || 'unknown';
+      els.readinessNote.textContent = note || 'Load a support snapshot to score project readiness.';
+    }
+    function applyProjectLookup(result) {
+      const project = result && result.project ? result.project : result;
+      const workspace = result && result.workspace ? result.workspace : null;
+      if (workspace && workspace.id) {
+        els.workspaceId.value = workspace.id;
+      }
+      if (project && project.id) {
+        els.projectId.value = project.id;
+      }
+      if (project && project.projectKey) {
+        els.projectKey.value = project.projectKey;
+      }
+    }
+    function selectRepoConnection(connection) {
+      els.repoConnectionId.value = connection.id || '';
+      els.repository.value = connection.repository || '';
+      els.githubInstallationRecordId.value = connection.githubInstallationId || '';
+      els.repoConnectionStatus.value = connection.status || '';
+      els.repoConnectionDefault.value = connection.isDefault ? 'true' : 'false';
+      els.repoConnectionConfig.value = JSON.stringify(connection.config || {}, null, 2);
+      els.repoConnectionSummary.textContent = 'Loaded ' + connection.repository + ' into the editor.';
+    }
+    function renderBindings(projects, installations, repoConnections) {
+      contextState.projects = Array.isArray(projects) ? projects : [];
+      contextState.installations = Array.isArray(installations) ? installations : [];
+      contextState.repoConnections = Array.isArray(repoConnections) ? repoConnections : [];
+      els.projectCount.textContent = String(contextState.projects.length);
+      els.installationCount.textContent = String(contextState.installations.length);
+      els.connectionCount.textContent = String(contextState.repoConnections.length);
+      els.bindings.innerHTML = '';
+      els.repoConnectionList.innerHTML = '';
+      const pills = [];
+      contextState.projects.forEach(function (project) {
+        pills.push('project:' + project.name + ' (' + project.projectKey + ')');
+      });
+      contextState.installations.forEach(function (installation) {
+        pills.push('install:' + installation.installationId + (installation.accountLogin ? ' @' + installation.accountLogin : ''));
+      });
+      contextState.repoConnections.forEach(function (connection) {
+        pills.push('repo:' + connection.repository + (connection.githubInstallationId ? ' linked' : ' unlinked') + (connection.isDefault ? ' default' : ''));
+        const button = document.createElement('button');
+        button.className = 'secondary mini';
+        button.textContent = connection.repository + ' [' + connection.status + (connection.isDefault ? ', default' : '') + ']';
+        button.addEventListener('click', function () { selectRepoConnection(connection); });
+        els.repoConnectionList.appendChild(button);
+      });
+      if (!pills.length) {
+        els.bindingNotes.textContent = 'No bindings found for the current ids yet. Manual reconcile or direct repo connection creation is the fastest way to attach a project.';
+      } else {
+        els.bindingNotes.textContent = 'Loaded ' + contextState.projects.length + ' project(s), ' + contextState.installations.length + ' installation(s), and ' + contextState.repoConnections.length + ' repo connection(s).';
+      }
+      pills.forEach(function (value) {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.textContent = value;
+        els.bindings.appendChild(pill);
+      });
+    }
+    async function lookupProjectByKey() {
+      saveState();
+      const projectKey = els.projectKey.value.trim();
+      if (!projectKey) {
+        setStatus('Project Key is required.');
+        return;
+      }
+      setStatus('Looking up project ' + projectKey + '...');
+      try {
+        const result = await request('/internal/projects/key/' + encodeURIComponent(projectKey), { headers: authHeaders() });
+        applyProjectLookup(result);
+        writeJson(els.operationsResult, result);
+        els.operationsSummary.textContent = 'Resolved ' + (result.project ? result.project.name : projectKey) + ' from the project key lookup.';
+        setStatus('Project lookup loaded for ' + projectKey + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to look up project by key.');
+      }
+    }
+    async function loadContext() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      if (!workspaceId) {
+        setStatus('Workspace Id is required.');
+        return;
+      }
+      setStatus('Loading workspace context for ' + workspaceId + '...');
+      try {
+        const results = await Promise.all([
+          request('/internal/workspaces/' + workspaceId + '/projects', { headers: authHeaders() }),
+          request('/internal/workspaces/' + workspaceId + '/github-installations', { headers: authHeaders() }),
+          els.projectId.value.trim() ? request('/internal/projects/' + els.projectId.value.trim() + '/repo-connections', { headers: authHeaders() }) : Promise.resolve([])
+        ]);
+        const projects = results[0];
+        const installations = results[1];
+        const repoConnections = results[2];
+        if (!els.projectId.value.trim() && Array.isArray(projects) && projects.length === 1) {
+          els.projectId.value = projects[0].id;
+          els.projectKey.value = projects[0].projectKey;
+        }
+        renderBindings(projects, installations, repoConnections);
+        setStatus('Loaded onboarding context for workspace ' + workspaceId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load onboarding context.');
+      }
+    }
+    async function loadOperations() {
+      saveState();
+      const projectId = els.projectId.value.trim();
+      if (!projectId) {
+        setStatus('Project Id is required.');
+        return;
+      }
+      setStatus('Loading operations for ' + projectId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/operations', { headers: authHeaders() });
+        writeJson(els.operationsResult, result);
+        writeJson(els.supportResult, result.support || {});
+        const defaultRepository = result.repositories && result.repositories.defaultRepository ? result.repositories.defaultRepository : 'none';
+        const pendingReviewCount = result.reports && typeof result.reports.pendingReviewCount === 'number' ? result.reports.pendingReviewCount : 0;
+        const taskCount = result.agentTasks && typeof result.agentTasks.total === 'number' ? result.agentTasks.total : 0;
+        els.operationsSummary.textContent = 'Default repo ' + defaultRepository + '. Pending review ' + pendingReviewCount + '. Agent tasks ' + taskCount + '.';
+        const support = result.support || {};
+        const issues = Array.isArray(support.issues) ? support.issues : [];
+        const feedbackCount = Array.isArray(support.recentHostedFeedback) ? support.recentHostedFeedback.length : 0;
+        els.supportSummary.textContent = 'Readiness ' + (support.readiness || 'unknown') + '. Recent hosted feedback ' + feedbackCount + '. ' + (issues[0] || 'No open support blockers.');
+        setReadiness(support.readiness || 'unknown', issues.length ? issues.join(' ') : 'Project is ready for customer handoff.');
+        setStatus('Operations loaded for ' + projectId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load project operations.');
+      }
+    }
+    async function createRepoConnection() {
+      saveState();
+      const projectId = els.projectId.value.trim();
+      const repository = els.repository.value.trim();
+      if (!projectId || !repository) {
+        setStatus('Project Id and Repository are required.');
+        return;
+      }
+      setStatus('Creating repo connection for ' + repository + '...');
+      try {
+        const payload = {
+          projectId: projectId,
+          repository: repository,
+          githubInstallationId: els.githubInstallationRecordId.value.trim() || undefined,
+          isDefault: parseDefaultSelection(),
+          config: parseRepoConfig()
+        };
+        const result = await request('/internal/repo-connections', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(payload)
+        });
+        writeJson(els.repoConnectionResult, result);
+        els.repoConnectionSummary.textContent = 'Created ' + result.repository + ' (' + result.id + ').';
+        selectRepoConnection(result);
+        await loadContext();
+        await loadOperations();
+        setStatus('Repo connection created for ' + repository + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to create repo connection.');
+      }
+    }
+    async function updateRepoConnection() {
+      saveState();
+      const repoConnectionId = els.repoConnectionId.value.trim();
+      if (!repoConnectionId) {
+        setStatus('Repo Connection Id is required.');
+        return;
+      }
+      setStatus('Updating repo connection ' + repoConnectionId + '...');
+      try {
+        const payload = {};
+        const repository = els.repository.value.trim();
+        const githubInstallationRecordId = els.githubInstallationRecordId.value.trim();
+        const config = parseRepoConfig();
+        if (repository) {
+          payload.repository = repository;
+        }
+        if (githubInstallationRecordId) {
+          payload.githubInstallationId = githubInstallationRecordId;
+        }
+        if (els.repoConnectionStatus.value) {
+          payload.status = els.repoConnectionStatus.value;
+        }
+        const defaultSelection = parseDefaultSelection();
+        if (typeof defaultSelection === 'boolean') {
+          payload.isDefault = defaultSelection;
+        }
+        if (config) {
+          payload.config = config;
+        }
+        const result = await request('/internal/repo-connections/' + encodeURIComponent(repoConnectionId), {
+          method: 'PATCH',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(payload)
+        });
+        writeJson(els.repoConnectionResult, result);
+        els.repoConnectionSummary.textContent = 'Updated ' + result.repository + ' (' + result.id + ').';
+        selectRepoConnection(result);
+        await loadContext();
+        await loadOperations();
+        setStatus('Repo connection ' + repoConnectionId + ' updated.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to update repo connection.');
+      }
+    }
+    async function listServiceIdentities() {
+      saveState();
+      setStatus('Loading service identities...');
+      try {
+        const result = await request('/internal/service-identities', { headers: authHeaders() });
+        writeJson(els.serviceIdentityResult, result);
+        const count = Array.isArray(result) ? result.length : 0;
+        els.serviceIdentitySummary.textContent = 'Loaded ' + count + ' service ' + (count === 1 ? 'identity.' : 'identities.');
+        setStatus('Service identities loaded.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load service identities.');
+      }
+    }
+    async function createServiceIdentity() {
+      saveState();
+      const scopes = parseScopes();
+      if (!scopes.length) {
+        setStatus('At least one service identity scope is required.');
+        return;
+      }
+      setStatus('Creating service identity...');
+      try {
+        const result = await request('/internal/service-identities', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id: els.serviceIdentityId.value.trim() || undefined, scopes: scopes })
+        });
+        writeJson(els.serviceIdentityResult, result);
+        els.serviceIdentitySummary.textContent = 'Created ' + ((result.identity && result.identity.id) || 'service identity') + '. Copy token from the response panel.';
+        if (result.identity && result.identity.id) {
+          els.serviceIdentityId.value = result.identity.id;
+        }
+        setStatus('Service identity created.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to create service identity.');
+      }
+    }
+    async function rotateServiceIdentity() {
+      saveState();
+      const identityId = els.serviceIdentityId.value.trim();
+      if (!identityId) {
+        setStatus('Service Identity Id is required.');
+        return;
+      }
+      setStatus('Rotating ' + identityId + '...');
+      try {
+        const scopes = parseScopes();
+        const payload = scopes.length ? { scopes: scopes } : {};
+        const result = await request('/internal/service-identities/' + encodeURIComponent(identityId) + '/rotate', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(payload)
+        });
+        writeJson(els.serviceIdentityResult, result);
+        els.serviceIdentitySummary.textContent = 'Rotated ' + identityId + '. New token is shown in the response panel.';
+        setStatus('Service identity ' + identityId + ' rotated.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to rotate service identity.');
+      }
+    }
+    async function revokeServiceIdentity() {
+      saveState();
+      const identityId = els.serviceIdentityId.value.trim();
+      if (!identityId) {
+        setStatus('Service Identity Id is required.');
+        return;
+      }
+      setStatus('Revoking ' + identityId + '...');
+      try {
+        const result = await request('/internal/service-identities/' + encodeURIComponent(identityId) + '/revoke', {
+          method: 'POST',
+          headers: authHeaders()
+        });
+        writeJson(els.serviceIdentityResult, result);
+        els.serviceIdentitySummary.textContent = 'Revoked ' + identityId + '.';
+        setStatus('Service identity ' + identityId + ' revoked.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to revoke service identity.');
+      }
+    }
+    async function createInstallLink() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      if (!workspaceId) {
+        setStatus('Workspace Id is required.');
+        return;
+      }
+      setStatus('Creating GitHub App install link...');
+      try {
+        const result = await request('/internal/workspaces/' + workspaceId + '/github-app/install-link', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({
+            projectId: els.projectId.value.trim() || undefined,
+            repository: els.repository.value.trim() || undefined,
+            isDefault: true
+          })
+        });
+        writeJson(els.installLinkResult, result);
+        if (result.installUrl) {
+          els.installLinkSummary.innerHTML = '<a class="inline-link" href="' + result.installUrl + '" target="_blank" rel="noreferrer">Open GitHub install flow</a> | callback ' + result.callbackUrl;
+        } else {
+          els.installLinkSummary.textContent = 'Install link created.';
+        }
+        setStatus('GitHub App install link generated.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to create install link.');
+      }
+    }
+    async function lookupInstall() {
+      saveState();
+      const installationId = els.installationId.value.trim();
+      if (!installationId) {
+        setStatus('Installation Id is required.');
+        return;
+      }
+      setStatus('Looking up installation ' + installationId + '...');
+      try {
+        const result = await request('/internal/github-app/installations/' + installationId, { headers: authHeaders() });
+        writeJson(els.lookupResult, result);
+        if (result.workspace) {
+          els.lookupSummary.textContent = 'Mapped to ' + result.workspace.name + ' with ' + (Array.isArray(result.linkedProjects) ? result.linkedProjects.length : 0) + ' linked project binding(s).';
+        } else {
+          els.lookupSummary.textContent = 'Installation lookup completed.';
+        }
+        setStatus('Installation ' + installationId + ' loaded.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to look up installation.');
+      }
+    }
+    async function reconcileInstall() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      const installationId = els.installationId.value.trim();
+      if (!workspaceId || !installationId) {
+        setStatus('Workspace Id and Installation Id are required.');
+        return;
+      }
+      setStatus('Reconciling installation ' + installationId + '...');
+      try {
+        const result = await request('/internal/workspaces/' + workspaceId + '/github-app/reconcile', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({
+            installationId: installationId,
+            projectId: els.projectId.value.trim() || undefined,
+            repository: els.repository.value.trim() || undefined,
+            isDefault: true
+          })
+        });
+        writeJson(els.reconcileResult, result);
+        els.reconcileSummary.textContent = result.repositoryLink ? result.repositoryLink.result + '. Linked repo: ' + (result.repositoryLink.linked || 'none') + '.' : 'Installation reconciled.';
+        if (result.repositoryLink && result.repositoryLink.repoConnectionId) {
+          els.repoConnectionId.value = result.repositoryLink.repoConnectionId;
+        }
+        await loadContext();
+        await loadOperations();
+        setStatus('Installation ' + installationId + ' reconciled.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to reconcile install.');
+      }
+    }
+    async function transferInstall() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      const installationId = els.installationId.value.trim();
+      if (!workspaceId || !installationId) {
+        setStatus('Workspace Id and Installation Id are required.');
+        return;
+      }
+      setStatus('Transferring installation ' + installationId + '...');
+      try {
+        const result = await request('/internal/workspaces/' + workspaceId + '/github-app/transfer-installation', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({
+            installationId: installationId,
+            projectId: els.projectId.value.trim() || undefined,
+            repository: els.repository.value.trim() || undefined,
+            isDefault: true
+          })
+        });
+        writeJson(els.transferResult, result);
+        els.transferSummary.textContent = 'Transferred from ' + (result.sourceWorkspace ? result.sourceWorkspace.name : 'unknown') + ' to ' + (result.targetWorkspace ? result.targetWorkspace.name : 'unknown') + '. Deactivated ' + (Array.isArray(result.deactivatedConnectionIds) ? result.deactivatedConnectionIds.length : 0) + ' source connection(s).';
+        await loadContext();
+        await loadOperations();
+        setStatus('Installation ' + installationId + ' transferred.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to transfer install.');
+      }
+    }
+    async function mintWidget() {
+      saveState();
+      const projectId = els.projectId.value.trim();
+      if (!projectId) {
+        setStatus('Project Id is required to mint a widget session.');
+        return;
+      }
+      setStatus('Minting widget session for ' + projectId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/widget-session', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({
+            origin: els.origin.value.trim() || undefined,
+            mode: els.mode.value
+          })
+        });
+        writeJson(els.widgetResult, result);
+        const links = [];
+        if (result.widgetUrl) {
+          links.push('widget ' + result.widgetUrl);
+        }
+        if (result.embedScriptUrl) {
+          links.push('embed ' + result.embedScriptUrl);
+        }
+        els.widgetSummary.textContent = links.join(' | ') || 'Widget session minted.';
+        setStatus('Widget session minted for ' + projectId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to mint widget session.');
+      }
+    }
+
+    const saved = readState();
+    els.baseUrl.value = saved.baseUrl || window.location.origin;
+    els.token.value = saved.token || '';
+    els.workspaceId.value = saved.workspaceId || '';
+    els.projectId.value = saved.projectId || '';
+    els.projectKey.value = saved.projectKey || '';
+    els.repository.value = saved.repository || '';
+    els.installationId.value = saved.installationId || '';
+    els.githubInstallationRecordId.value = saved.githubInstallationRecordId || '';
+    els.repoConnectionId.value = saved.repoConnectionId || '';
+    els.repoConnectionStatus.value = saved.repoConnectionStatus || '';
+    els.repoConnectionDefault.value = saved.repoConnectionDefault || 'auto';
+    els.repoConnectionConfig.value = saved.repoConnectionConfig || '';
+    els.origin.value = saved.origin || '';
+    els.mode.value = saved.mode || 'embed';
+    els.serviceIdentityId.value = saved.serviceIdentityId || '';
+    els.serviceIdentityScopes.value = saved.serviceIdentityScopes || 'internal:read';
+    els.lookupProject.addEventListener('click', lookupProjectByKey);
+    els.loadContext.addEventListener('click', loadContext);
+    els.loadOperations.addEventListener('click', loadOperations);
+    els.createRepoConnection.addEventListener('click', createRepoConnection);
+    els.updateRepoConnection.addEventListener('click', updateRepoConnection);
+    els.createInstallLink.addEventListener('click', createInstallLink);
+    els.lookupInstall.addEventListener('click', lookupInstall);
+    els.reconcileInstall.addEventListener('click', reconcileInstall);
+    els.transferInstall.addEventListener('click', transferInstall);
+    els.mintWidget.addEventListener('click', mintWidget);
+    els.listServiceIdentities.addEventListener('click', listServiceIdentities);
+    els.createServiceIdentity.addEventListener('click', createServiceIdentity);
+    els.rotateServiceIdentity.addEventListener('click', rotateServiceIdentity);
+    els.revokeServiceIdentity.addEventListener('click', revokeServiceIdentity);
+  </script>
+</body>
+</html>`;
+}
+
+function buildSupportOpsPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexus Support Operations</title>
+  <style>
+    :root { color-scheme: light; --bg-top: #f5f0e6; --bg-bottom: #d6e3df; --ink: #18212b; --muted: rgba(24,33,43,0.7); --panel: rgba(255,255,255,0.88); --panel-strong: rgba(255,255,255,0.95); --line: rgba(24,33,43,0.12); --accent: #0b6557; --accent-soft: rgba(11,101,87,0.12); --warn: #8b6208; --danger: #922f2f; --shadow: 0 24px 64px rgba(24,33,43,0.12); }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Avenir Next", "Segoe UI", sans-serif; color: var(--ink); background: radial-gradient(circle at top left, #fff8eb 0%, var(--bg-top) 42%, var(--bg-bottom) 100%); }
+    main { max-width: 1340px; margin: 0 auto; padding: 36px 18px 64px; }
+    h1 { margin: 0; font-size: clamp(2.7rem, 6vw, 4.8rem); line-height: 0.92; max-width: 12ch; }
+    p { color: var(--muted); line-height: 1.6; max-width: 78ch; }
+    .eyebrow { display: inline-flex; margin-bottom: 14px; padding: 8px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 0.76rem/1.1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.08em; }
+    .hero { display: grid; gap: 14px; margin-bottom: 28px; }
+    .shell { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 28px; box-shadow: var(--shadow); overflow: hidden; }
+    .controls, .workspace { display: grid; gap: 14px; padding: 18px; }
+    label { display: grid; gap: 6px; font-size: 0.92rem; color: var(--muted); }
+    input, button, textarea { font: inherit; }
+    input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; background: var(--panel-strong); color: var(--ink); }
+    textarea { min-height: 120px; resize: vertical; }
+    button { border: none; border-radius: 14px; padding: 12px 14px; cursor: pointer; transition: transform 140ms ease, opacity 140ms ease; }
+    button:hover { transform: translateY(-1px); }
+    button.primary { background: var(--accent); color: #fffaf4; }
+    button.secondary { background: rgba(255,255,255,0.9); border: 1px solid var(--line); color: var(--ink); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
+    .card strong { display: block; font-size: 1.6rem; line-height: 1; margin-top: 8px; }
+    .section { border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,0.6); padding: 16px; display: grid; gap: 12px; }
+    .section-title { margin: 0; font: 700 0.86rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .helper { color: var(--muted); font-size: 0.9rem; }
+    .status { padding: 12px 14px; border-top: 1px solid var(--line); min-height: 48px; color: var(--muted); background: rgba(24,33,43,0.03); }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: rgba(11,101,87,0.1); color: var(--accent); font: 600 0.8rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+    .link-list { display: grid; gap: 8px; }
+    .link-list a { color: var(--accent); text-decoration: none; word-break: break-all; }
+    .activity-list { display: grid; gap: 10px; }
+    .activity-item { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.78); }
+    pre { margin: 0; padding: 14px; border-radius: 18px; background: #201d1f; color: #f7efe3; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    @media (max-width: 1120px) { .shell, .summary-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <span class="eyebrow">Support Operations</span>
+      <h1>Run customer support checks without leaving the control plane.</h1>
+      <p>This page is focused on the live support workflow: resolve a project from a key, inspect its readiness snapshot, verify the current public widget and feedback links, watch recent hosted feedback, and jump straight into review or onboarding follow-up when something is off.</p>
+    </section>
+    <section class="shell">
+      <aside class="panel">
+        <div class="controls">
+          <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>
+          <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
+          <label>Project Key<input id="projectKey" value="" placeholder="checkout-prod" /></label>
+          <label>Project Id<input id="projectId" value="" placeholder="project UUID optional" /></label>
+          <div class="row">
+            <button id="lookupProject" class="secondary">Lookup Project</button>
+            <button id="loadSupport" class="primary">Load Support Snapshot</button>
+          </div>
+          <div class="row">
+            <button id="openReviewQueue" class="secondary">Open Review Queue Link</button>
+            <button id="openOnboarding" class="secondary">Open Onboarding Link</button>
+          </div>
+          <div id="status" class="status">Waiting for project lookup.</div>
+        </div>
+      </aside>
+      <section class="panel workspace">
+        <div class="summary-grid">
+          <article class="card"><span class="helper">Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a project support snapshot.</span></article>
+          <article class="card"><span class="helper">Active Repos</span><strong id="repositoryCount">0</strong><span class="helper">Active repository connections in scope.</span></article>
+          <article class="card"><span class="helper">Pending Review</span><strong id="pendingReviewCount">0</strong><span class="helper">Hosted feedback items still awaiting review.</span></article>
+          <article class="card"><span class="helper">Recent Feedback</span><strong id="recentFeedbackCount">0</strong><span class="helper">Latest hosted feedback items visible from support.</span></article>
+        </div>
+        <section class="section">
+          <h2 class="section-title">Checklist</h2>
+          <div id="checklist" class="pill-list"></div>
+          <div id="issues" class="helper">No support checks loaded yet.</div>
+        </section>
+        <section class="section">
+          <h2 class="section-title">Operational Links</h2>
+          <div id="links" class="link-list"></div>
+        </section>
+        <section class="section">
+          <h2 class="section-title">Recent Hosted Feedback</h2>
+          <div id="recentFeedback" class="activity-list"><div class="helper">No hosted feedback loaded yet.</div></div>
+        </section>
+        <section class="section">
+          <h2 class="section-title">Support Snapshot JSON</h2>
+          <pre id="result">// support snapshot appears here</pre>
+        </section>
+      </section>
+    </section>
+  </main>
+  <script>
+    const storageKey = 'nexus-support-ops';
+    const els = {
+      baseUrl: document.getElementById('baseUrl'),
+      token: document.getElementById('token'),
+      projectKey: document.getElementById('projectKey'),
+      projectId: document.getElementById('projectId'),
+      lookupProject: document.getElementById('lookupProject'),
+      loadSupport: document.getElementById('loadSupport'),
+      openReviewQueue: document.getElementById('openReviewQueue'),
+      openOnboarding: document.getElementById('openOnboarding'),
+      status: document.getElementById('status'),
+      readinessValue: document.getElementById('readinessValue'),
+      readinessNote: document.getElementById('readinessNote'),
+      repositoryCount: document.getElementById('repositoryCount'),
+      pendingReviewCount: document.getElementById('pendingReviewCount'),
+      recentFeedbackCount: document.getElementById('recentFeedbackCount'),
+      checklist: document.getElementById('checklist'),
+      issues: document.getElementById('issues'),
+      links: document.getElementById('links'),
+      recentFeedback: document.getElementById('recentFeedback'),
+      result: document.getElementById('result')
+    };
+    let lastSupport = null;
+    function setStatus(message) { els.status.textContent = message; }
+    function authHeaders() {
+      const token = els.token.value.trim();
+      return token ? { Authorization: 'Bearer ' + token } : {};
+    }
+    function saveState() {
+      localStorage.setItem(storageKey, JSON.stringify({
+        baseUrl: els.baseUrl.value.trim(),
+        token: els.token.value.trim(),
+        projectKey: els.projectKey.value.trim(),
+        projectId: els.projectId.value.trim()
+      }));
+    }
+    function readState() {
+      try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; }
+    }
+    async function request(path, init) {
+      const response = await fetch((els.baseUrl.value.trim() || window.location.origin) + path, init);
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error((init && init.method ? init.method : 'GET') + ' ' + path + ' failed: ' + response.status + ' ' + text);
+      }
+      return JSON.parse(text);
+    }
+    function renderLink(name, href) {
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.target = '_blank';
+      anchor.rel = 'noreferrer';
+      anchor.textContent = name + ': ' + href;
+      els.links.appendChild(anchor);
+    }
+    function renderSupportSnapshot(result) {
+      lastSupport = result;
+      const support = result.support || {};
+      const issues = Array.isArray(support.issues) ? support.issues : [];
+      const checklist = support.checklist || {};
+      const recentHostedFeedback = Array.isArray(support.recentHostedFeedback) ? support.recentHostedFeedback : [];
+      els.result.textContent = JSON.stringify(result, null, 2);
+      els.readinessValue.textContent = support.readiness || 'unknown';
+      els.readinessNote.textContent = issues.length ? issues.join(' ') : 'Support checks look good for this project.';
+      els.repositoryCount.textContent = String(Array.isArray(result.repositories && result.repositories.available) ? result.repositories.available.length : 0);
+      els.pendingReviewCount.textContent = String(result.reports && typeof result.reports.pendingReviewCount === 'number' ? result.reports.pendingReviewCount : 0);
+      els.recentFeedbackCount.textContent = String(recentHostedFeedback.length);
+      els.checklist.innerHTML = '';
+      els.links.innerHTML = '';
+      els.recentFeedback.innerHTML = '';
+      Object.entries(checklist).forEach(function (entry) {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.textContent = entry[0] + ': ' + entry[1];
+        els.checklist.appendChild(pill);
+      });
+      els.issues.className = 'helper' + (issues.length ? ' warn' : '');
+      els.issues.textContent = issues.length ? issues.join(' ') : 'No open support blockers.';
+      const publicUrls = support.publicUrls || {};
+      if (publicUrls.widgetBaseUrl) {
+        renderLink('Widget Base URL', publicUrls.widgetBaseUrl);
+      }
+      if (publicUrls.embedScriptBaseUrl) {
+        renderLink('Embed Script URL', publicUrls.embedScriptBaseUrl);
+      }
+      if (publicUrls.feedbackUrl) {
+        renderLink('Feedback Route', publicUrls.feedbackUrl);
+      }
+      if (support.reviewQueueUrl) {
+        renderLink('Review Queue', support.reviewQueueUrl);
+      }
+      if (support.onboardingUrl) {
+        renderLink('Onboarding Console', support.onboardingUrl);
+      }
+      if (support.supportOpsUrl) {
+        renderLink('Support Ops', support.supportOpsUrl);
+      }
+      if (!recentHostedFeedback.length) {
+        const empty = document.createElement('div');
+        empty.className = 'helper';
+        empty.textContent = 'No recent hosted feedback for this project yet.';
+        els.recentFeedback.appendChild(empty);
+      }
+      recentHostedFeedback.forEach(function (item) {
+        const card = document.createElement('div');
+        card.className = 'activity-item';
+        const title = document.createElement('strong');
+        title.textContent = (item.title || item.id) + ' [' + (item.status || 'unknown') + ']';
+        const meta = document.createElement('div');
+        meta.className = 'helper';
+        meta.textContent = 'Severity ' + (item.severity || 'unknown') + '. Review ' + (item.reviewStatus || 'pending') + '. Created ' + (item.createdAt || 'unknown') + '.';
+        card.appendChild(title);
+        card.appendChild(meta);
+        els.recentFeedback.appendChild(card);
+      });
+    }
+    async function lookupProject() {
+      saveState();
+      const projectKey = els.projectKey.value.trim();
+      if (!projectKey) {
+        setStatus('Project Key is required.');
+        return;
+      }
+      setStatus('Looking up project ' + projectKey + '...');
+      try {
+        const result = await request('/internal/projects/key/' + encodeURIComponent(projectKey), { headers: authHeaders() });
+        if (result.project && result.project.id) {
+          els.projectId.value = result.project.id;
+          els.projectKey.value = result.project.projectKey;
+        }
+        setStatus('Project lookup loaded for ' + projectKey + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to look up project.');
+      }
+    }
+    async function loadSupport() {
+      saveState();
+      let projectId = els.projectId.value.trim();
+      const projectKey = els.projectKey.value.trim();
+      if (!projectId && projectKey) {
+        await lookupProject();
+        projectId = els.projectId.value.trim();
+      }
+      if (!projectId) {
+        setStatus('Project Id or Project Key is required.');
+        return;
+      }
+      setStatus('Loading support snapshot for ' + projectId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/operations', { headers: authHeaders() });
+        renderSupportSnapshot(result);
+        setStatus('Support snapshot loaded for ' + projectId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load support snapshot.');
+      }
+    }
+    function openLink(kind) {
+      const support = lastSupport && lastSupport.support ? lastSupport.support : null;
+      const url = kind === 'review'
+        ? support && support.reviewQueueUrl
+        : support && support.onboardingUrl;
+      if (!url) {
+        setStatus('Load a support snapshot before opening support links.');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    const saved = readState();
+    const params = new URLSearchParams(window.location.search);
+    els.baseUrl.value = saved.baseUrl || window.location.origin;
+    els.token.value = saved.token || '';
+    els.projectKey.value = params.get('projectKey') || saved.projectKey || '';
+    els.projectId.value = params.get('projectId') || saved.projectId || '';
+    els.lookupProject.addEventListener('click', lookupProject);
+    els.loadSupport.addEventListener('click', loadSupport);
+    els.openReviewQueue.addEventListener('click', function () { openLink('review'); });
+    els.openOnboarding.addEventListener('click', function () { openLink('onboarding'); });
+    if (els.projectId.value || els.projectKey.value) {
+      loadSupport().catch(function () { return undefined; });
+    }
+  </script>
+</body>
+</html>`;
 }
 
 function buildReviewQueuePage(): string {
@@ -700,6 +1557,10 @@ export function registerLearnRoutes(app: FastifyInstance): void {
       '        <span class="title">Operator Review Console</span>',
       '        <span class="hint">Review hosted feedback, inspect context, and approve or reject GitHub issue creation.</span>',
       '      </a>',
+      '      <a class="card" href="/learn/support-ops">',
+      '        <span class="title">Support Operations Console</span>',
+      '        <span class="hint">Resolve projects by key, inspect support readiness, and jump directly into widget or queue follow-up.</span>',
+      '      </a>',
       '    </section>',
       '  </main>',
       '</body>',
@@ -723,6 +1584,11 @@ export function registerLearnRoutes(app: FastifyInstance): void {
   app.get('/learn/review-queue', async (_request, reply) => {
     reply.type('text/html; charset=utf-8');
     return buildReviewQueuePage();
+  });
+
+  app.get('/learn/support-ops', async (_request, reply) => {
+    reply.type('text/html; charset=utf-8');
+    return buildSupportOpsPage();
   });
 
   app.get('/learn/onboarding', async (_request, reply) => {

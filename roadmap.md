@@ -43,8 +43,9 @@ Status legend:
 - [x] Define workspace, project, and repository-connection data model.
 - [x] Refactor GitHub auth toward runtime project-scoped GitHub App resolution.
 - [x] Ship the hosted feedback widget and embed bootstrap, and continue hardening the project-scoped submission flow.
-- [ ] Add broader operator workflows for repo-connection editing and support-oriented customer operations.
-- [ ] Promote the new replay browser-context smoke into regular CI coverage where Playwright browser binaries are available.
+- [x] Add broader operator workflows for repo-connection editing and support-oriented customer operations.
+- [x] Promote the new replay browser-context smoke into regular CI coverage where Playwright browser binaries are available.
+- [x] Time-box and validate the under-60-second customer handoff target end to end.
 
 ### Blocked
 
@@ -221,6 +222,9 @@ Recent Phase 9 progress:
 - Project repo routing now supports multiple active connections, explicit default reassignment, project-operations summaries, and strict customer-review repository scoping before GitHub issue creation or agent-task execution.
 - Service identities are now durable lifecycle-managed principals with list, create, rotate, and revoke routes, and the onboarding console exposes those flows directly for operators.
 - A dedicated replay browser-context smoke now validates execution-mode selection when Playwright browser binaries are installed while preserving request-context fallback behavior elsewhere.
+- The onboarding console now supports project-key lookup, repo-connection create and edit flows, and support-readiness snapshots that surface public widget paths, review-queue routing, and recent hosted feedback state from one operator page.
+- The new `/learn/support-ops` page gives operators a dedicated long-lived support surface for project-key lookup, live readiness checks, public route verification, and queue follow-up.
+- CI now installs Chromium before running the replay browser-context smoke, and `npm run e2e:customer-handoff` enforces a tighter 30-second total budget with stage-by-stage SLOs for bootstrap, widget readiness, feedback submission, queue visibility, and draft readiness.
 
 Phase 9 architecture snapshot:
 
@@ -247,7 +251,7 @@ flowchart LR
 Exit criteria:
 
 - [x] A new customer can connect a repository without creating a PAT.
-- [ ] A user can submit actionable feedback in under 60 seconds.
+- [x] A user can submit actionable feedback in under 60 seconds.
 - [x] Nexus routes the report to the correct project and repository scope before any GitHub write.
 - [x] Customer-originated issue and PR generation remain review-gated.
 

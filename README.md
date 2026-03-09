@@ -48,10 +48,11 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget` and an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`, both gated by short-lived signed widget sessions.
 - Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
 - The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, queue aging metrics, review activity history, full context loading, and single-report approve/reject actions.
-- The onboarding console at `/learn/onboarding` now exposes project operations summaries plus service-identity list, create, rotate, and revoke controls.
+- The onboarding console at `/learn/onboarding` now exposes project-key lookup, repo-connection create and update controls, project support-readiness snapshots, widget handoff links, and service-identity list, create, rotate, and revoke controls.
+- The dedicated support console at `/learn/support-ops` now resolves projects by key, loads the live support-readiness snapshot, exposes public widget and feedback routes, and links operators directly into review and onboarding follow-up paths.
 - Durable service identities now support explicit lifecycle management through internal routes instead of startup-only env seeding.
-
-Still planned: broader support workflows around customer operations and richer repo-connection administration beyond the current onboarding console.
+- The customer handoff path is now measured by a dedicated `npm run e2e:customer-handoff` smoke that validates project setup, widget minting, hosted feedback intake, review-queue visibility, and draft readiness against a stricter 30-second total budget plus stage-by-stage SLO thresholds.
+- The replay browser-context smoke is now wired for CI environments that install Chromium before running `npm run e2e:replay-browser-context`.
 
 ## Status Snapshot
 

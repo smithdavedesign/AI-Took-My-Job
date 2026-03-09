@@ -69,6 +69,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Chromium for replay smoke
+        run: npm exec playwright-core -- install --with-deps chromium
+
       - name: Build
         run: npm run build
 
@@ -101,6 +104,19 @@ jobs:
 
       - name: Run hosted feedback review smoke
         run: npm run e2e:hosted-feedback-review
+
+      - name: Run replay browser-context smoke
+        run: npm run e2e:replay-browser-context
+
+      - name: Run customer handoff smoke
+        env:
+          E2E_CUSTOMER_HANDOFF_TOTAL_BUDGET_MS: '30000'
+          E2E_CUSTOMER_HANDOFF_BOOTSTRAP_BUDGET_MS: '5000'
+          E2E_CUSTOMER_HANDOFF_WIDGET_READY_BUDGET_MS: '10000'
+          E2E_CUSTOMER_HANDOFF_FEEDBACK_SUBMIT_BUDGET_MS: '12000'
+          E2E_CUSTOMER_HANDOFF_QUEUE_READY_BUDGET_MS: '30000'
+          E2E_CUSTOMER_HANDOFF_DRAFT_READY_BUDGET_MS: '30000'
+        run: npm run e2e:customer-handoff
 
       - name: Print logs on failure
         if: failure()

@@ -96,6 +96,8 @@ const createRepoConnectionSchema = z.object({
 });
 
 const updateRepoConnectionSchema = z.object({
+  githubInstallationId: z.string().uuid().nullable().optional(),
+  repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'repository must be owner/repo').optional(),
   isDefault: z.boolean().optional(),
   status: z.enum(['active', 'inactive']).optional(),
   config: z.record(z.string(), z.unknown()).optional()
@@ -117,6 +119,23 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function getBaseUrl(app: FastifyInstance, request: { protocol: string; hostname: string }): string {
+  return app.config.APP_BASE_URL?.replace(/\/$/, '')
+    ?? `${request.protocol}://${request.hostname}${app.config.PORT === 80 || app.config.PORT === 443 ? '' : `:${app.config.PORT}`}`;
+}
+
+function buildProjectPublicUrls(baseUrl: string, projectKey: string): {
+  widgetBaseUrl: string;
+  embedScriptBaseUrl: string;
+  feedbackUrl: string;
+} {
+  return {
+    widgetBaseUrl: new URL(`/public/projects/${projectKey}/widget`, baseUrl).toString(),
+    embedScriptBaseUrl: new URL(`/public/projects/${projectKey}/embed.js`, baseUrl).toString(),
+    feedbackUrl: new URL(`/public/projects/${projectKey}/feedback`, baseUrl).toString()
+  };
 }
 
 function buildGitHubAppInstallResultPage(input: {
@@ -461,6 +480,35 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       counts[task.status] = (counts[task.status] ?? 0) + 1;
       return counts;
     }, {});
+    const reviewRecords = await Promise.all(recentReports.slice(0, 20).map(async (report) => ({
+      reportId: report.id,
+      review: await app.reportReviews.findByReportId(report.id)
+    })));
+    const reviewByReportId = new Map(reviewRecords.map((entry) => [entry.reportId, entry.review]));
+    const linkedInstallationIds = new Set(repoScope.activeConnections.flatMap((connection) => connection.githubInstallationId ? [connection.githubInstallationId] : []));
+    const supportIssues: string[] = [];
+    if (repoScope.activeConnections.length === 0) {
+      supportIssues.push('No active repository connection is available for this project.');
+    }
+    if (repoScope.activeConnections.length > 1 && !repoScope.defaultConnection) {
+      supportIssues.push('Multiple active repositories exist without a default connection.');
+    }
+    const baseUrl = getBaseUrl(app, request);
+    const publicUrls = buildProjectPublicUrls(baseUrl, project.projectKey);
+    const hostedFeedbackRecent = recentReports
+      .filter((report) => report.source === 'hosted-feedback')
+      .slice(0, 5)
+      .map((report) => ({
+        id: report.id,
+        title: report.title ?? null,
+        status: report.status,
+        severity: report.severity,
+        createdAt: report.createdAt ?? null,
+        reviewStatus: reviewByReportId.get(report.id)?.status ?? null,
+        draftPath: `/internal/reports/${report.id}/draft`,
+        contextPath: `/internal/reports/${report.id}/context`,
+        reviewPath: `/internal/reports/${report.id}/review`
+      }));
 
     return {
       workspace,
@@ -497,6 +545,21 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
           status: task.status,
           executionMode: task.executionMode
         }))
+      },
+      support: {
+        readiness: supportIssues.length === 0 ? 'ready' : 'attention-required',
+        issues: supportIssues,
+        checklist: {
+          hasGitHubInstallation: installations.length > 0,
+          hasActiveRepository: repoScope.activeConnections.length > 0,
+          hasDefaultRepository: Boolean(repoScope.defaultConnection),
+          linkedInstallationCount: linkedInstallationIds.size
+        },
+        publicUrls,
+        reviewQueueUrl: new URL(`/learn/review-queue?projectId=${project.id}`, baseUrl).toString(),
+        onboardingUrl: new URL('/learn/onboarding', baseUrl).toString(),
+        supportOpsUrl: new URL(`/learn/support-ops?projectId=${project.id}&projectKey=${project.projectKey}`, baseUrl).toString(),
+        recentHostedFeedback: hostedFeedbackRecent
       }
     };
   });
@@ -509,7 +572,15 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('project not found');
     }
 
-    return project;
+    const workspace = await app.workspaces.findById(project.workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.conflict('project workspace not found');
+    }
+
+    return {
+      project,
+      workspace
+    };
   });
 
   app.post('/internal/github/installations', async (request, reply) => {
@@ -612,11 +683,38 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('repo connection not found');
     }
 
+    const project = await app.projects.findById(existing.projectId);
+    if (!project) {
+      throw app.httpErrors.conflict('repo connection project not found');
+    }
+
+    if (payload.repository && payload.repository !== existing.repository) {
+      const duplicate = await app.repoConnections.findByProjectIdAndRepository(existing.projectId, payload.repository);
+      if (duplicate && duplicate.id !== existing.id) {
+        throw app.httpErrors.conflict('repository connection already exists for project');
+      }
+    }
+
+    if ('githubInstallationId' in payload) {
+      if (payload.githubInstallationId) {
+        const installation = await app.githubInstallations.findById(payload.githubInstallationId);
+        if (!installation) {
+          throw app.httpErrors.notFound('github installation not found');
+        }
+
+        if (installation.workspaceId !== project.workspaceId) {
+          throw app.httpErrors.conflict('github installation workspace does not match project workspace');
+        }
+      }
+    }
+
     if (payload.isDefault) {
       await app.repoConnections.clearDefaultByProjectId(existing.projectId);
     }
 
     const updated = await app.repoConnections.update(repoConnectionId, {
+      ...('githubInstallationId' in payload ? { githubInstallationId: payload.githubInstallationId ?? null } : {}),
+      ...(payload.repository ? { repository: payload.repository } : {}),
       ...(typeof payload.isDefault === 'boolean' ? { isDefault: payload.isDefault } : {}),
       ...(payload.status ? { status: payload.status } : {}),
       ...(payload.config ? { config: payload.config } : {})
@@ -854,7 +952,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       ...(payload.origin ? { origin: payload.origin } : {}),
       ...(typeof payload.ttlSeconds === 'number' ? { ttlSeconds: payload.ttlSeconds } : {})
     });
-    const baseUrl = app.config.APP_BASE_URL?.replace(/\/$/, '') ?? `${request.protocol}://${request.hostname}${app.config.PORT === 80 || app.config.PORT === 443 ? '' : `:${app.config.PORT}`}`;
+    const baseUrl = getBaseUrl(app, request);
     const widgetUrl = new URL(`/public/projects/${project.projectKey}/widget`, baseUrl);
     widgetUrl.searchParams.set('accessToken', token);
     if (payload.mode === 'embed') {

@@ -37,7 +37,8 @@ export interface StoredRepoConnection {
 export interface GitHubInstallationUpsertInput extends StoredGitHubInstallation {}
 
 export interface RepoConnectionUpdateInput {
-  githubInstallationId?: string;
+  githubInstallationId?: string | null;
+  repository?: string;
   isDefault?: boolean;
   status?: 'active' | 'inactive';
   config?: Record<string, unknown>;
