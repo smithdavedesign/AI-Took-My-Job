@@ -49,6 +49,7 @@ Status legend:
 - [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
 - [x] Add a session-scoped customer dashboard for hosted feedback status, ownership hints, and prioritization visibility.
 - [x] Publish a standalone Vercel-hosted operator onboarding site so rollout guidance can evolve separately from the runtime surfaces.
+- [-] Start Phase 11 self-serve adoption and operator ergonomics with a single five-step operator journey.
 
 ### Blocked
 
@@ -281,6 +282,24 @@ Exit criteria:
 - [x] Ownership and prioritization policy become operator-configurable and auditable.
 - [x] Project/customer-scoped durable portal grants now extend visibility beyond a single widget session without exposing unrelated project data.
 
+### [-] Phase 11: Self-Serve Adoption And Operator Ergonomics
+
+Objective: make Nexus feel like a coherent operator product rather than a collection of powerful but loosely connected surfaces.
+
+Deliverables:
+
+- [x] Rewrite onboarding around a single five-step narrative: Pilot, Connect, Launch, Operate, Promote.
+- [x] Split the runtime learn surfaces into dedicated page-builder modules so onboarding, review, and support copy can evolve independently.
+- [x] Add a step-aware learn landing page that makes the runtime surfaces feel like one guided workflow.
+- [ ] Add self-serve checklist state so operators can see rollout progress without maintaining an external runbook.
+- [ ] Add operator-facing readiness and promotion guardrails that are consistent across onboarding, review, and support surfaces.
+
+Exit criteria:
+
+- [ ] A new operator can understand where to start and what comes next without external explanation.
+- [ ] Runtime learn pages, static onboarding, and repo docs all describe the same workflow in the same order.
+- [ ] The most common rollout actions can be completed without switching to an external checklist or tribal knowledge.
+
 ## Current Sprint
 
 Current focus has moved beyond the original foundation sprint. The initial sprint items are complete:
@@ -293,12 +312,12 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [x] Mark Phase 9 complete and shift the active workstream toward customer visibility after submission.
-2. [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
-3. [x] Add a session-scoped customer dashboard that surfaces current hosted-feedback status.
-4. [x] Expose ownership and refined impact hints in the customer-facing dashboard.
-5. [x] Turn ownership and prioritization from heuristics into workspace-configurable policy.
-6. [x] Expand customer visibility from single-session dashboards into durable customer or account views when the access model demands it.
+1. [x] Mark Phase 10 complete and shift the active workstream toward self-serve adoption.
+2. [x] Rewrite onboarding and rollout guidance around Pilot, Connect, Launch, Operate, and Promote.
+3. [x] Break the runtime learn surfaces into dedicated modules so each stage can evolve cleanly.
+4. [x] Add a guided runtime learn landing page that ties onboarding, review, and support into one sequence.
+5. [ ] Add step-aware rollout state and readiness guidance for operators.
+6. [ ] Keep customer visibility, policy, and promotion guardrails aligned with the new self-serve story.
 
 ## Open Questions
 
@@ -311,6 +330,8 @@ These do not block initial scaffolding, but they do affect later architecture:
 5. Should Phase 9 start with one repository per project, or support multiple repositories from the first slice?
 6. When does the session-scoped customer dashboard stop being sufficient and require durable customer or account access?
 7. What operator-configurable ownership and prioritization rules should outrank the current heuristic inference model?
+8. How much checklist and rollout state should Nexus persist directly instead of leaving it in external runbooks?
+9. What is the smallest guided learn landing page that makes the five runtime surfaces feel like one product?
 
 ## Success Metrics
 
@@ -325,10 +346,11 @@ These do not block initial scaffolding, but they do affect later architecture:
 - [x] New customer repository connection can now start from a GitHub App install link and callback, with broader operator-facing onboarding and support workflows available in the learn surfaces.
 - [x] Customer feedback submission completed in under 60 seconds through the hosted intake surface, with `npm run e2e:customer-handoff` currently enforcing a stricter 30-second total budget plus stage SLOs.
 - [x] Customers can now inspect session-scoped hosted-feedback status through `/public/projects/:projectKey/dashboard`, including current review state, refined impact, and ownership hints.
+- [x] Runtime learn pages, static onboarding, and repo docs now share the same five-step narrative for operator rollout.
 
 ## Tech Debt Reduction Plan
 
-Objective: improve maintainability and delivery confidence without changing the product contract shipped through Phase 10.
+Objective: improve maintainability and delivery confidence without changing the product contract shipped through Phase 11.
 
 ### Immediate Blocker
 
@@ -337,7 +359,7 @@ Objective: improve maintainability and delivery confidence without changing the 
 ### Focus Areas
 
 - [ ] Reduce CI brittleness and make failing push diagnostics faster to understand.
-- [ ] Break up oversized route files and embedded HTML or view builders.
+- [-] Break up oversized route files and embedded HTML or view builders.
 - [ ] Add fast automated coverage beneath the existing smoke suite.
 - [ ] Reduce high-churn query and hydration overhead in internal report routes.
 - [ ] Improve worker and job observability for replay and agent execution.
@@ -361,13 +383,13 @@ Exit criteria:
 
 Deliverables:
 
-- [ ] Split the largest route and page-builder files starting with `src/routes/learn.ts`.
+- [x] Split the largest learn page builders out of `src/routes/learn-pages.ts` into dedicated adjacent modules.
 - [ ] Extract public customer-facing page builders from `src/routes/public/projects.ts` into smaller adjacent modules.
 - [ ] Keep route registration focused on HTTP concerns rather than HTML construction and client-page state.
 
 Exit criteria:
 
-- [ ] The largest route or page-builder files are broken into smaller modules with clearer ownership boundaries.
+- [-] The largest route or page-builder files are being broken into smaller modules with clearer ownership boundaries.
 - [ ] Existing onboarding, support, review, and public dashboard behavior remains unchanged.
 
 #### Phase C: Fast Test Coverage

@@ -2,28 +2,28 @@
 
 The repository includes a standalone static onboarding site in `onboarding-site/`.
 
-This site is not part of the Fastify runtime. It exists so Nexus can have a lightweight onboarding and rollout surface that is easy to publish on Vercel and easy to iterate on alongside the product docs.
+This site is not part of the Fastify runtime. It exists so Nexus can publish a lightweight operator journey on Vercel and keep the onboarding story versioned with the product.
 
 ## Why It Exists
 
-The runtime already exposes operator-facing product pages under `/learn`, but those pages still assume access to a running Nexus environment.
+The runtime already exposes operator-facing product pages under `/learn`, but those pages assume a working Nexus environment and service-token access.
 
-The static onboarding site serves a different need:
+The static site serves a different purpose:
 
-- product onboarding before a runtime exists
-- operator training for rollout and demos
-- a lightweight public docs surface for Vercel hosting
-- a versioned handoff page that lives with the repo
+- pre-runtime product onboarding
+- rollout and demo training for operators
+- a public handoff page that explains the workflow without exposing the app
+- a versioned five-step narrative that stays aligned with the codebase
 
-## What The Site Covers
+## Five-Step Narrative
 
-The current site focuses on operator onboarding:
+The site now frames Nexus around a single operator story:
 
-- product overview and positioning
-- first-day setup sequence
-- daily operating workflow
-- promotion and review guardrails
-- common onboarding questions
+- Pilot: create the workspace, define the project, and decide the first adoption scope.
+- Connect: attach GitHub access, installation state, and repository bindings.
+- Launch: mint widget and portal surfaces, confirm public routes, and validate readiness.
+- Operate: run the review queue and support surfaces as the daily decision layer.
+- Promote: move only approved, validation-safe work into GitHub and durable customer access.
 
 ## Folder Layout
 
@@ -55,12 +55,12 @@ Because the site is plain static HTML, CSS, and JavaScript, Vercel can serve it 
 
 Keep the site aligned with the real Nexus workflow.
 
-When the product changes, update the onboarding site if any of these change:
+Update the onboarding site whenever any of these change:
 
-- operator console entry points
-- GitHub auth guidance
-- review queue behavior
-- agent promotion and merge rules
-- customer-facing intake and dashboard flows
+- learn-surface entry points for onboarding, review, or support
+- GitHub auth and installation guidance
+- review-queue approval rules
+- promotion and merge guardrails
+- customer-facing widget, dashboard, or portal flows
 
-The goal is to keep onboarding guidance versioned with the product instead of treating it as a stale marketing artifact.
+The goal is to keep onboarding guidance versioned with the product instead of letting the public story drift from the runtime surfaces.

@@ -6,7 +6,7 @@
     <title>Nexus Onboarding</title>
     <meta
       name="description"
-      content="A static onboarding guide for AI-DevOps Nexus covering setup, review workflow, agent execution, and rollout guidance."
+      content="A static onboarding guide for AI-DevOps Nexus covering the five-step operator journey from pilot to promotion."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,12 +20,12 @@
     <div class="site-shell">
       <aside class="sidebar">
         <a class="brand" href="#top">Nexus</a>
-        <p class="sidebar-copy">Operator onboarding for teams adopting AI-DevOps Nexus.</p>
+        <p class="sidebar-copy">A five-step operator journey for teams adopting AI-DevOps Nexus.</p>
         <nav class="section-nav" aria-label="Primary">
-          <a href="#overview">Overview</a>
-          <a href="#setup">Setup</a>
-          <a href="#workflow">Workflow</a>
-          <a href="#surfaces">Surfaces</a>
+          <a href="#overview">Journey</a>
+          <a href="#setup">Steps</a>
+          <a href="#workflow">Operations</a>
+          <a href="#surfaces">Screens</a>
           <a href="#playbooks">Playbooks</a>
           <a href="#faq">FAQ</a>
         </nav>
@@ -39,37 +39,37 @@
         <section class="hero panel">
           <div>
             <p class="eyebrow">AI-DevOps Nexus</p>
-            <h1>Onboard operators without handing them a pile of routes and env vars.</h1>
+            <h1>Pilot, connect, launch, operate, and promote without improvising the workflow.</h1>
             <p class="hero-copy">
-              This site teaches a new team member how Nexus moves from incoming feedback to reviewed,
-              validated, and promotion-ready engineering work.
+              This site teaches the five-step Nexus story so a new operator can move from first setup to
+              promotion-ready work without learning the product as a loose collection of routes.
             </p>
             <div class="hero-actions">
-              <a class="button button-primary" href="#setup">Start setup</a>
-              <a class="button button-secondary" href="#workflow">See the daily workflow</a>
+              <a class="button button-primary" href="#setup">See the five steps</a>
+              <a class="button button-secondary" href="#surfaces">See the operator screens</a>
             </div>
           </div>
           <div class="hero-card">
             <span class="eyebrow">What operators should learn first</span>
             <ul>
-              <li>How a workspace and project are created</li>
-              <li>Which GitHub auth mode to choose first</li>
-              <li>How the review queue gates GitHub actions</li>
-              <li>When an agent execution is safe to promote</li>
+              <li>Pilot the initial workspace and project scope</li>
+              <li>Connect GitHub and repository bindings cleanly</li>
+              <li>Launch the widget, dashboard, and portal with readiness checks</li>
+              <li>Operate the queue and only promote reviewed work</li>
             </ul>
           </div>
         </section>
 
         <section class="metrics-grid" aria-label="Key concepts">
           <article class="metric panel">
-            <span class="metric-value">4</span>
-            <span class="metric-label">Core stages</span>
-            <p>Connect the project, capture feedback, review the queue, then promote approved work.</p>
+            <span class="metric-value">5</span>
+            <span class="metric-label">Story beats</span>
+            <p>Pilot, connect, launch, operate, and promote define the operator journey end to end.</p>
           </article>
           <article class="metric panel">
-            <span class="metric-value">2</span>
-            <span class="metric-label">GitHub modes</span>
-            <p>PAT mode for speed, GitHub App mode for production-grade scoping and auditability.</p>
+            <span class="metric-value">3</span>
+            <span class="metric-label">Core surfaces</span>
+            <p>Onboarding, review queue, and support ops carry most of the live operator workflow.</p>
           </article>
           <article class="metric panel">
             <span class="metric-value">1</span>
@@ -80,28 +80,28 @@
 
         <section class="panel section" id="overview">
           <div class="section-heading">
-            <p class="eyebrow">Overview</p>
-            <h2>What Nexus actually does</h2>
+            <p class="eyebrow">Journey</p>
+            <h2>The five-step operator story</h2>
           </div>
           <div class="two-column">
             <div>
               <p>
-                Nexus is a control plane for operational signal. It accepts incoming feedback and observability
-                reports, stores artifacts, prepares draft engineering context, and blocks GitHub-side actions
-                until a human approves what should happen next.
+                Nexus is a control plane for operational signal, but the operator experience only becomes clear
+                when it is framed as a sequence: pilot the project, connect GitHub, launch intake, operate the
+                queue, and promote only what has been reviewed and validated.
               </p>
               <p>
-                For a new operator, the important distinction is this: Nexus is not just intake, and it is not
-                just an agent runtime. It is the workflow between signal capture, decision-making, and controlled
-                code promotion.
+                That framing matters because Nexus is not just intake and not just an agent runtime. It is the
+                workflow between customer signal, operator judgment, and controlled code promotion.
               </p>
             </div>
             <div class="callout">
               <h3>Operator mental model</h3>
               <ol>
-                <li>Resolve the project and repository context.</li>
-                <li>Confirm the report is actionable in the review queue.</li>
-                <li>Approve or reject downstream GitHub and agent activity.</li>
+                <li>Pilot the workspace and project with a stable rollout boundary.</li>
+                <li>Connect GitHub auth, installations, and repository bindings.</li>
+                <li>Launch the widget, dashboard, and support handoff links.</li>
+                <li>Operate the review queue and support surfaces as the daily control plane.</li>
                 <li>Promote only after review, validation, and merge readiness are visible.</li>
               </ol>
             </div>
@@ -110,36 +110,43 @@
 
         <section class="panel section" id="setup">
           <div class="section-heading">
-            <p class="eyebrow">Setup</p>
-            <h2>First-day setup sequence</h2>
+            <p class="eyebrow">Steps</p>
+            <h2>Walk the five steps in order</h2>
           </div>
           <div class="timeline">
             <article>
               <span>01</span>
               <div>
-                <h3>Create the workspace and project</h3>
-                <p>Use the onboarding console to create a workspace, then create a project with a stable project key.</p>
+                <h3>Pilot</h3>
+                <p>Create the workspace, define the project, and choose a narrow first rollout boundary with a stable project key.</p>
               </div>
             </article>
             <article>
               <span>02</span>
               <div>
-                <h3>Attach GitHub access</h3>
-                <p>Start with PAT mode for internal demos. Move to GitHub App mode when you need tighter repository scoping.</p>
+                <h3>Connect</h3>
+                <p>Attach GitHub access and repository scope. Start with PAT mode for speed, then move to GitHub App mode when scoping and auditability matter.</p>
               </div>
             </article>
             <article>
               <span>03</span>
               <div>
-                <h3>Configure intake surfaces</h3>
-                <p>Mint widget sessions, validate the hosted feedback page, and confirm the public dashboard and customer portal work end to end.</p>
+                <h3>Launch</h3>
+                <p>Mint widget sessions, validate hosted feedback, and confirm the dashboard, portal, and support links work end to end.</p>
               </div>
             </article>
             <article>
               <span>04</span>
               <div>
-                <h3>Set triage policy and review ownership</h3>
-                <p>Define default routing so the review queue and dashboard both reflect the same ownership model.</p>
+                <h3>Operate</h3>
+                <p>Set triage policy, review ownership, and queue expectations so the support and review surfaces reflect the same decision model.</p>
+              </div>
+            </article>
+            <article>
+              <span>05</span>
+              <div>
+                <h3>Promote</h3>
+                <p>Move only reviewed, validation-safe work into GitHub and extend customer access only when durable portal visibility is appropriate.</p>
               </div>
             </article>
           </div>
@@ -167,50 +174,57 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
 /learn/review-queue
 /learn/support-ops
 /public/projects/:projectKey/widget
-/public/projects/:projectKey/dashboard</code></pre>
+/public/projects/:projectKey/dashboard
+/public/projects/:projectKey/customer-portal</code></pre>
             </article>
           </div>
         </section>
 
         <section class="panel section" id="workflow">
           <div class="section-heading">
-            <p class="eyebrow">Workflow</p>
-            <h2>The daily operating loop</h2>
+            <p class="eyebrow">Operations</p>
+            <h2>What each step means in the live product</h2>
           </div>
           <div class="workflow-grid">
             <article class="workflow-step">
-              <h3>1. Capture</h3>
-              <p>Feedback arrives from the hosted widget, browser extension, or observability routes and is persisted with its project context.</p>
+              <h3>1. Pilot</h3>
+              <p>The onboarding console defines the workspace, project, policy defaults, and the initial operational boundary.</p>
             </article>
             <article class="workflow-step">
-              <h3>2. Review</h3>
-              <p>The review queue becomes the gate. Operators search, assign, inspect history, and approve or reject action.</p>
+              <h3>2. Connect</h3>
+              <p>GitHub installations, repository bindings, and service identities tie the project to the systems Nexus will touch.</p>
             </article>
             <article class="workflow-step">
-              <h3>3. Execute</h3>
-              <p>Approved reports can spawn agent tasks that build a worktree, attach evidence, and persist validation results.</p>
+              <h3>3. Launch</h3>
+              <p>Hosted widget, dashboard, and portal routes become the customer-facing intake path once readiness checks are clear.</p>
             </article>
             <article class="workflow-step">
-              <h3>4. Promote</h3>
-              <p>Only approved, validation-safe executions should be promoted into PRs and eventually merged.</p>
+              <h3>4. Operate</h3>
+              <p>The review queue and support ops surfaces become the daily control plane for assignment, triage, and follow-up.</p>
+            </article>
+            <article class="workflow-step">
+              <h3>5. Promote</h3>
+              <p>Only approved, validation-safe executions and scoped customer access changes should move forward into GitHub or durable access.</p>
             </article>
           </div>
 
           <div class="diagram panel-soft">
-            <div class="diagram-step">Hosted feedback or webhook</div>
+            <div class="diagram-step">Pilot project boundary</div>
             <div class="diagram-arrow"></div>
-            <div class="diagram-step">Persisted report + artifacts</div>
+            <div class="diagram-step">Connect GitHub + repos</div>
             <div class="diagram-arrow"></div>
-            <div class="diagram-step">Review queue approval</div>
+            <div class="diagram-step">Launch intake surfaces</div>
             <div class="diagram-arrow"></div>
-            <div class="diagram-step">Agent task + PR promotion</div>
+            <div class="diagram-step">Operate queue</div>
+            <div class="diagram-arrow"></div>
+            <div class="diagram-step">Promote approved work</div>
           </div>
         </section>
 
         <section class="panel section" id="surfaces">
           <div class="section-heading">
-            <p class="eyebrow">Surfaces</p>
-            <h2>The actual operator screens</h2>
+            <p class="eyebrow">Screens</p>
+            <h2>The operator screens behind the five steps</h2>
           </div>
           <div class="gallery-grid">
             <article class="gallery-card">
@@ -221,7 +235,7 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
               />
               <div class="gallery-copy">
                 <h3>Onboarding Console</h3>
-                <p>Project lookup, repo connection management, widget handoff, GitHub installation work, and service identity lifecycle from one operator surface.</p>
+                <p>Used for Pilot, Connect, and Launch: project lookup, repo connection management, widget handoff, GitHub installation work, and service identity lifecycle.</p>
               </div>
             </article>
             <article class="gallery-card">
@@ -232,7 +246,7 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
               />
               <div class="gallery-copy">
                 <h3>Review Queue</h3>
-                <p>The approval gate for hosted feedback, with queue search, assignment, paging, and the operator actions that control downstream GitHub activity.</p>
+                <p>Used for Operate and Promote: the approval gate for hosted feedback, with queue search, assignment, paging, and downstream GitHub controls.</p>
               </div>
             </article>
             <article class="gallery-card">
@@ -243,7 +257,7 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
               />
               <div class="gallery-copy">
                 <h3>Support Ops</h3>
-                <p>Readiness checks, recent hosted feedback visibility, public-route verification, and fast links back into onboarding and review follow-up.</p>
+                <p>Used to keep Launch, Operate, and Promote aligned: readiness checks, hosted feedback visibility, public-route verification, and fast follow-up links.</p>
               </div>
             </article>
           </div>
@@ -252,24 +266,28 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
         <section class="panel section" id="playbooks">
           <div class="section-heading">
             <p class="eyebrow">Playbooks</p>
-            <h2>Practical usage patterns</h2>
+            <h2>Stage-specific rollout playbooks</h2>
           </div>
           <div class="playbook-grid">
             <article class="playbook-card">
-              <h3>Internal pilot</h3>
-              <p>Use PAT mode, run the gateway and worker locally, and expose callback routes through a tunnel if you need GitHub App validation later.</p>
+              <h3>Pilot cleanly</h3>
+              <p>Use one workspace, one project, and a narrow first customer flow so the team can learn the system without policy drift.</p>
             </article>
             <article class="playbook-card">
-              <h3>Hosted feedback launch</h3>
-              <p>Create widget sessions, validate customer portal grants, and confirm the dashboard only shows project-scoped, session-safe data.</p>
+              <h3>Connect deliberately</h3>
+              <p>Use PAT mode for speed, but move to GitHub App installs once repo scoping and shared operations become part of the rollout.</p>
             </article>
             <article class="playbook-card">
-              <h3>Review-led GitHub rollout</h3>
-              <p>Train operators that issue creation and PR promotion are not defaults. They are explicit post-review actions.</p>
+              <h3>Launch with evidence</h3>
+              <p>Create widget sessions, validate portal grants, and prove the dashboard only shows project-scoped, session-safe data before broadening access.</p>
+            </article>
+            <article class="playbook-card">
+              <h3>Operate from the queue</h3>
+              <p>Train operators that issue creation and PR promotion are not defaults. The review queue is the daily gate for all downstream action.</p>
             </article>
             <article class="playbook-card accent-card">
-              <h3>Promotion hygiene</h3>
-              <p>Before promotion, confirm the execution has changes, review approval, non-failed validation, and a resolvable target repository.</p>
+              <h3>Promote with discipline</h3>
+              <p>Before promotion, confirm the execution has changes, review approval, non-failed validation, a resolvable target repository, and customer access that still matches scope.</p>
             </article>
           </div>
         </section>
@@ -290,7 +308,7 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
             </details>
             <details>
               <summary>What is the first page an operator should learn?</summary>
-              <p>Start with the onboarding console, then move to the review queue. Those two screens establish project context and show the approval gate that governs downstream actions.</p>
+              <p>Start with the onboarding console for Pilot, Connect, and Launch. Then move to the review queue and support ops pages for Operate and Promote.</p>
             </details>
             <details>
               <summary>When should an operator promote an execution into a PR?</summary>
@@ -301,9 +319,9 @@ GITHUB_APP_STATE_SECRET=replace-me</code></pre>
 
         <section class="footer-band">
           <p class="eyebrow">Launch checklist</p>
-          <h2>Use this site as the operator handoff page for your Vercel deployment.</h2>
+          <h2>Use this site as the operator handoff page for the full five-step rollout.</h2>
           <p>
-            Keep the content versioned with the product so onboarding guidance changes with the workflow, not weeks after it.
+            Keep the content versioned with the product so pilot, connect, launch, operate, and promote stay aligned with the real workflow.
           </p>
         </section>
       </main>

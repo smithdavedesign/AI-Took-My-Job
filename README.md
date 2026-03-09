@@ -75,15 +75,17 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 
 The repository now includes a standalone static onboarding site in `onboarding-site/`.
 
+The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence before linking into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, `/learn/prd`, and `/learn/developer-workbench`.
+
 Use it when you want a lightweight public-facing walkthrough for operators, prospects, or internal rollout leads without exposing the Fastify app itself.
 
 What it covers:
 
-- what Nexus is and where it fits in the workflow
-- first-day project and GitHub setup
-- the review-queue-driven operating model
-- agent execution and promotion guardrails
-- common onboarding questions
+- Pilot: stand up a workspace, define the project, and frame the initial rollout.
+- Connect: attach GitHub and repository scope with the right auth model.
+- Launch: mint intake surfaces, validate handoff links, and confirm readiness.
+- Operate: run the review queue and support surfaces as the daily control plane.
+- Promote: move only approved, validation-safe work into GitHub and customer-visible access.
 
 Deployment model:
 
@@ -96,6 +98,11 @@ Deployment model:
 Current deployment:
 
 - public site: `https://onboarding-site-eight.vercel.app`
+
+Recommended usage:
+
+- use `/learn` inside a running Nexus environment for the guided operator workflow
+- use the Vercel-hosted static site for public-facing onboarding and rollout handoff
 
 See `onboarding-site/README.md` for the deployment details.
 

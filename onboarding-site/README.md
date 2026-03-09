@@ -27,10 +27,10 @@ npx serve .
 
 ## Content scope
 
-The site is intentionally focused on operator onboarding:
+The site is intentionally focused on a five-step operator journey:
 
-- what Nexus is
-- first-day setup
-- daily review workflow
-- promotion and GitHub hygiene
-- common operator questions
+- Pilot the workspace and project.
+- Connect GitHub and repository scope.
+- Launch widget, dashboard, and portal intake.
+- Operate the review queue and support surfaces.
+- Promote only approved, validation-safe work.
