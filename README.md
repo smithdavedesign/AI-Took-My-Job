@@ -756,3 +756,9 @@ The replay payload includes normalized steps, detected cookie names, auth-refres
 2. Broaden the operator surface beyond onboarding into repo-connection editing and customer support workflows.
 3. Add semantic clustering, deterministic deduplication, and ownership mapping where gaps remain.
 4. Continue strengthening the agentic PR pipeline only where replay-backed validation remains trustworthy.
+
+## UI Snapshot
+
+Current support operations console:
+
+![Support operations console](docs/images/support-ops-ui.png)

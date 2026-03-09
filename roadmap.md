@@ -267,14 +267,14 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [ ] Broaden operator support workflows and repo-connection administration beyond the current onboarding console.
-2. [ ] Promote the replay browser-context smoke into CI environments with browser binaries.
-3. [ ] Time-box and validate the hosted customer handoff against the under-60-second onboarding target.
+1. [x] Broaden operator support workflows and repo-connection administration beyond the current onboarding console.
+2. [x] Promote the replay browser-context smoke into CI environments with browser binaries.
+3. [x] Time-box and validate the hosted customer handoff against the under-60-second onboarding target.
 4. [x] Define the initial workspace, project, and repository-connection schema.
-5. [-] Ship internal onboarding endpoints plus the first public project feedback intake route.
-6. [-] Continue runtime GitHub App resolution and project-scoped review flow.
-7. [-] Harden report review operations so hosted feedback cannot auto-open issues or spawn agent tasks before approval.
-8. [-] Add a project-hosted widget plus embed surface, stronger operator review controls, and CI smoke coverage for hosted-feedback review decisions.
+5. [x] Ship internal onboarding endpoints plus the first public project feedback intake route.
+6. [x] Continue runtime GitHub App resolution and project-scoped review flow.
+7. [x] Harden report review operations so hosted feedback cannot auto-open issues or spawn agent tasks before approval.
+8. [x] Add a project-hosted widget plus embed surface, stronger operator review controls, and CI smoke coverage for hosted-feedback review decisions.
 
 ## Open Questions
 
@@ -296,7 +296,7 @@ These do not block initial scaffolding, but they do affect later architecture:
 - Zero known sensitive value leakage in redaction tests.
 - [x] First deterministic replay achieved before autonomous PR work begins.
 - [x] Initial Phase 9 slice validated locally: onboarding records plus a project-scoped hosted-feedback report persisted with `project_id` on 2026-03-08.
-- [-] Hosted feedback now queues for internal review before GitHub issue creation, with dedicated review endpoints and agent-task gating.
-- [-] Operator review is now exercised by `e2e:hosted-feedback-review`, with queue assignment actions, and a stronger review console is available at `/learn/review-queue`.
-- [-] New customer repository connection can now start from a GitHub App install link and callback instead of manual installation-record creation, but still needs broader operator-facing onboarding UX.
-- Customer feedback submission completed in under 60 seconds through the hosted intake surface.
+- [x] Hosted feedback now queues for internal review before GitHub issue creation, with dedicated review endpoints and agent-task gating.
+- [x] Operator review is now exercised by `e2e:hosted-feedback-review`, with queue assignment actions, and stronger review surfaces are available at `/learn/review-queue`, `/learn/onboarding`, and `/learn/support-ops`.
+- [x] New customer repository connection can now start from a GitHub App install link and callback, with broader operator-facing onboarding and support workflows available in the learn surfaces.
+- [x] Customer feedback submission completed in under 60 seconds through the hosted intake surface, with `npm run e2e:customer-handoff` currently enforcing a stricter 30-second total budget plus stage SLOs.
