@@ -109,7 +109,10 @@ async function buildCloneTarget(config: AppConfig, targetRepository: string, git
 
   const token = github ? await github.resolveGitAuthToken() : config.GITHUB_TOKEN;
   if (!token) {
-    throw new Error('repository checkout requires GitHub credentials for the target repository');
+    return {
+      cloneSource: `https://github.com/${owner}/${repo}.git`,
+      repositoryLabel: `${sanitizeSegment(owner)}__${sanitizeSegment(repo)}`
+    };
   }
 
   const askPass = await createAskPassScript(token);
