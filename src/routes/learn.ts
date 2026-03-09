@@ -9,10 +9,6 @@ const learnPages = {
   '/learn/prd': {
     fileName: 'PRD.html',
     title: 'Interactive PRD'
-  },
-  '/learn/developer-workbench': {
-    fileName: 'PRD-Design-Dev-Workbench.html',
-    title: 'Developer Workbench Preview'
   }
 } as const;
 

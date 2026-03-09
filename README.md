@@ -30,7 +30,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
 - A Phase 7 MCP stdio server now exposes active issue lookup, issue context, reproduction status, and observability context for IDE integrations.
 - The active-issue lookup now supports persisted report indexing for services and repository file paths, and the MCP issue-context tool can inline previews for logs, storage snapshots, HARs, and execution JSON artifacts.
-- Public learn-more pages are now hosted at `/learn`, `/learn/prd`, and `/learn/developer-workbench`.
+- Public learn-more pages are now hosted at `/learn` and `/learn/prd`.
 - A standalone operator onboarding static site now lives under `onboarding-site/` for Vercel-hosted product education and rollout handoff.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
@@ -75,7 +75,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 
 The repository now includes a standalone static onboarding site in `onboarding-site/`.
 
-The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence before linking into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, `/learn/prd`, and `/learn/developer-workbench`.
+The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence before linking into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, and `/learn/prd`.
 
 Use it when you want a lightweight public-facing walkthrough for operators, prospects, or internal rollout leads without exposing the Fastify app itself.
 
@@ -322,7 +322,6 @@ sequenceDiagram
 - `GET /artifacts/download/:artifactId`
 - `GET /learn`
 - `GET /learn/prd`
-- `GET /learn/developer-workbench`
 - `GET /learn/review-queue`
 - `GET /health`
 

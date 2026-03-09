@@ -123,7 +123,6 @@ async function main(): Promise<void> {
 
   await assertHtmlPage(baseUrl, '/learn');
   await assertHtmlPage(baseUrl, '/learn/prd');
-  await assertHtmlPage(baseUrl, '/learn/developer-workbench');
 
   const filePath = `src/routes/internal/reports.ts`;
   const seeded = await requestJson<WebhookResponse>(`${baseUrl}/webhooks/newrelic`, {
@@ -168,7 +167,7 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify({
     reportId: seeded.reportId,
-    learnRoutes: ['/learn', '/learn/prd', '/learn/developer-workbench'],
+    learnRoutes: ['/learn', '/learn/prd'],
     matchedPath: filePath,
     contextPath: matchedIssue.contextPath
   }, null, 2));
