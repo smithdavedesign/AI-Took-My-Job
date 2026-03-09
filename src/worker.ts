@@ -26,6 +26,7 @@ import { createFeedbackReportEmbeddingRepository } from './repositories/feedback
 import { createGitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
 import { createTriageJobRepository } from './repositories/triage-job-repository.js';
 import { createWorkspaceRepository } from './repositories/workspace-repository.js';
+import { createWorkspaceTriagePolicyRepository } from './repositories/workspace-triage-policy-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
@@ -44,6 +45,7 @@ import { executeReplayPlan } from './services/replay/playwright-replay-executor.
 import { createIssueDraft } from './services/triage/issue-draft.js';
 import { createAgentTaskRepository } from './repositories/agent-task-repository.js';
 import type { StoredAgentTaskExecution } from './types/agent-tasks.js';
+import { resolveWorkspaceTriagePolicyForReport } from './services/reports/triage-policy.js';
 
 async function runCommand(command: string, args: string[], options: {
   cwd: string;
@@ -133,10 +135,11 @@ async function main(): Promise<void> {
   const redis = createRedisConnection(config.REDIS_URL);
   const bullConnection = createBullConnectionOptions(config.REDIS_URL);
   const feedbackRepository = createFeedbackRepository(database);
-  createWorkspaceRepository(database);
+  const workspaceRepository = createWorkspaceRepository(database);
   const projectRepository = createProjectRepository(database);
   const githubInstallationRepository = createGitHubInstallationRepository(database);
   const repoConnectionRepository = createRepoConnectionRepository(database);
+  const workspaceTriagePolicyRepository = createWorkspaceTriagePolicyRepository(database);
   const reportReviewRepository = createReportReviewRepository(database);
   const feedbackReportEmbeddingRepository = createFeedbackReportEmbeddingRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
@@ -161,6 +164,8 @@ async function main(): Promise<void> {
   const queue = new Queue('triage', {
     connection: bullConnection
   });
+
+  await workspaceTriagePolicyRepository.ensureSchema();
 
   const worker = new Worker(
     'triage',
@@ -281,9 +286,15 @@ async function main(): Promise<void> {
           const artifacts = await artifactBundleRepository.findByReportId(report.id);
           const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
           const classification = classifyReport(report);
+          const policy = await resolveWorkspaceTriagePolicyForReport({
+            report,
+            projects: projectRepository,
+            workspaceTriagePolicies: workspaceTriagePolicyRepository
+          });
           const ownership = await resolveOwnershipCandidates({
             report,
             ...(draft?.repository ? { repository: draft.repository } : {}),
+            ...(policy ? { policy } : {}),
             ...(embedding ? {
               embedding: embedding.embedding,
               loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
@@ -323,6 +334,7 @@ async function main(): Promise<void> {
           const impact = await resolveRefinedImpactAssessment({
             report,
             ...(draft?.repository ? { repository: draft.repository } : {}),
+            ...(policy ? { policy } : {}),
             ...(embedding ? {
               embedding: embedding.embedding,
               loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
@@ -366,6 +378,7 @@ async function main(): Promise<void> {
             history,
             similarReports,
             ownership,
+            triagePolicy: policy,
             artifacts: artifacts.map((artifact) => ({
               id: artifact.id,
               artifactType: artifact.artifactType,
@@ -1037,6 +1050,11 @@ async function main(): Promise<void> {
 
       const embedding = await feedbackReportEmbeddingRepository.findByReportId(report.id);
       const classification = classifyReport(report);
+      const policy = await resolveWorkspaceTriagePolicyForReport({
+        report,
+        projects: projectRepository,
+        workspaceTriagePolicies: workspaceTriagePolicyRepository
+      });
       const duplicates = await resolveDuplicateReports({
         report,
         ...(embedding ? {
@@ -1053,6 +1071,7 @@ async function main(): Promise<void> {
       const refinedImpact = await resolveRefinedImpactAssessment({
         report,
         ...(draftRepository?.repository ? { repository: draftRepository.repository } : {}),
+        ...(policy ? { policy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => feedbackReportEmbeddingRepository.findNearestNeighbors(vector, limit),
@@ -1069,7 +1088,8 @@ async function main(): Promise<void> {
         duplicates,
         reportIndex: buildReportIndex(report),
         impactScore: refinedImpact.score,
-        impactAssessment: refinedImpact
+        impactAssessment: refinedImpact,
+        triagePolicy: policy
       };
       await feedbackRepository.updatePayload(report.id, enrichedPayload);
       await triageJobRepository.updatePriorityAndPayload(job.id, refinedImpact.score, {

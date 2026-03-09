@@ -2,10 +2,12 @@ import { computeInitialImpactScore } from '../../domain/impact-score.js';
 import type { StoredAgentTask, StoredAgentTaskExecution, StoredAgentTaskExecutionPullRequest } from '../../types/agent-tasks.js';
 import type { StoredGitHubIssueLink } from '../../types/issues.js';
 import type { StoredFeedbackReport } from '../../types/reports.js';
+import type { StoredWorkspaceTriagePolicy } from '../../types/workspace-triage-policy.js';
 
 import { resolveOwnershipCandidates } from './ownership-candidates.js';
 import { resolveReportHistory } from './report-history.js';
 import { resolveSimilarReports } from './similar-reports.js';
+import { evaluatePriorityPolicyRules } from './triage-policy.js';
 
 export interface RefinedImpactAssessment {
   score: number;
@@ -20,6 +22,7 @@ export interface RefinedImpactAssessment {
     uniqueSourceCount: number;
     uniqueReporterCount: number;
     ownerCandidateCount: number;
+    policyDelta: number;
   };
   reasons: string[];
 }
@@ -45,6 +48,7 @@ function scoreToBand(score: number): RefinedImpactAssessment['band'] {
 export async function resolveRefinedImpactAssessment(input: {
   report: StoredFeedbackReport;
   repository?: string | null;
+  policy?: StoredWorkspaceTriagePolicy | null;
   embedding?: number[];
   loadNearestNeighbors?: (embedding: number[], limit: number) => Promise<Array<{ feedbackReportId: string; distance: number }>>;
   loadReportById?: (reportId: string) => Promise<StoredFeedbackReport | null>;
@@ -76,6 +80,7 @@ export async function resolveRefinedImpactAssessment(input: {
   const ownership = await resolveOwnershipCandidates({
     report: input.report,
     ...(input.repository ? { repository: input.repository } : {}),
+    ...(input.policy ? { policy: input.policy } : {}),
     ...(input.embedding && input.loadNearestNeighbors && input.loadReportById
       ? {
         embedding: input.embedding,
@@ -133,7 +138,14 @@ export async function resolveRefinedImpactAssessment(input: {
     15
   );
 
-  const score = Math.min(100, Math.round(baseScore + recurrenceBoost + breadthBoost + historyBoost));
+  const priorityPolicy = evaluatePriorityPolicyRules({
+    policy: input.policy ?? null,
+    report: input.report,
+    repository: input.repository,
+    ownerLabels: ownership.candidates.map((candidate) => candidate.label)
+  });
+
+  const score = Math.max(0, Math.min(100, Math.round(baseScore + recurrenceBoost + breadthBoost + historyBoost + priorityPolicy.delta)));
 
   return {
     score,
@@ -147,13 +159,17 @@ export async function resolveRefinedImpactAssessment(input: {
       mergedPullRequestCount: history.summary.mergedPullRequestCount,
       uniqueSourceCount: uniqueSources.size,
       uniqueReporterCount: uniqueReporters.size,
-      ownerCandidateCount: ownership.candidates.length
+      ownerCandidateCount: ownership.candidates.length,
+      policyDelta: priorityPolicy.delta
     },
     reasons: [
       `base score ${baseScore}`,
       `recurrence boost ${recurrenceBoost} from ${recurrenceCount} similar reports and ${history.summary.relatedIssueCount} related issues`,
       `breadth boost ${breadthBoost} from ${uniqueSources.size} sources, ${uniqueReporters.size} reporters, and ${ownership.candidates.length} owner candidates`,
-      `history boost ${historyBoost} from ${history.summary.relatedPullRequestCount} related pull requests`
+      `history boost ${historyBoost} from ${history.summary.relatedPullRequestCount} related pull requests`,
+      ...(priorityPolicy.matches.length > 0
+        ? priorityPolicy.matches.map((match) => `${match.reason} (${match.scoreDelta >= 0 ? '+' : ''}${match.scoreDelta})`)
+        : [])
     ]
   };
 }

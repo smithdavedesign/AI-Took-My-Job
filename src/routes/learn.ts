@@ -100,10 +100,16 @@ function buildOnboardingConsolePage(): string {
             <label>Service Identity Id<input id="serviceIdentityId" value="" placeholder="service-operator" /></label>
           </div>
           <label>Service Identity Scopes<input id="serviceIdentityScopes" value="internal:read" placeholder="internal:read, github:draft" /></label>
+          <label>Workspace Triage Policy (JSON)<textarea id="triagePolicyJson" placeholder='{"ownershipRules":[{"id":"00000000-0000-0000-0000-000000000000","field":"page-host","operator":"equals","value":"checkout.example.com","owner":"checkout-team","scoreBoost":1.4}],"priorityRules":[{"id":"00000000-0000-0000-0000-000000000001","field":"severity","operator":"equals","value":"critical","scoreDelta":15}]}'></textarea></label>
           <div class="row">
             <button id="lookupProject" class="secondary">Lookup Project</button>
             <button id="loadContext" class="secondary">Load Context</button>
             <button id="loadOperations" class="secondary">Load Support Snapshot</button>
+          </div>
+          <div class="row">
+            <button id="loadTriagePolicy" class="secondary">Load Triage Policy</button>
+            <button id="saveTriagePolicy" class="primary">Save Triage Policy</button>
+            <button id="deleteTriagePolicy" class="secondary">Delete Triage Policy</button>
           </div>
           <div class="row">
             <button id="createRepoConnection" class="primary">Create Repo Connection</button>
@@ -159,6 +165,11 @@ function buildOnboardingConsolePage(): string {
             <pre id="operationsResult">// project operations summary appears here</pre>
           </section>
           <section class="section">
+            <h2 class="section-title">Workspace Triage Policy</h2>
+            <div id="triagePolicySummary" class="helper">No triage policy loaded yet.</div>
+            <pre id="triagePolicyResult">// workspace triage policy appears here</pre>
+          </section>
+          <section class="section">
             <h2 class="section-title">Service Identities</h2>
             <div id="serviceIdentitySummary" class="helper">No service identity action run yet.</div>
             <pre id="serviceIdentityResult">// service identity responses appear here</pre>
@@ -210,11 +221,15 @@ function buildOnboardingConsolePage(): string {
       repoConnectionConfig: document.getElementById('repoConnectionConfig'),
       origin: document.getElementById('origin'),
       mode: document.getElementById('mode'),
+      triagePolicyJson: document.getElementById('triagePolicyJson'),
       serviceIdentityId: document.getElementById('serviceIdentityId'),
       serviceIdentityScopes: document.getElementById('serviceIdentityScopes'),
       lookupProject: document.getElementById('lookupProject'),
       loadContext: document.getElementById('loadContext'),
       loadOperations: document.getElementById('loadOperations'),
+      loadTriagePolicy: document.getElementById('loadTriagePolicy'),
+      saveTriagePolicy: document.getElementById('saveTriagePolicy'),
+      deleteTriagePolicy: document.getElementById('deleteTriagePolicy'),
       createRepoConnection: document.getElementById('createRepoConnection'),
       updateRepoConnection: document.getElementById('updateRepoConnection'),
       createInstallLink: document.getElementById('createInstallLink'),
@@ -241,6 +256,8 @@ function buildOnboardingConsolePage(): string {
       supportResult: document.getElementById('supportResult'),
       operationsSummary: document.getElementById('operationsSummary'),
       operationsResult: document.getElementById('operationsResult'),
+      triagePolicySummary: document.getElementById('triagePolicySummary'),
+      triagePolicyResult: document.getElementById('triagePolicyResult'),
       serviceIdentitySummary: document.getElementById('serviceIdentitySummary'),
       serviceIdentityResult: document.getElementById('serviceIdentityResult'),
       installLinkSummary: document.getElementById('installLinkSummary'),
@@ -279,6 +296,7 @@ function buildOnboardingConsolePage(): string {
         repoConnectionConfig: els.repoConnectionConfig.value,
         origin: els.origin.value.trim(),
         mode: els.mode.value,
+        triagePolicyJson: els.triagePolicyJson.value,
         serviceIdentityId: els.serviceIdentityId.value.trim(),
         serviceIdentityScopes: els.serviceIdentityScopes.value.trim()
       }));
@@ -315,9 +333,31 @@ function buildOnboardingConsolePage(): string {
       }
       return parsed;
     }
+    function parseTriagePolicyConfig() {
+      const raw = els.triagePolicyJson.value.trim();
+      if (!raw) {
+        return { ownershipRules: [], priorityRules: [] };
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Workspace Triage Policy must be a JSON object.');
+      }
+      return parsed;
+    }
     function setReadiness(value, note) {
       els.readinessValue.textContent = value || 'unknown';
       els.readinessNote.textContent = note || 'Load a support snapshot to score project readiness.';
+    }
+    function renderTriagePolicy(result) {
+      const summary = result && result.summary ? result.summary : {};
+      const policy = result && result.policy ? result.policy : null;
+      if (policy) {
+        els.triagePolicyJson.value = JSON.stringify({ ownershipRules: policy.ownershipRules || [], priorityRules: policy.priorityRules || [] }, null, 2);
+      }
+      writeJson(els.triagePolicyResult, result);
+      els.triagePolicySummary.textContent = summary.configured
+        ? 'Configured. Ownership rules ' + (summary.ownershipRuleCount || 0) + '. Priority rules ' + (summary.priorityRuleCount || 0) + '. Updated ' + (summary.updatedAt || 'unknown') + '.'
+        : 'No workspace triage policy is configured yet.';
     }
     function applyProjectLookup(result) {
       const project = result && result.project ? result.project : result;
@@ -407,16 +447,19 @@ function buildOnboardingConsolePage(): string {
         const results = await Promise.all([
           request('/internal/workspaces/' + workspaceId + '/projects', { headers: authHeaders() }),
           request('/internal/workspaces/' + workspaceId + '/github-installations', { headers: authHeaders() }),
-          els.projectId.value.trim() ? request('/internal/projects/' + els.projectId.value.trim() + '/repo-connections', { headers: authHeaders() }) : Promise.resolve([])
+          els.projectId.value.trim() ? request('/internal/projects/' + els.projectId.value.trim() + '/repo-connections', { headers: authHeaders() }) : Promise.resolve([]),
+          request('/internal/workspaces/' + workspaceId + '/triage-policy', { headers: authHeaders() })
         ]);
         const projects = results[0];
         const installations = results[1];
         const repoConnections = results[2];
+        const triagePolicy = results[3];
         if (!els.projectId.value.trim() && Array.isArray(projects) && projects.length === 1) {
           els.projectId.value = projects[0].id;
           els.projectKey.value = projects[0].projectKey;
         }
         renderBindings(projects, installations, repoConnections);
+        renderTriagePolicy(triagePolicy);
         setStatus('Loaded onboarding context for workspace ' + workspaceId + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to load onboarding context.');
@@ -432,20 +475,88 @@ function buildOnboardingConsolePage(): string {
       setStatus('Loading operations for ' + projectId + '...');
       try {
         const result = await request('/internal/projects/' + projectId + '/operations', { headers: authHeaders() });
+        if (result.workspace && result.workspace.id) {
+          els.workspaceId.value = result.workspace.id;
+        }
         writeJson(els.operationsResult, result);
         writeJson(els.supportResult, result.support || {});
         const defaultRepository = result.repositories && result.repositories.defaultRepository ? result.repositories.defaultRepository : 'none';
         const pendingReviewCount = result.reports && typeof result.reports.pendingReviewCount === 'number' ? result.reports.pendingReviewCount : 0;
         const taskCount = result.agentTasks && typeof result.agentTasks.total === 'number' ? result.agentTasks.total : 0;
-        els.operationsSummary.textContent = 'Default repo ' + defaultRepository + '. Pending review ' + pendingReviewCount + '. Agent tasks ' + taskCount + '.';
+        const triagePolicySummary = result.triagePolicy || {};
+        els.operationsSummary.textContent = 'Default repo ' + defaultRepository + '. Pending review ' + pendingReviewCount + '. Agent tasks ' + taskCount + '. Policy rules ' + ((triagePolicySummary.ownershipRuleCount || 0) + (triagePolicySummary.priorityRuleCount || 0)) + '.';
         const support = result.support || {};
         const issues = Array.isArray(support.issues) ? support.issues : [];
         const feedbackCount = Array.isArray(support.recentHostedFeedback) ? support.recentHostedFeedback.length : 0;
-        els.supportSummary.textContent = 'Readiness ' + (support.readiness || 'unknown') + '. Recent hosted feedback ' + feedbackCount + '. ' + (issues[0] || 'No open support blockers.');
+        const policyNote = support.triagePolicySummary && support.triagePolicySummary.configured
+          ? ' Policy configured with ' + ((support.triagePolicySummary.ownershipRuleCount || 0) + (support.triagePolicySummary.priorityRuleCount || 0)) + ' rules.'
+          : ' No triage policy configured.';
+        els.supportSummary.textContent = 'Readiness ' + (support.readiness || 'unknown') + '. Recent hosted feedback ' + feedbackCount + '. ' + (issues[0] || 'No open support blockers.') + policyNote;
+        if (result.triagePolicy) {
+          renderTriagePolicy({ workspace: result.workspace, policy: result.triagePolicy.policy || null, summary: result.triagePolicy });
+        }
         setReadiness(support.readiness || 'unknown', issues.length ? issues.join(' ') : 'Project is ready for customer handoff.');
         setStatus('Operations loaded for ' + projectId + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to load project operations.');
+      }
+    }
+    async function loadTriagePolicy() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      if (!workspaceId) {
+        setStatus('Workspace Id is required.');
+        return;
+      }
+      setStatus('Loading triage policy for ' + workspaceId + '...');
+      try {
+        const result = await request('/internal/workspaces/' + workspaceId + '/triage-policy', { headers: authHeaders() });
+        renderTriagePolicy(result);
+        setStatus('Triage policy loaded for ' + workspaceId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load triage policy.');
+      }
+    }
+    async function saveTriagePolicy() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      if (!workspaceId) {
+        setStatus('Workspace Id is required.');
+        return;
+      }
+      setStatus('Saving triage policy for ' + workspaceId + '...');
+      try {
+        const result = await request('/internal/workspaces/' + workspaceId + '/triage-policy', {
+          method: 'PUT',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(parseTriagePolicyConfig())
+        });
+        renderTriagePolicy(result);
+        await loadOperations();
+        setStatus('Triage policy saved for ' + workspaceId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to save triage policy.');
+      }
+    }
+    async function deleteTriagePolicy() {
+      saveState();
+      const workspaceId = els.workspaceId.value.trim();
+      if (!workspaceId) {
+        setStatus('Workspace Id is required.');
+        return;
+      }
+      setStatus('Deleting triage policy for ' + workspaceId + '...');
+      try {
+        const result = await request('/internal/workspaces/' + workspaceId + '/triage-policy', {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
+        els.triagePolicyJson.value = '';
+        renderTriagePolicy(result);
+        await loadOperations();
+        setStatus('Triage policy deleted for ' + workspaceId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to delete triage policy.');
       }
     }
     async function createRepoConnection() {
@@ -762,11 +873,15 @@ function buildOnboardingConsolePage(): string {
     els.repoConnectionConfig.value = saved.repoConnectionConfig || '';
     els.origin.value = saved.origin || '';
     els.mode.value = saved.mode || 'embed';
+    els.triagePolicyJson.value = saved.triagePolicyJson || '';
     els.serviceIdentityId.value = saved.serviceIdentityId || '';
     els.serviceIdentityScopes.value = saved.serviceIdentityScopes || 'internal:read';
     els.lookupProject.addEventListener('click', lookupProjectByKey);
     els.loadContext.addEventListener('click', loadContext);
     els.loadOperations.addEventListener('click', loadOperations);
+    els.loadTriagePolicy.addEventListener('click', loadTriagePolicy);
+    els.saveTriagePolicy.addEventListener('click', saveTriagePolicy);
+    els.deleteTriagePolicy.addEventListener('click', deleteTriagePolicy);
     els.createRepoConnection.addEventListener('click', createRepoConnection);
     els.updateRepoConnection.addEventListener('click', updateRepoConnection);
     els.createInstallLink.addEventListener('click', createInstallLink);
@@ -1361,7 +1476,7 @@ function buildReviewQueuePage(): string {
     '        const card = document.createElement("button");',
     '        card.type = "button";',
     '        card.className = `item${state.selected && state.selected.reportId === item.reportId ? " active" : ""}`;',
-    '        card.innerHTML = [`<div class="item-header"><input class="item-check" data-role="select" type="checkbox" ${isSelected(item.reportId) ? "checked" : ""} /><div><h3>${escapeHtml(item.title || item.reportId)}</h3><div class="meta"><span class="badge">${escapeHtml(item.project ? item.project.name : "Unscoped project")}</span><span class="badge">${escapeHtml(item.severity)}</span><span class="badge">impact ${item.impactScore ?? "n/a"}</span><span class="badge">${escapeHtml(relativeTime(item.createdAt))}</span></div><div class="helper">${escapeHtml(item.repository || "repository unresolved")} | ${escapeHtml(item.reporterIdentifier || "anonymous")} | assigned ${escapeHtml(item.assignedReviewerId || "unassigned")}</div></div></div>`].join("");',
+    '        card.innerHTML = [`<div class="item-header"><input class="item-check" data-role="select" type="checkbox" ${isSelected(item.reportId) ? "checked" : ""} /><div><h3>${escapeHtml(item.title || item.reportId)}</h3><div class="meta"><span class="badge">${escapeHtml(item.project ? item.project.name : "Unscoped project")}</span><span class="badge">${escapeHtml(item.severity)}</span><span class="badge">impact ${item.impactScore ?? "n/a"}</span><span class="badge">${escapeHtml(relativeTime(item.createdAt))}</span></div><div class="helper">${escapeHtml(item.repository || "repository unresolved")} | owner ${escapeHtml(item.owner ? item.owner.label : "unresolved")} | ${escapeHtml(item.reporterIdentifier || "anonymous")} | assigned ${escapeHtml(item.assignedReviewerId || "unassigned")}</div></div></div>`].join("");',
     '        const checkbox = card.querySelector("[data-role=select]");',
     '        if (checkbox) { checkbox.addEventListener("click", (event) => { event.stopPropagation(); }); checkbox.addEventListener("change", () => toggleSelection(item.reportId)); }',
     '        card.addEventListener("click", () => selectItem(item));',
@@ -1382,7 +1497,7 @@ function buildReviewQueuePage(): string {
     '        return;',
     '      }',
     '      els.summary.className = "";',
-    '      els.summary.innerHTML = [`<div class="row">`,`<span class="badge">${escapeHtml(selected.reportId)}</span>`,`<span class="badge">${escapeHtml(selected.repository || "repository unresolved")}</span>`,`<span class="badge">${escapeHtml(selected.severity)}</span>`,`<span class="badge">assigned ${escapeHtml(selected.assignedReviewerId || "unassigned")}</span>`,`</div>`,`<p><strong>${escapeHtml(selected.title)}</strong></p>`,`<p>${selected.project ? `${escapeHtml(selected.project.name)} (${escapeHtml(selected.project.projectKey)})` : "No project metadata"}</p>`,`<p>Reporter: ${escapeHtml(selected.reporterIdentifier || "anonymous")}</p>`,`<p class="helper">Created ${escapeHtml(relativeTime(selected.createdAt))} | Updated ${escapeHtml(relativeTime(selected.updatedAt))}</p>`].join("");',
+    '      els.summary.innerHTML = [`<div class="row">`,`<span class="badge">${escapeHtml(selected.reportId)}</span>`,`<span class="badge">${escapeHtml(selected.repository || "repository unresolved")}</span>`,`<span class="badge">${escapeHtml(selected.severity)}</span>`,`<span class="badge">owner ${escapeHtml(selected.owner ? selected.owner.label : "unresolved")}</span>`,`<span class="badge">assigned ${escapeHtml(selected.assignedReviewerId || "unassigned")}</span>`,`</div>`,`<p><strong>${escapeHtml(selected.title)}</strong></p>`,`<p>${selected.project ? `${escapeHtml(selected.project.name)} (${escapeHtml(selected.project.projectKey)})` : "No project metadata"}</p>`,`<p>Reporter: ${escapeHtml(selected.reporterIdentifier || "anonymous")}</p>`,`<p class="helper">Created ${escapeHtml(relativeTime(selected.createdAt))} | Updated ${escapeHtml(relativeTime(selected.updatedAt))}</p>`].join("");',
     '      els.repository.value = selected.repository || "";',
     '      els.context.textContent = JSON.stringify(context || {}, null, 2);',
     '      const reviewActivity = Array.isArray(context && context.reviewActivity) ? context.reviewActivity : [];',

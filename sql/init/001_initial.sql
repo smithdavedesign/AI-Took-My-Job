@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS projects_workspace_idx
   ON projects (workspace_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS workspace_triage_policies (
+  id UUID PRIMARY KEY,
+  workspace_id UUID NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
+  ownership_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+  priority_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS github_installations (
   id UUID PRIMARY KEY,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

@@ -50,11 +50,20 @@ interface PublicDashboardSummaryResponse {
     mode: string;
     customerAuth: string;
   };
+  triagePolicy?: {
+    configured: boolean;
+    ownershipRuleCount: number;
+    priorityRuleCount: number;
+  };
   summary: {
     submissionCount: number;
   };
   items: Array<{
     reportId: string;
+    owner: {
+      label: string;
+      kind: string;
+    } | null;
     impact: {
       band: string;
       score: number;
@@ -66,6 +75,10 @@ interface PublicDashboardSummaryResponse {
 interface ReviewQueueResponse {
   items: Array<{
     reportId: string;
+    owner?: {
+      label: string;
+      kind: string;
+    } | null;
   }>;
 }
 
@@ -77,9 +90,17 @@ interface DraftResponse {
 }
 
 interface ProjectOperationsResponse {
+  triagePolicy?: {
+    configured: boolean;
+    ownershipRuleCount: number;
+    priorityRuleCount: number;
+  };
   support?: {
     readiness?: string;
     issues?: string[];
+    triagePolicySummary?: {
+      configured: boolean;
+    };
     recentHostedFeedback?: Array<{
       id: string;
     }>;
@@ -245,6 +266,33 @@ async function main(): Promise<void> {
   });
   assert(repoConnection.repository === targetRepository, 'Repo connection did not target the requested repository');
 
+  await requestJson(`${baseUrl}/internal/workspaces/${workspace.id}/triage-policy`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      ownershipRules: [{
+        id: 'c7a95bfe-5701-4f1b-aa08-f0b8d09ef001',
+        field: 'page-host',
+        operator: 'equals',
+        value: 'customer.example.test',
+        owner: 'customer-success',
+        scoreBoost: 1.8,
+        reason: 'Customer handoff feedback routes to customer-success first.'
+      }],
+      priorityRules: [{
+        id: 'c7a95bfe-5701-4f1b-aa08-f0b8d09ef002',
+        field: 'severity',
+        operator: 'equals',
+        value: 'high',
+        scoreDelta: 12,
+        reason: 'High-severity customer handoff reports get a priority bump.'
+      }]
+    })
+  });
+
   const bootstrappedAt = Date.now();
   assertBudget('Customer handoff bootstrap', bootstrappedAt - startedAt, bootstrapBudgetMs);
 
@@ -252,6 +300,8 @@ async function main(): Promise<void> {
     headers: authHeaders
   });
   assert(operationsBeforeFeedback.support?.readiness === 'ready', `Expected ready support status, received ${operationsBeforeFeedback.support?.readiness ?? 'missing'}`);
+  assert(operationsBeforeFeedback.triagePolicy?.configured === true, 'Operations snapshot did not expose the configured triage policy');
+  assert(operationsBeforeFeedback.support?.triagePolicySummary?.configured === true, 'Support snapshot did not surface triage policy status');
 
   const widgetSession = await requestJson<WidgetSessionResponse>(`${baseUrl}/internal/projects/${project.id}/widget-session`, {
     method: 'POST',
@@ -303,8 +353,12 @@ async function main(): Promise<void> {
   );
   assert(dashboardSummary.accessModel.mode === 'signed-widget-session', 'Dashboard summary did not advertise signed session access');
   assert(dashboardSummary.accessModel.customerAuth === 'deferred', 'Dashboard summary did not preserve deferred customer auth policy');
+  assert(dashboardSummary.triagePolicy?.configured === true, 'Dashboard summary did not advertise the configured triage policy');
   assert(dashboardSummary.summary.submissionCount >= 1, 'Dashboard summary did not include the submitted feedback');
   assert(dashboardSummary.items.some((item) => item.reportId === feedback.reportId), 'Dashboard summary did not include the submitted report');
+  const dashboardItem = dashboardSummary.items.find((item) => item.reportId === feedback.reportId);
+  assert(dashboardItem?.owner?.label === 'customer-success', 'Dashboard summary did not apply the policy-backed owner');
+  assert(dashboardItem?.owner?.kind === 'policy-owner', 'Dashboard summary did not expose a policy-backed owner kind');
 
   const queueResult = await poll(
     () => requestJson<ReviewQueueResponse>(`${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&limit=20`, {
@@ -315,6 +369,8 @@ async function main(): Promise<void> {
     1000
   );
   assert(queueResult.items.some((item) => item.reportId === feedback.reportId), 'Review queue did not include the submitted report');
+  const queuedItem = queueResult.items.find((item) => item.reportId === feedback.reportId);
+  assert(queuedItem?.owner?.label === 'customer-success', 'Review queue did not apply the policy-backed owner');
   const queueReadyAt = Date.now();
   assertBudget('Customer handoff review queue visibility', queueReadyAt - startedAt, queueReadyBudgetMs);
 
@@ -353,6 +409,8 @@ async function main(): Promise<void> {
     supportReadiness: operationsAfterFeedback.support?.readiness ?? null,
     draftState: draft?.draft?.state ?? draft?.state ?? null,
     dashboardAccessMode: dashboardSummary.accessModel.mode,
+    policyConfigured: dashboardSummary.triagePolicy?.configured ?? false,
+    dashboardOwner: dashboardItem?.owner?.label ?? null,
     totalMs,
     budgetMs,
     budgets: {

@@ -27,6 +27,7 @@ import { createShadowSuiteRunRepository, type ShadowSuiteRunRepository } from '.
 import { createServiceIdentityRepository, type ServiceIdentityRepository, type StoredServiceIdentity } from './repositories/service-identity-repository.js';
 import { createTriageJobRepository, type TriageJobRepository } from './repositories/triage-job-repository.js';
 import { createWorkspaceRepository, type WorkspaceRepository } from './repositories/workspace-repository.js';
+import { createWorkspaceTriagePolicyRepository, type WorkspaceTriagePolicyRepository } from './repositories/workspace-triage-policy-repository.js';
 import { loadConfig, type AppConfig } from './support/config.js';
 import { createDatabaseClient, type DatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
@@ -66,6 +67,7 @@ declare module 'fastify' {
     projects: ProjectRepository;
     githubInstallations: GitHubInstallationRepository;
     repoConnections: RepoConnectionRepository;
+    workspaceTriagePolicies: WorkspaceTriagePolicyRepository;
     auditRepository: AuditRepository;
     triageJobs: TriageJobRepository;
     audit: AuditLogger;
@@ -103,6 +105,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const projectRepository = createProjectRepository(database);
   const githubInstallationRepository = createGitHubInstallationRepository(database);
   const repoConnectionRepository = createRepoConnectionRepository(database);
+  const workspaceTriagePolicyRepository = createWorkspaceTriagePolicyRepository(database);
   const reportReviewRepository = createReportReviewRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
@@ -127,6 +130,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await serviceIdentityRepository.ensureSchema();
+  await workspaceTriagePolicyRepository.ensureSchema();
   await Promise.all(config.INTERNAL_SERVICE_TOKENS.map((principal) => serviceIdentityRepository.upsertBootstrapPrincipal({
     id: principal.id,
     token: principal.token,
@@ -145,6 +149,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('projects', projectRepository);
   app.decorate('githubInstallations', githubInstallationRepository);
   app.decorate('repoConnections', repoConnectionRepository);
+  app.decorate('workspaceTriagePolicies', workspaceTriagePolicyRepository);
   app.decorate('artifacts', artifactBundleRepository);
   app.decorate('agentTasks', agentTaskRepository);
   app.decorate('agentTaskExecutions', agentTaskExecutionRepository);

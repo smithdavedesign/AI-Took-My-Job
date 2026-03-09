@@ -1,10 +1,12 @@
 import type { StoredFeedbackReport } from '../../types/reports.js';
+import type { StoredWorkspaceTriagePolicy } from '../../types/workspace-triage-policy.js';
 
 import { resolveSimilarReports } from './similar-reports.js';
+import { evaluateOwnershipPolicyRules } from './triage-policy.js';
 
 export interface OwnershipCandidate {
   label: string;
-  kind: 'explicit-owner' | 'repository-owner' | 'reporter' | 'similar-report-owner';
+  kind: 'explicit-owner' | 'repository-owner' | 'reporter' | 'similar-report-owner' | 'policy-owner';
   score: number;
   reasons: string[];
   supportingReportIds: string[];
@@ -95,6 +97,7 @@ function upsertCandidate(
 export async function resolveOwnershipCandidates(input: {
   report: StoredFeedbackReport;
   repository?: string | null;
+  policy?: StoredWorkspaceTriagePolicy | null;
   embedding?: number[];
   loadNearestNeighbors?: (embedding: number[], limit: number) => Promise<Array<{ feedbackReportId: string; distance: number }>>;
   loadReportById?: (reportId: string) => Promise<StoredFeedbackReport | null>;
@@ -116,6 +119,19 @@ export async function resolveOwnershipCandidates(input: {
         score: 0.55
       });
     }
+  }
+
+  for (const candidate of evaluateOwnershipPolicyRules({
+    policy: input.policy ?? null,
+    report: input.report,
+    repository: input.repository
+  })) {
+    upsertCandidate(registry, {
+      label: candidate.label,
+      kind: 'policy-owner',
+      reason: candidate.reason,
+      score: candidate.score
+    });
   }
 
   let neighbors: Array<{ reportId: string; distance: number }> = [];

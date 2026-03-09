@@ -103,6 +103,34 @@ const updateRepoConnectionSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional()
 }).refine((value) => Object.keys(value).length > 0, 'at least one update field is required');
 
+const triagePolicyMatchFieldSchema = z.enum(['title', 'reporter', 'repository', 'page-host', 'label', 'severity', 'source', 'owner']);
+const triagePolicyOwnershipFieldSchema = z.enum(['title', 'reporter', 'repository', 'page-host', 'label', 'severity', 'source']);
+const triagePolicyOperatorSchema = z.enum(['equals', 'contains', 'starts-with']);
+
+const ownershipRuleSchema = z.object({
+  id: z.string().uuid(),
+  field: triagePolicyOwnershipFieldSchema,
+  operator: triagePolicyOperatorSchema,
+  value: z.string().min(1).max(255),
+  owner: z.string().min(1).max(255),
+  scoreBoost: z.number().min(0).max(5),
+  reason: z.string().min(1).max(500).optional()
+});
+
+const priorityRuleSchema = z.object({
+  id: z.string().uuid(),
+  field: triagePolicyMatchFieldSchema,
+  operator: triagePolicyOperatorSchema,
+  value: z.string().min(1).max(255),
+  scoreDelta: z.number().int().min(-25).max(25),
+  reason: z.string().min(1).max(500).optional()
+});
+
+const workspaceTriagePolicySchema = z.object({
+  ownershipRules: z.array(ownershipRuleSchema).max(50).default([]),
+  priorityRules: z.array(priorityRuleSchema).max(50).default([])
+});
+
 function slugify(value: string): string {
   return value
     .trim()
@@ -135,6 +163,22 @@ function buildProjectPublicUrls(baseUrl: string, projectKey: string): {
     widgetBaseUrl: new URL(`/public/projects/${projectKey}/widget`, baseUrl).toString(),
     embedScriptBaseUrl: new URL(`/public/projects/${projectKey}/embed.js`, baseUrl).toString(),
     feedbackUrl: new URL(`/public/projects/${projectKey}/feedback`, baseUrl).toString()
+  };
+}
+
+function summarizeWorkspaceTriagePolicy(policy: Awaited<ReturnType<FastifyInstance['workspaceTriagePolicies']['findByWorkspaceId']>>): {
+  configured: boolean;
+  ownershipRuleCount: number;
+  priorityRuleCount: number;
+  ownershipOwners: string[];
+  updatedAt: string | null;
+} {
+  return {
+    configured: Boolean(policy),
+    ownershipRuleCount: policy?.ownershipRules.length ?? 0,
+    priorityRuleCount: policy?.priorityRules.length ?? 0,
+    ownershipOwners: Array.from(new Set((policy?.ownershipRules ?? []).map((rule) => rule.owner))).slice(0, 8),
+    updatedAt: policy?.updatedAt ?? null
   };
 }
 
@@ -382,6 +426,100 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     return app.projects.findByWorkspaceId(workspaceId);
   });
 
+  app.get('/internal/workspaces/:workspaceId/triage-policy', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+    const { workspaceId } = workspaceIdParamsSchema.parse(request.params);
+    const workspace = await app.workspaces.findById(workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.notFound('workspace not found');
+    }
+
+    const policy = await app.workspaceTriagePolicies.findByWorkspaceId(workspaceId);
+    return {
+      workspace,
+      policy,
+      summary: summarizeWorkspaceTriagePolicy(policy)
+    };
+  });
+
+  app.put('/internal/workspaces/:workspaceId/triage-policy', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { workspaceId } = workspaceIdParamsSchema.parse(request.params);
+    const payload = workspaceTriagePolicySchema.parse(request.body);
+    const workspace = await app.workspaces.findById(workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.notFound('workspace not found');
+    }
+
+    const existing = await app.workspaceTriagePolicies.findByWorkspaceId(workspaceId);
+    const policy = await app.workspaceTriagePolicies.upsert({
+      id: existing?.id ?? randomUUID(),
+      workspaceId,
+      ownershipRules: payload.ownershipRules.map((rule) => ({
+        id: rule.id,
+        field: rule.field,
+        operator: rule.operator,
+        value: rule.value,
+        owner: rule.owner,
+        scoreBoost: rule.scoreBoost,
+        ...(rule.reason ? { reason: rule.reason } : {})
+      })),
+      priorityRules: payload.priorityRules.map((rule) => ({
+        id: rule.id,
+        field: rule.field,
+        operator: rule.operator,
+        value: rule.value,
+        scoreDelta: rule.scoreDelta,
+        ...(rule.reason ? { reason: rule.reason } : {})
+      }))
+    });
+
+    await app.audit.write({
+      eventType: 'workspace.triage_policy_updated',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        workspaceId,
+        ownershipRuleCount: policy.ownershipRules.length,
+        priorityRuleCount: policy.priorityRules.length
+      }
+    });
+
+    return {
+      workspace,
+      policy,
+      summary: summarizeWorkspaceTriagePolicy(policy)
+    };
+  });
+
+  app.delete('/internal/workspaces/:workspaceId/triage-policy', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { workspaceId } = workspaceIdParamsSchema.parse(request.params);
+    const workspace = await app.workspaces.findById(workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.notFound('workspace not found');
+    }
+
+    const deleted = await app.workspaceTriagePolicies.deleteByWorkspaceId(workspaceId);
+    await app.audit.write({
+      eventType: 'workspace.triage_policy_deleted',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        workspaceId,
+        deleted
+      }
+    });
+
+    return {
+      workspace,
+      deleted,
+      summary: summarizeWorkspaceTriagePolicy(null)
+    };
+  });
+
   app.get('/internal/workspaces/:workspaceId/github-installations', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
     const { workspaceId } = workspaceIdParamsSchema.parse(request.params);
@@ -485,6 +623,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       review: await app.reportReviews.findByReportId(report.id)
     })));
     const reviewByReportId = new Map(reviewRecords.map((entry) => [entry.reportId, entry.review]));
+    const triagePolicy = await app.workspaceTriagePolicies.findByWorkspaceId(workspace.id);
     const linkedInstallationIds = new Set(repoScope.activeConnections.flatMap((connection) => connection.githubInstallationId ? [connection.githubInstallationId] : []));
     const supportIssues: string[] = [];
     if (repoScope.activeConnections.length === 0) {
@@ -522,6 +661,10 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
         ...installation,
         installationId: Number(installation.installationId)
       })),
+      triagePolicy: {
+        ...summarizeWorkspaceTriagePolicy(triagePolicy),
+        policy: triagePolicy
+      },
       reports: {
         total: recentReports.length,
         pendingReviewCount,
@@ -553,13 +696,17 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
           hasGitHubInstallation: installations.length > 0,
           hasActiveRepository: repoScope.activeConnections.length > 0,
           hasDefaultRepository: Boolean(repoScope.defaultConnection),
-          linkedInstallationCount: linkedInstallationIds.size
+          linkedInstallationCount: linkedInstallationIds.size,
+          hasTriagePolicy: Boolean(triagePolicy),
+          hasOwnershipRules: (triagePolicy?.ownershipRules.length ?? 0) > 0,
+          hasPriorityRules: (triagePolicy?.priorityRules.length ?? 0) > 0
         },
         publicUrls,
         reviewQueueUrl: new URL(`/learn/review-queue?projectId=${project.id}`, baseUrl).toString(),
         onboardingUrl: new URL('/learn/onboarding', baseUrl).toString(),
         supportOpsUrl: new URL(`/learn/support-ops?projectId=${project.id}&projectKey=${project.projectKey}`, baseUrl).toString(),
-        recentHostedFeedback: hostedFeedbackRecent
+        recentHostedFeedback: hostedFeedbackRecent,
+        triagePolicySummary: summarizeWorkspaceTriagePolicy(triagePolicy)
       }
     };
   });

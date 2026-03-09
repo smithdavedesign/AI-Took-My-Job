@@ -105,6 +105,13 @@ interface ReviewQueueResponse {
     issueState: string;
     availableRepositories?: string[];
     assignedReviewerId?: string | null;
+    owner?: {
+      label: string;
+      kind: string;
+    } | null;
+    triagePolicy?: {
+      configured: boolean;
+    };
   }>;
 }
 
@@ -118,9 +125,15 @@ interface ProjectOperationsResponse {
   };
   support?: {
     readiness?: string;
+    triagePolicySummary?: {
+      configured: boolean;
+    };
     recentHostedFeedback?: Array<{
       id: string;
     }>;
+  };
+  triagePolicy?: {
+    configured: boolean;
   };
 }
 
@@ -157,6 +170,13 @@ interface ReviewResponse {
 }
 
 interface ReportContextResponse {
+  triagePolicy?: {
+    configured: boolean;
+    policy?: {
+      ownershipRules?: Array<{ owner: string }>;
+      priorityRules?: Array<{ id: string }>;
+    } | null;
+  };
   reviewActivity?: Array<{
     eventType: string;
   }>;
@@ -467,6 +487,39 @@ async function main(): Promise<void> {
   });
   assert(supportReadyOperations.support?.readiness === 'ready', `Expected support readiness to become ready, received ${supportReadyOperations.support?.readiness ?? 'missing'}`);
 
+  await requestJson(`${baseUrl}/internal/workspaces/${workspace.id}/triage-policy`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      ownershipRules: [{
+        id: '1ce37f1d-3bbf-4c79-b23f-4aee080ef001',
+        field: 'page-host',
+        operator: 'equals',
+        value: 'staging.example.test',
+        owner: 'checkout-qa',
+        scoreBoost: 1.7,
+        reason: 'Hosted staging checkout reports route to checkout-qa.'
+      }],
+      priorityRules: [{
+        id: '1ce37f1d-3bbf-4c79-b23f-4aee080ef002',
+        field: 'owner',
+        operator: 'equals',
+        value: 'checkout-qa',
+        scoreDelta: 10,
+        reason: 'Checkout QA-owned reports get queued higher.'
+      }]
+    })
+  });
+
+  const policyReadyOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
+    headers: authHeaders
+  });
+  assert(policyReadyOperations.triagePolicy?.configured === true, 'Project operations did not expose the configured triage policy');
+  assert(policyReadyOperations.support?.triagePolicySummary?.configured === true, 'Support snapshot did not include triage policy status');
+
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/widget`, 401);
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/embed.js`, 401);
   const widgetSession = await createWidgetSession(baseUrl, project.id, authHeaders);
@@ -501,6 +554,9 @@ async function main(): Promise<void> {
   assert((queuedRejected.summary?.totalItems ?? 0) >= 1, 'Review queue summary did not include queued items');
   assert((queuedRejected.summary?.projectSummaries ?? []).some((entry) => entry.project?.id === project.id), 'Review queue project summaries did not include the created project');
   assert(Array.isArray(rejectedItem.availableRepositories), 'Review queue did not expose available repositories for queued reports');
+  assert(rejectedItem.triagePolicy?.configured === true, 'Review queue item did not expose triage policy status');
+  assert(rejectedItem.owner?.label === 'checkout-qa', 'Review queue item did not use the configured policy-backed owner');
+  assert(rejectedItem.owner?.kind === 'policy-owner', 'Review queue item did not identify the policy-backed owner kind');
 
   const assignedQueue = await requestJson<ReviewQueueResponse>(
     `${baseUrl}/internal/reports/review-queue/actions`,
@@ -549,6 +605,8 @@ async function main(): Promise<void> {
   const rejectedContext = await requestJson<ReportContextResponse>(`${baseUrl}/internal/reports/${rejectedReport.reportId}/context`, {
     headers: authHeaders
   });
+  assert(rejectedContext.triagePolicy?.configured === true, 'Rejected report context did not include triage policy details');
+  assert((rejectedContext.triagePolicy?.policy?.ownershipRules ?? []).some((rule) => rule.owner === 'checkout-qa'), 'Rejected report context did not include the configured ownership rule');
   assert((rejectedContext.reviewActivity ?? []).some((event) => event.eventType === 'report.review_assigned'), 'Rejected report context did not expose assignment activity');
   assert((rejectedContext.reviewActivity ?? []).some((event) => event.eventType === 'report.reviewed'), 'Rejected report context did not expose review decision activity');
 

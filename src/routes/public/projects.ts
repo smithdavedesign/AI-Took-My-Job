@@ -14,6 +14,7 @@ import {
 import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
 import { resolveRefinedImpactAssessment } from '../../services/reports/report-impact.js';
 import { ingestFeedbackReport } from '../../services/reports/report-ingestion.js';
+import { resolveWorkspaceTriagePolicyForReport } from '../../services/reports/triage-policy.js';
 import { requirePublicWidgetSession } from '../../support/public-widget-access.js';
 import type { PublicWidgetSessionClaims } from '../../support/public-widget-access.js';
 
@@ -84,6 +85,12 @@ interface PublicDashboardSummary {
     mode: 'signed-widget-session';
     customerAuth: 'deferred';
     policy: string;
+  };
+  triagePolicy: {
+    configured: boolean;
+    ownershipRuleCount: number;
+    priorityRuleCount: number;
+    updatedAt: string | null;
   };
   summary: {
     submissionCount: number;
@@ -162,10 +169,11 @@ function describePublicNextStep(input: {
 
 async function buildPublicDashboardSummary(input: {
   app: FastifyInstance;
-  project: { id: string; projectKey: string; name: string };
+  project: { id: string; workspaceId: string; projectKey: string; name: string };
   widgetSession: PublicWidgetSessionClaims;
 }): Promise<PublicDashboardSummary> {
   const recentReports = await input.app.reports.listRecent(200);
+  const workspaceTriagePolicy = await input.app.workspaceTriagePolicies.findByWorkspaceId(input.project.workspaceId);
   const sessionReports = recentReports
     .filter((report) => report.projectId === input.project.id
       && report.source === 'hosted-feedback'
@@ -178,11 +186,17 @@ async function buildPublicDashboardSummary(input: {
       input.app.githubIssueLinks.findByReportId(report.id),
       input.app.reportReviews.findByReportId(report.id)
     ]);
+    const triagePolicy = await resolveWorkspaceTriagePolicyForReport({
+      report,
+      projects: input.app.projects,
+      workspaceTriagePolicies: input.app.workspaceTriagePolicies
+    });
 
     const [ownership, impact] = await Promise.all([
       resolveOwnershipCandidates({
         report,
         ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => input.app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -192,6 +206,7 @@ async function buildPublicDashboardSummary(input: {
       resolveRefinedImpactAssessment({
         report,
         ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => input.app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -261,6 +276,12 @@ async function buildPublicDashboardSummary(input: {
       mode: 'signed-widget-session',
       customerAuth: 'deferred',
       policy: 'Hosted feedback stays on signed project-scoped widget sessions for v1; broader customer auth is deferred until multi-user customer identity becomes necessary.'
+    },
+    triagePolicy: {
+      configured: Boolean(workspaceTriagePolicy),
+      ownershipRuleCount: workspaceTriagePolicy?.ownershipRules.length ?? 0,
+      priorityRuleCount: workspaceTriagePolicy?.priorityRules.length ?? 0,
+      updatedAt: workspaceTriagePolicy?.updatedAt ?? null
     },
     summary: {
       submissionCount: items.length,

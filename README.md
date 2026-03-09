@@ -48,7 +48,8 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget`, an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`, and a session-scoped customer dashboard at `/public/projects/:projectKey/dashboard`, all gated by short-lived signed widget sessions.
 - Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
 - The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, queue aging metrics, review activity history, full context loading, and single-report approve/reject actions.
-- The onboarding console at `/learn/onboarding` now exposes project-key lookup, repo-connection create and update controls, project support-readiness snapshots, widget handoff links, and service-identity list, create, rotate, and revoke controls.
+- Workspace triage policy is now persisted per workspace, editable through `/internal/workspaces/:workspaceId/triage-policy`, and applied to ownership plus refined-impact scoring across worker triage, the review queue, and the public dashboard.
+- The onboarding console at `/learn/onboarding` now exposes project-key lookup, repo-connection create and update controls, workspace triage policy editing, project support-readiness snapshots, widget handoff links, and service-identity list, create, rotate, and revoke controls.
 - The dedicated support console at `/learn/support-ops` now resolves projects by key, loads the live support-readiness snapshot, exposes public widget and feedback routes, and links operators directly into review and onboarding follow-up paths.
 - Signed widget sessions remain the v1 customer access model, and the new public dashboard surfaces session-scoped submission status, ownership hints, and refined impact bands without exposing full project-internal data.
 - Durable service identities now support explicit lifecycle management through internal routes instead of startup-only env seeding.
@@ -398,15 +399,15 @@ The Phase 9 customer-onboarding flow is now live behind internal routes and proj
 - Workspace admins can create a workspace and project, mint a GitHub App install link, let GitHub call back into Nexus to persist the installation, and connect or update the project repository binding without a PAT.
 - Operators can inspect project operations, active/default repository scope, and service-identity lifecycle directly from `/learn/onboarding` instead of stitching together raw internal API calls.
 - Public feedback can now be submitted to `POST /public/projects/:projectKey/feedback` through a signed widget session and is persisted with `project_id` before triage begins.
-- Customers can open `/public/projects/:projectKey/dashboard` with the same signed widget session to track only the submissions made through that session, including review state, refined impact, and ownership hints.
+- Customers can open `/public/projects/:projectKey/dashboard` with the same signed widget session to track only the submissions made through that session, including review state, policy-aware refined impact, and policy-aware ownership hints.
 - Runtime GitHub resolution now uses project repo connections first, supports multiple active repositories with explicit default selection, and only falls back to global env configuration when a project-scoped connection does not exist.
 - Hosted feedback now lands in `/internal/reports/review-queue`, and `POST /internal/reports/:reportId/review` is the approval gate for GitHub issue creation.
-- The operator review queue now exposes queue aging metrics, report-level review activity history sourced from persisted audit events, and the set of allowed project repositories for review approval.
+- The operator review queue now exposes queue aging metrics, policy-backed owner hints, report-level review activity history sourced from persisted audit events, and the set of allowed project repositories for review approval.
 - V1 keeps signed-session distribution instead of broader customer auth so adoption stays lightweight while the customer-facing dashboard remains scoped to the active session only.
 
 Live local validation on 2026-03-08 created a workspace, project, signed widget session, and hosted-feedback reports, confirmed review-gated processing end to end, and verified the stored report rows carried the correct `project_id`.
 
-The review gate is now live end to end: `npm run e2e:hosted-feedback-review` validates queue listing, rejection, approval, hosted-feedback agent-task gating, project operations loading, and service-identity lifecycle coverage in the same smoke path.
+The review gate is now live end to end: `npm run e2e:hosted-feedback-review` validates queue listing, policy-backed ownership visibility, rejection, approval, hosted-feedback agent-task gating, project operations loading, and service-identity lifecycle coverage in the same smoke path.
 
 Agent-task submission and execution flow is documented in [docs/agent-task-flow.md](docs/agent-task-flow.md).
 

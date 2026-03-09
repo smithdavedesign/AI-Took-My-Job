@@ -11,6 +11,7 @@ import { resolveReportHistory } from '../../services/reports/report-history.js';
 import { buildReportIndex, readPersistedReportIndex } from '../../services/reports/report-index.js';
 import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from '../../services/reports/similar-reports.js';
+import { resolveWorkspaceTriagePolicyForReport } from '../../services/reports/triage-policy.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 
@@ -156,7 +157,24 @@ function summarizeObservabilityContext(report: { source: string; externalId?: st
   };
 }
 
+function summarizeTriagePolicy(policy: Awaited<ReturnType<FastifyInstance['workspaceTriagePolicies']['findByWorkspaceId']>>): Record<string, unknown> {
+  return {
+    configured: Boolean(policy),
+    ownershipRuleCount: policy?.ownershipRules.length ?? 0,
+    priorityRuleCount: policy?.priorityRules.length ?? 0,
+    updatedAt: policy?.updatedAt ?? null
+  };
+}
+
 export function registerReportInternalRoutes(app: FastifyInstance): void {
+  async function loadWorkspaceTriagePolicy(report: NonNullable<Awaited<ReturnType<FastifyInstance['reports']['findById']>>>) {
+    return resolveWorkspaceTriagePolicyForReport({
+      report,
+      projects: app.projects,
+      workspaceTriagePolicies: app.workspaceTriagePolicies
+    });
+  }
+
   async function resolveApprovedProjectRepository(input: {
     report: NonNullable<Awaited<ReturnType<FastifyInstance['reports']['findById']>>>;
     requestedRepository?: string | undefined;
@@ -387,8 +405,16 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         })
         : null;
 
+      const triagePolicy = await loadWorkspaceTriagePolicy(report);
+      const ownership = await resolveOwnershipCandidates({
+        report,
+        ...(draft.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {})
+      });
+
       const impactScore = typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null;
       const ageHours = computeAgeHours(report.createdAt ?? null);
+      const topOwner = ownership.candidates[0] ?? null;
       const item = {
         reportId: report.id,
         project: project ? {
@@ -403,6 +429,12 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         repository: draft.repository,
         availableRepositories: repoScope?.availableRepositories ?? [],
         impactScore,
+        owner: topOwner ? {
+          label: topOwner.label,
+          kind: topOwner.kind,
+          score: topOwner.score
+        } : null,
+        triagePolicy: summarizeTriagePolicy(triagePolicy),
         reporterIdentifier: report.reporterIdentifier ?? null,
         assignedReviewerId: review?.reviewerId ?? null,
         assignmentNotes: review?.notes ?? null,
@@ -421,6 +453,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       const haystack = [
         item.title,
         item.repository,
+        item.owner?.label,
         item.reporterIdentifier,
         item.assignedReviewerId,
         item.project?.name,
@@ -575,10 +608,12 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       }
 
       const replay = await app.replayRuns.findLatestByReportId(report.id);
+      const triagePolicy = await loadWorkspaceTriagePolicy(report);
 
       const ownership = await resolveOwnershipCandidates({
         report,
-        ...(draft.repository ? { repository: draft.repository } : {})
+        ...(draft.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {})
       });
 
       const haystack = [
@@ -621,6 +656,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
           impactScore: typeof report.payload.impactScore === 'number' ? report.payload.impactScore : null,
           agentTaskCount: 0
         }),
+        triagePolicy: summarizeTriagePolicy(triagePolicy),
         reportIndex,
         pathHints,
         matchedPaths: fileMatch.matchedPaths,
@@ -660,11 +696,13 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       app.agentTasks.findByReportId(reportId),
       app.auditRepository.listByReportId(reportId, 40)
     ]);
+    const triagePolicy = await loadWorkspaceTriagePolicy(report);
 
     const [ownership, similar, duplicates, history, impact, executionsByTask] = await Promise.all([
       resolveOwnershipCandidates({
         report,
         ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -704,6 +742,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       resolveRefinedImpactAssessment({
         report,
         ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -744,6 +783,10 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       })),
       artifacts,
       replay: replay ?? null,
+      triagePolicy: {
+        ...summarizeTriagePolicy(triagePolicy),
+        policy: triagePolicy
+      },
       ownership,
       similarReports: similar,
       duplicates,
@@ -826,9 +869,11 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
     const embedding = await app.reportEmbeddings.findByReportId(reportId);
     const draft = await app.githubIssueLinks.findByReportId(reportId);
+    const triagePolicy = await loadWorkspaceTriagePolicy(report);
     const ownership = await resolveOwnershipCandidates({
       report,
       ...(draft?.repository ? { repository: draft.repository } : {}),
+      ...(triagePolicy ? { policy: triagePolicy } : {}),
       ...(embedding ? {
         embedding: embedding.embedding,
         loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -838,6 +883,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
     return {
       reportId,
+      triagePolicy: summarizeTriagePolicy(triagePolicy),
       candidates: ownership.candidates,
       neighbors: ownership.neighbors
     };
@@ -937,9 +983,11 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
     const embedding = await app.reportEmbeddings.findByReportId(reportId);
     const draft = await app.githubIssueLinks.findByReportId(reportId);
+    const triagePolicy = await loadWorkspaceTriagePolicy(report);
     const impact = await resolveRefinedImpactAssessment({
       report,
       ...(draft?.repository ? { repository: draft.repository } : {}),
+      ...(triagePolicy ? { policy: triagePolicy } : {}),
       ...(embedding ? {
         embedding: embedding.embedding,
         loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -953,6 +1001,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
     return {
       reportId,
+      triagePolicy: summarizeTriagePolicy(triagePolicy),
       ...impact
     };
   });
@@ -972,11 +1021,13 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       app.replayRuns.findLatestByReportId(reportId),
       app.agentTasks.findByReportId(reportId)
     ]);
+    const triagePolicy = await loadWorkspaceTriagePolicy(report);
 
     const [ownership, similar, duplicates, impact] = await Promise.all([
       resolveOwnershipCandidates({
         report,
         ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -1004,6 +1055,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       resolveRefinedImpactAssessment({
         report,
         ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
         ...(embedding ? {
           embedding: embedding.embedding,
           loadNearestNeighbors: (vector, limit) => app.reportEmbeddings.findNearestNeighbors(vector, limit),
@@ -1018,6 +1070,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
     return {
       reportId,
+      triagePolicy: summarizeTriagePolicy(triagePolicy),
       developerSummary: buildDeveloperSummary({
         ownershipCandidates: ownership.candidates,
         similarCandidates: similar.candidates,
