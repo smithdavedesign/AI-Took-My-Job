@@ -11,8 +11,11 @@ import {
   summarizeUploads,
   validateUploadBudgets
 } from '../../services/reports/captured-feedback.js';
+import { resolveOwnershipCandidates } from '../../services/reports/ownership-candidates.js';
+import { resolveRefinedImpactAssessment } from '../../services/reports/report-impact.js';
 import { ingestFeedbackReport } from '../../services/reports/report-ingestion.js';
 import { requirePublicWidgetSession } from '../../support/public-widget-access.js';
+import type { PublicWidgetSessionClaims } from '../../support/public-widget-access.js';
 
 const projectKeyParamsSchema = z.object({
   projectKey: z.string().min(3).max(80)
@@ -63,6 +66,358 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+interface PublicDashboardSummary {
+  project: {
+    id: string;
+    projectKey: string;
+    name: string;
+  };
+  session: {
+    id: string;
+    mode: 'widget' | 'embed';
+    expiresAt: string;
+    origin: string | null;
+  };
+  accessModel: {
+    mode: 'signed-widget-session';
+    customerAuth: 'deferred';
+    policy: string;
+  };
+  summary: {
+    submissionCount: number;
+    awaitingReviewCount: number;
+    syncedCount: number;
+    rejectedCount: number;
+  };
+  items: Array<{
+    reportId: string;
+    title: string | null;
+    severity: string;
+    reportStatus: string;
+    createdAt: string | null;
+    updatedAt: string | null;
+    pageUrl: string | null;
+    impact: {
+      score: number;
+      band: 'low' | 'medium' | 'high' | 'critical';
+      reasons: string[];
+    };
+    owner: {
+      label: string;
+      score: number;
+      kind: string;
+    } | null;
+    review: {
+      status: 'pending' | 'approved' | 'rejected';
+      reviewedAt: string | null;
+    };
+    draft: {
+      state: 'local-draft' | 'awaiting-review' | 'synced' | 'sync-failed' | 'rejected' | null;
+      repository: string | null;
+      issueUrl: string | null;
+    };
+    nextStep: string;
+  }>;
+}
+
+function readWidgetSessionId(payload: Record<string, unknown>): string | null {
+  const widgetSession = payload.widgetSession;
+  if (!widgetSession || typeof widgetSession !== 'object' || Array.isArray(widgetSession)) {
+    return null;
+  }
+
+  const value = (widgetSession as Record<string, unknown>).id;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function describePublicNextStep(input: {
+  draftState: PublicDashboardSummary['items'][number]['draft']['state'];
+  reviewStatus: PublicDashboardSummary['items'][number]['review']['status'];
+  issueUrl: string | null;
+}): string {
+  if (input.issueUrl) {
+    return 'Accepted and synced to GitHub.';
+  }
+  if (input.reviewStatus === 'rejected' || input.draftState === 'rejected') {
+    return 'Rejected during human review.';
+  }
+  if (input.draftState === 'awaiting-review' || input.reviewStatus === 'pending') {
+    return 'Waiting for operator review before GitHub sync.';
+  }
+  if (input.draftState === 'sync-failed') {
+    return 'Review passed, but GitHub sync needs operator follow-up.';
+  }
+  if (input.draftState === 'local-draft') {
+    return 'Draft prepared and waiting for the review workflow to advance.';
+  }
+  return 'Accepted and queued for triage.';
+}
+
+async function buildPublicDashboardSummary(input: {
+  app: FastifyInstance;
+  project: { id: string; projectKey: string; name: string };
+  widgetSession: PublicWidgetSessionClaims;
+}): Promise<PublicDashboardSummary> {
+  const recentReports = await input.app.reports.listRecent(200);
+  const sessionReports = recentReports
+    .filter((report) => report.projectId === input.project.id
+      && report.source === 'hosted-feedback'
+      && readWidgetSessionId(report.payload) === input.widgetSession.sessionId)
+    .slice(0, 12);
+
+  const items = await Promise.all(sessionReports.map(async (report) => {
+    const [embedding, draft, review] = await Promise.all([
+      input.app.reportEmbeddings.findByReportId(report.id),
+      input.app.githubIssueLinks.findByReportId(report.id),
+      input.app.reportReviews.findByReportId(report.id)
+    ]);
+
+    const [ownership, impact] = await Promise.all([
+      resolveOwnershipCandidates({
+        report,
+        ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => input.app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => input.app.reports.findById(neighborReportId)
+        } : {})
+      }),
+      resolveRefinedImpactAssessment({
+        report,
+        ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => input.app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => input.app.reports.findById(neighborReportId)
+        } : {}),
+        loadIssueLinkByReportId: (linkedReportId) => input.app.githubIssueLinks.findByReportId(linkedReportId),
+        loadTasksByReportId: (linkedReportId) => input.app.agentTasks.findByReportId(linkedReportId),
+        loadExecutionsByTaskId: (agentTaskId) => input.app.agentTaskExecutions.findByTaskId(agentTaskId),
+        loadPullRequestByExecutionId: (executionId) => input.app.agentTaskExecutionPullRequests.findByExecutionId(executionId)
+      })
+    ]);
+
+    const topOwner = ownership.candidates[0] ?? null;
+    const pageUrl = readStringField(report.payload, 'pageUrl');
+    const reviewStatus = review?.status ?? 'pending';
+    const draftState = draft?.state ?? null;
+    const issueUrl = draft?.issueUrl ?? null;
+
+    return {
+      reportId: report.id,
+      title: report.title ?? null,
+      severity: report.severity,
+      reportStatus: report.status,
+      createdAt: report.createdAt ?? null,
+      updatedAt: report.updatedAt ?? null,
+      pageUrl,
+      impact: {
+        score: impact.score,
+        band: impact.band,
+        reasons: impact.reasons.slice(0, 2)
+      },
+      owner: topOwner ? {
+        label: topOwner.label,
+        score: topOwner.score,
+        kind: topOwner.kind
+      } : null,
+      review: {
+        status: reviewStatus,
+        reviewedAt: review?.reviewedAt ?? null
+      },
+      draft: {
+        state: draftState,
+        repository: draft?.repository ?? null,
+        issueUrl
+      },
+      nextStep: describePublicNextStep({
+        draftState,
+        reviewStatus,
+        issueUrl
+      })
+    };
+  }));
+
+  return {
+    project: {
+      id: input.project.id,
+      projectKey: input.project.projectKey,
+      name: input.project.name
+    },
+    session: {
+      id: input.widgetSession.sessionId,
+      mode: input.widgetSession.mode,
+      expiresAt: input.widgetSession.expiresAt,
+      origin: input.widgetSession.origin ?? null
+    },
+    accessModel: {
+      mode: 'signed-widget-session',
+      customerAuth: 'deferred',
+      policy: 'Hosted feedback stays on signed project-scoped widget sessions for v1; broader customer auth is deferred until multi-user customer identity becomes necessary.'
+    },
+    summary: {
+      submissionCount: items.length,
+      awaitingReviewCount: items.filter((item) => item.review.status === 'pending').length,
+      syncedCount: items.filter((item) => item.draft.state === 'synced').length,
+      rejectedCount: items.filter((item) => item.review.status === 'rejected' || item.draft.state === 'rejected').length
+    },
+    items
+  };
+}
+
+function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: string }, input: { accessToken: string; initialSummary: PublicDashboardSummary }): string {
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="utf-8" />',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    `  <title>${escapeHtml(project.name)} Feedback Status</title>`,
+    '  <style>',
+    '    :root { color-scheme: light; --bg-top: #fff8ee; --bg-bottom: #dbe6ea; --ink: #14202c; --muted: rgba(20,32,44,0.72); --panel: rgba(255,255,255,0.88); --panel-strong: rgba(255,255,255,0.95); --line: rgba(20,32,44,0.12); --accent: #0f6a58; --accent-soft: rgba(15,106,88,0.12); --warm: #b85b2e; --good: #0b7a48; --warn: #8b6208; --bad: #9a3630; --shadow: 0 24px 64px rgba(20,32,44,0.12); }',
+    '    * { box-sizing: border-box; }',
+    '    body { margin: 0; font-family: "Avenir Next", "Segoe UI", sans-serif; color: var(--ink); background: radial-gradient(circle at top left, #fff9f1 0%, var(--bg-top) 38%, var(--bg-bottom) 100%); }',
+    '    main { max-width: 1280px; margin: 0 auto; padding: 34px 18px 64px; }',
+    '    .hero { display: grid; gap: 14px; margin-bottom: 24px; }',
+    '    .eyebrow { display: inline-flex; width: fit-content; padding: 8px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 0.76rem/1.1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.08em; }',
+    '    h1 { margin: 0; font-size: clamp(2.4rem, 6vw, 4.5rem); line-height: 0.94; max-width: 12ch; }',
+    '    p { margin: 0; color: var(--muted); line-height: 1.6; max-width: 72ch; }',
+    '    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }',
+    '    button, a.button { border: none; border-radius: 14px; padding: 12px 14px; cursor: pointer; font: inherit; text-decoration: none; transition: transform 140ms ease; }',
+    '    button:hover, a.button:hover { transform: translateY(-1px); }',
+    '    .primary { background: var(--accent); color: #fffaf4; }',
+    '    .secondary { background: rgba(255,255,255,0.92); border: 1px solid var(--line); color: var(--ink); }',
+    '    .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; }',
+    '    .card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: var(--panel); box-shadow: var(--shadow); }',
+    '    .card strong { display: block; font-size: 1.65rem; line-height: 1; margin-top: 8px; }',
+    '    .layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr); gap: 18px; }',
+    '    .panel { border: 1px solid var(--line); border-radius: 24px; background: var(--panel); box-shadow: var(--shadow); padding: 18px; }',
+    '    .panel h2 { margin: 0 0 12px; font: 700 0.86rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }',
+    '    .helper { color: var(--muted); font-size: 0.92rem; }',
+    '    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }',
+    '    .pill { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: rgba(15,106,88,0.1); color: var(--accent); font: 600 0.8rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }',
+    '    .report-list { display: grid; gap: 12px; }',
+    '    .report-card { border: 1px solid var(--line); border-radius: 18px; padding: 16px; background: var(--panel-strong); }',
+    '    .report-card h3 { margin: 0 0 8px; font-size: 1.08rem; }',
+    '    .meta { color: var(--muted); font-size: 0.88rem; line-height: 1.5; }',
+    '    .reason-list { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }',
+    '    .reason-list li { margin-bottom: 4px; }',
+    '    .band-low { color: var(--accent); }',
+    '    .band-medium { color: var(--warm); }',
+    '    .band-high { color: var(--warn); }',
+    '    .band-critical { color: var(--bad); }',
+    '    pre { margin: 0; padding: 14px; border-radius: 18px; background: #201d1f; color: #f7efe3; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }',
+    '    @media (max-width: 1080px) { .summary-grid, .layout { grid-template-columns: 1fr; } }',
+    '  </style>',
+    '</head>',
+    '<body>',
+    '  <main>',
+    '    <section class="hero">',
+    '      <span class="eyebrow">Customer Status Dashboard</span>',
+    `      <h1>${escapeHtml(project.name)} feedback is tracked here.</h1>`,
+    '      <p>This dashboard is scoped to the current signed widget session. It shows only the submissions made through this session, the current human-review state, and the same ownership and impact hints operators use for prioritization.</p>',
+    '      <div class="toolbar">',
+    '        <button id="refresh" class="primary" type="button">Refresh Status</button>',
+    `        <a class="button secondary" href="/public/projects/${escapeHtml(project.projectKey)}/widget?accessToken=${encodeURIComponent(input.accessToken)}">Open Feedback Form</a>`,
+    '      </div>',
+    '    </section>',
+    '    <section class="summary-grid">',
+    '      <article class="card"><span class="helper">Submissions</span><strong id="submissionCount">0</strong><span class="helper">Hosted feedback reports submitted from this session.</span></article>',
+    '      <article class="card"><span class="helper">Awaiting Review</span><strong id="awaitingReviewCount">0</strong><span class="helper">Items still gated by operator review.</span></article>',
+    '      <article class="card"><span class="helper">Synced</span><strong id="syncedCount">0</strong><span class="helper">Reports that have reached GitHub.</span></article>',
+    '      <article class="card"><span class="helper">Rejected</span><strong id="rejectedCount">0</strong><span class="helper">Reports rejected during review.</span></article>',
+    '    </section>',
+    '    <section class="layout">',
+    '      <section class="panel">',
+    '        <h2>Submissions</h2>',
+    '        <div id="reports" class="report-list"></div>',
+    '      </section>',
+    '      <aside class="panel">',
+    '        <h2>Access Policy</h2>',
+    '        <div id="policy" class="helper"></div>',
+    '        <div class="pill-list" id="sessionPills"></div>',
+    '        <h2 style="margin-top:16px;">Summary JSON</h2>',
+    '        <pre id="raw"></pre>',
+    '      </aside>',
+    '    </section>',
+    '  </main>',
+    '  <script>',
+    `    const summaryPath = ${JSON.stringify(`/public/projects/${project.projectKey}/dashboard/summary?accessToken=${input.accessToken}`)};`,
+    `    const initialSummary = ${JSON.stringify(input.initialSummary)};`,
+    '    const els = {',
+    '      submissionCount: document.getElementById("submissionCount"),',
+    '      awaitingReviewCount: document.getElementById("awaitingReviewCount"),',
+    '      syncedCount: document.getElementById("syncedCount"),',
+    '      rejectedCount: document.getElementById("rejectedCount"),',
+    '      reports: document.getElementById("reports"),',
+    '      policy: document.getElementById("policy"),',
+    '      sessionPills: document.getElementById("sessionPills"),',
+    '      raw: document.getElementById("raw"),',
+    '      refresh: document.getElementById("refresh")',
+    '    };',
+    '    function escapeHtml(value) {',
+    '      return String(value ?? "").replace(/[&<>"\']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "\'": "&#39;" }[character] || character));',
+    '    }',
+    '    function render(summary) {',
+    '      els.submissionCount.textContent = String(summary.summary.submissionCount);',
+    '      els.awaitingReviewCount.textContent = String(summary.summary.awaitingReviewCount);',
+    '      els.syncedCount.textContent = String(summary.summary.syncedCount);',
+    '      els.rejectedCount.textContent = String(summary.summary.rejectedCount);',
+    '      els.policy.textContent = summary.accessModel.policy;',
+    '      els.sessionPills.innerHTML = "";',
+    '      [',
+    '        `mode:${summary.accessModel.mode}` ,',
+    '        `customer-auth:${summary.accessModel.customerAuth}` ,',
+    '        `session:${summary.session.id}`',
+    '      ].forEach((value) => {',
+    '        const pill = document.createElement("span");',
+    '        pill.className = "pill";',
+    '        pill.textContent = value;',
+    '        els.sessionPills.appendChild(pill);',
+    '      });',
+    '      els.reports.innerHTML = "";',
+    '      if (!summary.items.length) {',
+    '        const empty = document.createElement("div");',
+    '        empty.className = "helper";',
+    '        empty.textContent = "No submissions have been captured for this session yet.";',
+    '        els.reports.appendChild(empty);',
+    '      }',
+    '      summary.items.forEach((item) => {',
+    '        const article = document.createElement("article");',
+    '        article.className = "report-card";',
+    '        const reasons = Array.isArray(item.impact.reasons) ? item.impact.reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("") : "";',
+    '        article.innerHTML = [',
+    '          `<h3>${escapeHtml(item.title || item.reportId)}</h3>`,',
+    '          `<div class="pill-list"><span class="pill">severity:${escapeHtml(item.severity)}</span><span class="pill band-${escapeHtml(item.impact.band)}">impact:${escapeHtml(item.impact.band)} ${escapeHtml(item.impact.score)}</span><span class="pill">review:${escapeHtml(item.review.status)}</span>${item.owner ? `<span class="pill">owner:${escapeHtml(item.owner.label)}</span>` : ""}</div>`,',
+    '          `<div class="meta">${escapeHtml(item.nextStep)} ${item.draft.repository ? ` Repository ${escapeHtml(item.draft.repository)}.` : ""} ${item.pageUrl ? ` Page ${escapeHtml(item.pageUrl)}.` : ""}</div>`,',
+    '          reasons ? `<ul class="reason-list">${reasons}</ul>` : "",',
+    '          item.draft.issueUrl ? `<div class="meta"><a href="${escapeHtml(item.draft.issueUrl)}" target="_blank" rel="noreferrer">Open GitHub issue</a></div>` : ""',
+    '        ].join("");',
+    '        els.reports.appendChild(article);',
+    '      });',
+    '      els.raw.textContent = JSON.stringify(summary, null, 2);',
+    '    }',
+    '    async function refresh() {',
+    '      const response = await fetch(summaryPath);',
+    '      const text = await response.text();',
+    '      if (!response.ok) {',
+    '        throw new Error(`${response.status} ${text}`);',
+    '      }',
+    '      render(JSON.parse(text));',
+    '    }',
+    '    els.refresh.addEventListener("click", () => { refresh().catch((error) => { els.raw.textContent = String(error instanceof Error ? error.message : error); }); });',
+    '    render(initialSummary);',
+    '  </script>',
+    '</body>',
+    '</html>'
+  ].join('\n');
 }
 
 function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string; name: string }, options: { embedded?: boolean; accessToken: string } ): string {
@@ -195,6 +550,11 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '          <h2>Response Preview</h2>',
     '          <pre id="responsePreview">// Accepted response will appear here</pre>',
     '        </article>',
+    '        <article class="card">',
+    '          <h2>Customer Status Dashboard</h2>',
+    '          <p class="helper">The same signed widget session can also open a session-scoped status view with current review state, impact, and ownership hints.</p>',
+    `          <a class="inline-link" href="/public/projects/${projectKey}/dashboard?accessToken=${encodeURIComponent(options.accessToken)}">Open status dashboard</a>`,
+    '        </article>',
     '      </aside>',
     '    </section>',
     '  </main>',
@@ -208,6 +568,7 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '    const responsePreviewEl = document.getElementById("responsePreview");',
     '    const submitButton = document.getElementById("submitButton");',
     '    const closeButton = document.getElementById("closeEmbed");',
+    `    const dashboardPath = ${JSON.stringify(`/public/projects/${project.projectKey}/dashboard?accessToken=${options.accessToken}`)};`,
     '    document.getElementById("projectKeyDisplay").textContent = projectKey;',
     '    document.getElementById("submissionPath").textContent = submissionPath;',
     '    document.getElementById("pageUrl").value = window.location.href;',
@@ -293,7 +654,7 @@ function buildHostedFeedbackWidgetPage(project: { id: string; projectKey: string
     '        }',
     '        responsePreviewEl.textContent = text;',
     '        const parsed = JSON.parse(text);',
-    '        setStatus(`Feedback accepted. Report ${parsed.reportId} is queued for triage and review.`, "success");',
+    '        setStatus(`Feedback accepted. Report ${parsed.reportId} is queued for triage and review. Open the status dashboard to track it.`, "success");',
     '        notifyParent("submitted", parsed);',
     '        form.reset();',
     '        document.getElementById("pageUrl").value = window.location.href;',
@@ -415,6 +776,50 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
     });
   });
 
+  app.get('/public/projects/:projectKey/dashboard/summary', async (request, reply) => {
+    const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    const project = await app.projects.findByKey(projectKey);
+    if (!project || project.status !== 'active') {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const widgetSession = requirePublicWidgetSession(app, request, reply, project);
+    return buildPublicDashboardSummary({
+      app,
+      project,
+      widgetSession
+    });
+  });
+
+  app.get('/public/projects/:projectKey/dashboard', async (request, reply) => {
+    const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    const query = widgetQuerySchema.parse(request.query);
+    const project = await app.projects.findByKey(projectKey);
+    if (!project || project.status !== 'active') {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const widgetSession = requirePublicWidgetSession(app, request, reply, project);
+    const accessToken = query.accessToken ?? (typeof request.headers['x-nexus-widget-token'] === 'string'
+      ? request.headers['x-nexus-widget-token']
+      : null);
+    if (!accessToken) {
+      throw app.httpErrors.unauthorized('missing widget access token');
+    }
+
+    const initialSummary = await buildPublicDashboardSummary({
+      app,
+      project,
+      widgetSession
+    });
+
+    reply.type('text/html; charset=utf-8');
+    return buildHostedFeedbackDashboardPage(project, {
+      accessToken,
+      initialSummary
+    });
+  });
+
   app.post('/public/projects/:projectKey/feedback', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
     const project = await app.projects.findByKey(projectKey);
@@ -527,6 +932,12 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       }
     });
 
+    const dashboardAccessToken = typeof request.headers['x-nexus-widget-token'] === 'string'
+      ? request.headers['x-nexus-widget-token']
+      : typeof (request.query as Record<string, unknown> | undefined)?.accessToken === 'string'
+        ? (request.query as Record<string, unknown>).accessToken as string
+        : null;
+
     return reply.code(202).send({
       accepted: true,
       reportId: ingested.report.id,
@@ -537,7 +948,10 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
         projectKey: project.projectKey,
         name: project.name
       },
-      impactScore
+      impactScore,
+      dashboardUrl: dashboardAccessToken
+        ? `/public/projects/${project.projectKey}/dashboard?accessToken=${encodeURIComponent(dashboardAccessToken)}`
+        : `/public/projects/${project.projectKey}/dashboard`
     });
   });
 }

@@ -46,6 +46,8 @@ Status legend:
 - [x] Add broader operator workflows for repo-connection editing and support-oriented customer operations.
 - [x] Promote the new replay browser-context smoke into regular CI coverage where Playwright browser binaries are available.
 - [x] Time-box and validate the under-60-second customer handoff target end to end.
+- [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
+- [x] Add a session-scoped customer dashboard for hosted feedback status, ownership hints, and prioritization visibility.
 
 ### Blocked
 
@@ -199,7 +201,7 @@ Exit criteria:
 
 - [x] Teams can self-host Nexus and continuously run retained reproductions in shadow mode.
 
-### [-] Phase 9: Customer Onboarding And Repository Connection
+### [x] Phase 9: Customer Onboarding And Repository Connection
 
 Objective: make Nexus easy for external teams to adopt by connecting a GitHub repository through a GitHub App and submitting high-signal feedback through a hosted surface.
 
@@ -213,6 +215,8 @@ Deliverables:
 - [x] Multi-repository project support with active/default repository resolution and strict hosted-feedback task targeting.
 - [x] Operator-facing project operations and onboarding surface for installs, repo scope, widget handoff, and service identity lifecycle.
 - [x] Replay execution now prefers full browser-context restoration with request-context fallback.
+- [x] Session-scoped customer dashboard for hosted feedback visibility using the same signed widget session model.
+- [x] Customer-visible ownership and refined impact hints for hosted feedback prioritization.
 
 Recent Phase 9 progress:
 
@@ -225,6 +229,8 @@ Recent Phase 9 progress:
 - The onboarding console now supports project-key lookup, repo-connection create and edit flows, and support-readiness snapshots that surface public widget paths, review-queue routing, and recent hosted feedback state from one operator page.
 - The new `/learn/support-ops` page gives operators a dedicated long-lived support surface for project-key lookup, live readiness checks, public route verification, and queue follow-up.
 - CI now installs Chromium before running the replay browser-context smoke, and `npm run e2e:customer-handoff` enforces a tighter 30-second total budget with stage-by-stage SLOs for bootstrap, widget readiness, feedback submission, queue visibility, and draft readiness.
+- The hosted feedback public surface now includes `/public/projects/:projectKey/dashboard`, a session-scoped customer dashboard that reuses the signed widget token and exposes submission status, ownership hints, and refined impact bands without broadening access scope.
+- The v1 customer access decision is now explicit: keep signed-session distribution and defer broader customer auth until multi-user customer identity becomes necessary.
 
 Phase 9 architecture snapshot:
 
@@ -255,6 +261,24 @@ Exit criteria:
 - [x] Nexus routes the report to the correct project and repository scope before any GitHub write.
 - [x] Customer-originated issue and PR generation remain review-gated.
 
+### [-] Phase 10: Customer Visibility And Triage Policy
+
+Objective: make hosted feedback legible to customers and operators after submission while turning heuristic ownership and impact into clearer policy.
+
+Deliverables:
+
+- [x] Session-scoped customer dashboard for hosted feedback using the existing signed widget session model.
+- [x] Explicit v1 access decision to keep signed-session distribution and defer broader customer auth.
+- [x] Customer-visible ownership and refined-impact hints surfaced from existing triage services.
+- [ ] Workspace-configurable ownership and prioritization policy beyond heuristic inference.
+- [ ] Durable customer or account views that outlive a single signed widget session.
+
+Exit criteria:
+
+- [x] A customer can inspect the status of submissions from the current hosted-feedback session without seeing unrelated project data.
+- [ ] Ownership and prioritization policy become operator-configurable and auditable.
+- [ ] Broader customer identity or account access is only introduced when session-scoped access is no longer sufficient.
+
 ## Current Sprint
 
 Current focus has moved beyond the original foundation sprint. The initial sprint items are complete:
@@ -267,14 +291,12 @@ Current focus has moved beyond the original foundation sprint. The initial sprin
 
 Current execution emphasis:
 
-1. [x] Broaden operator support workflows and repo-connection administration beyond the current onboarding console.
-2. [x] Promote the replay browser-context smoke into CI environments with browser binaries.
-3. [x] Time-box and validate the hosted customer handoff against the under-60-second onboarding target.
-4. [x] Define the initial workspace, project, and repository-connection schema.
-5. [x] Ship internal onboarding endpoints plus the first public project feedback intake route.
-6. [x] Continue runtime GitHub App resolution and project-scoped review flow.
-7. [x] Harden report review operations so hosted feedback cannot auto-open issues or spawn agent tasks before approval.
-8. [x] Add a project-hosted widget plus embed surface, stronger operator review controls, and CI smoke coverage for hosted-feedback review decisions.
+1. [x] Mark Phase 9 complete and shift the active workstream toward customer visibility after submission.
+2. [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
+3. [x] Add a session-scoped customer dashboard that surfaces current hosted-feedback status.
+4. [x] Expose ownership and refined impact hints in the customer-facing dashboard.
+5. [ ] Turn ownership and prioritization from heuristics into workspace-configurable policy.
+6. [ ] Expand customer visibility from single-session dashboards into durable customer or account views only if the access model demands it.
 
 ## Open Questions
 
@@ -285,8 +307,8 @@ These do not block initial scaffolding, but they do affect later architecture:
 3. Does the browser extension need Chrome-only support at first, or Chromium plus Firefox?
 4. Should the first reproduction spike target a web frontend with stable staging auth, or a synthetic demo app?
 5. Should Phase 9 start with one repository per project, or support multiple repositories from the first slice?
-6. What is the smallest operator review surface that is sufficient before building a broader customer-facing dashboard?
-7. The first hosted-widget access model is now signed sessions; the next decision is whether to evolve that into customer auth or keep session-based distribution for v1.
+6. When does the session-scoped customer dashboard stop being sufficient and require durable customer or account access?
+7. What operator-configurable ownership and prioritization rules should outrank the current heuristic inference model?
 
 ## Success Metrics
 
@@ -300,3 +322,4 @@ These do not block initial scaffolding, but they do affect later architecture:
 - [x] Operator review is now exercised by `e2e:hosted-feedback-review`, with queue assignment actions, and stronger review surfaces are available at `/learn/review-queue`, `/learn/onboarding`, and `/learn/support-ops`.
 - [x] New customer repository connection can now start from a GitHub App install link and callback, with broader operator-facing onboarding and support workflows available in the learn surfaces.
 - [x] Customer feedback submission completed in under 60 seconds through the hosted intake surface, with `npm run e2e:customer-handoff` currently enforcing a stricter 30-second total budget plus stage SLOs.
+- [x] Customers can now inspect session-scoped hosted-feedback status through `/public/projects/:projectKey/dashboard`, including current review state, refined impact, and ownership hints.

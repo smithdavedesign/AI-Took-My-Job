@@ -42,6 +42,25 @@ interface WidgetSessionResponse {
 
 interface PublicFeedbackResponse {
   reportId: string;
+  dashboardUrl?: string;
+}
+
+interface PublicDashboardSummaryResponse {
+  accessModel: {
+    mode: string;
+    customerAuth: string;
+  };
+  summary: {
+    submissionCount: number;
+  };
+  items: Array<{
+    reportId: string;
+    impact: {
+      band: string;
+      score: number;
+    };
+    nextStep: string;
+  }>;
 }
 
 interface ReviewQueueResponse {
@@ -248,6 +267,7 @@ async function main(): Promise<void> {
 
   await assertHtmlPage(normalizeLocalUrl(widgetSession.widgetUrl, baseUrl));
   await assertJavaScriptPage(normalizeLocalUrl(widgetSession.embedScriptUrl, baseUrl));
+  await assertHtmlPage(`${baseUrl}/public/projects/${project.projectKey}/dashboard?accessToken=${encodeURIComponent(widgetSession.accessToken)}`);
   const widgetReadyAt = Date.now();
   assertBudget('Customer handoff widget readiness', widgetReadyAt - startedAt, widgetReadyBudgetMs);
 
@@ -277,6 +297,14 @@ async function main(): Promise<void> {
   });
   const feedbackSubmittedAt = Date.now();
   assertBudget('Customer handoff feedback submission', feedbackSubmittedAt - startedAt, feedbackSubmitBudgetMs);
+
+  const dashboardSummary = await requestJson<PublicDashboardSummaryResponse>(
+    `${baseUrl}/public/projects/${project.projectKey}/dashboard/summary?accessToken=${encodeURIComponent(widgetSession.accessToken)}`
+  );
+  assert(dashboardSummary.accessModel.mode === 'signed-widget-session', 'Dashboard summary did not advertise signed session access');
+  assert(dashboardSummary.accessModel.customerAuth === 'deferred', 'Dashboard summary did not preserve deferred customer auth policy');
+  assert(dashboardSummary.summary.submissionCount >= 1, 'Dashboard summary did not include the submitted feedback');
+  assert(dashboardSummary.items.some((item) => item.reportId === feedback.reportId), 'Dashboard summary did not include the submitted report');
 
   const queueResult = await poll(
     () => requestJson<ReviewQueueResponse>(`${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&limit=20`, {
@@ -324,6 +352,7 @@ async function main(): Promise<void> {
     reportId: feedback.reportId,
     supportReadiness: operationsAfterFeedback.support?.readiness ?? null,
     draftState: draft?.draft?.state ?? draft?.state ?? null,
+    dashboardAccessMode: dashboardSummary.accessModel.mode,
     totalMs,
     budgetMs,
     budgets: {
