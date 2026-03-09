@@ -291,7 +291,7 @@ Deliverables:
 - [x] Rewrite onboarding around a single five-step narrative: Pilot, Connect, Launch, Operate, Promote.
 - [x] Split the runtime learn surfaces into dedicated page-builder modules so onboarding, review, and support copy can evolve independently.
 - [x] Add a step-aware learn landing page that makes the runtime surfaces feel like one guided workflow.
-- [ ] Add self-serve checklist state so operators can see rollout progress without maintaining an external runbook.
+- [x] Add self-serve checklist state so operators can see rollout progress without maintaining an external runbook.
 - [ ] Add operator-facing readiness and promotion guardrails that are consistent across onboarding, review, and support surfaces.
 
 Exit criteria:
@@ -316,7 +316,7 @@ Current execution emphasis:
 2. [x] Rewrite onboarding and rollout guidance around Pilot, Connect, Launch, Operate, and Promote.
 3. [x] Break the runtime learn surfaces into dedicated modules so each stage can evolve cleanly.
 4. [x] Add a guided runtime learn landing page that ties onboarding, review, and support into one sequence.
-5. [ ] Add step-aware rollout state and readiness guidance for operators.
+5. [x] Add step-aware rollout state and readiness guidance for operators.
 6. [ ] Keep customer visibility, policy, and promotion guardrails aligned with the new self-serve story.
 
 ## Open Questions
