@@ -31,6 +31,22 @@ CREATE TABLE IF NOT EXISTS workspace_triage_policies (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS customer_portal_grants (
+  id UUID PRIMARY KEY,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  customer_email TEXT NOT NULL,
+  customer_name TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  revoked_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS customer_portal_grants_project_email_idx
+  ON customer_portal_grants (project_id, customer_email, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS github_installations (
   id UUID PRIMARY KEY,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

@@ -45,13 +45,13 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Internal onboarding routes can now create workspaces, projects, repository connections, signed hosted-widget sessions, and GitHub App install links that land on a callback-backed installation sync flow.
 - Runtime GitHub resolution is now project-aware for issue drafting, promotion, merge, and repository checkout.
 - Project-scoped GitHub resolution now supports multiple active repo connections, explicit default reassignment, and strict hosted-feedback repository approval before downstream agent tasks can target GitHub.
-- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget`, an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`, and a session-scoped customer dashboard at `/public/projects/:projectKey/dashboard`, all gated by short-lived signed widget sessions.
+- Public project feedback intake is now live at `/public/projects/:projectKey/feedback`, with both a project-hosted widget page at `/public/projects/:projectKey/widget`, an embeddable bootstrap script at `/public/projects/:projectKey/embed.js`, a session-scoped customer dashboard at `/public/projects/:projectKey/dashboard`, and a durable customer portal at `/public/projects/:projectKey/customer-portal` backed by project/customer-scoped grants.
 - Hosted-feedback triage now stops at a persisted review queue, and GitHub issue creation requires an explicit internal approval step.
 - The operator review console at `/learn/review-queue` now supports project rollups, queue search, assignee filters, server-side sorting, pagination, bulk assignment, bulk approve/reject actions, queue aging metrics, review activity history, full context loading, and single-report approve/reject actions.
 - Workspace triage policy is now persisted per workspace, editable through `/internal/workspaces/:workspaceId/triage-policy`, and applied to ownership plus refined-impact scoring across worker triage, the review queue, and the public dashboard.
 - The onboarding console at `/learn/onboarding` now exposes project-key lookup, repo-connection create and update controls, workspace triage policy editing, project support-readiness snapshots, widget handoff links, and service-identity list, create, rotate, and revoke controls.
 - The dedicated support console at `/learn/support-ops` now resolves projects by key, loads the live support-readiness snapshot, exposes public widget and feedback routes, and links operators directly into review and onboarding follow-up paths.
-- Signed widget sessions remain the v1 customer access model, and the new public dashboard surfaces session-scoped submission status, ownership hints, and refined impact bands without exposing full project-internal data.
+- Signed widget sessions remain the v1 hosted-intake access model, and operators can now issue durable customer portal grants that keep project/customer-scoped status visibility alive after the original widget session expires.
 - Durable service identities now support explicit lifecycle management through internal routes instead of startup-only env seeding.
 - The customer handoff path is now measured by a dedicated `npm run e2e:customer-handoff` smoke that validates project setup, widget minting, hosted feedback intake, review-queue visibility, and draft readiness against a stricter 30-second total budget plus stage-by-stage SLO thresholds.
 - The replay browser-context smoke is now wired for CI environments that install Chromium before running `npm run e2e:replay-browser-context`.
@@ -68,7 +68,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Phase 7: complete
 - Phase 8: complete
 - Phase 9: complete
-- Phase 10: partial
+- Phase 10: complete
 
 ## How It Works
 
@@ -210,6 +210,8 @@ sequenceDiagram
 - `GET /public/projects/:projectKey/widget`
 - `GET /public/projects/:projectKey/dashboard`
 - `GET /public/projects/:projectKey/dashboard/summary`
+- `GET /public/projects/:projectKey/customer-portal`
+- `GET /public/projects/:projectKey/customer-portal/summary`
 - `POST /public/projects/:projectKey/feedback`
 - `GET /github/app/install/callback`
 
@@ -232,6 +234,9 @@ sequenceDiagram
 - `PATCH /internal/repo-connections/:repoConnectionId`
 - `GET /internal/projects/:projectId/repo-connections`
 - `POST /internal/projects/:projectId/widget-session`
+- `GET /internal/projects/:projectId/customer-portal-grants`
+- `POST /internal/projects/:projectId/customer-portal-grants`
+- `POST /internal/projects/:projectId/customer-portal-grants/:customerPortalGrantId/revoke`
 - `GET /internal/service-identity/self`
 - `GET /internal/service-identities`
 - `POST /internal/service-identities`

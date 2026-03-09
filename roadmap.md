@@ -261,7 +261,7 @@ Exit criteria:
 - [x] Nexus routes the report to the correct project and repository scope before any GitHub write.
 - [x] Customer-originated issue and PR generation remain review-gated.
 
-### [-] Phase 10: Customer Visibility And Triage Policy
+### [x] Phase 10: Customer Visibility And Triage Policy
 
 Objective: make hosted feedback legible to customers and operators after submission while turning heuristic ownership and impact into clearer policy.
 
@@ -271,13 +271,13 @@ Deliverables:
 - [x] Explicit v1 access decision to keep signed-session distribution and defer broader customer auth.
 - [x] Customer-visible ownership and refined-impact hints surfaced from existing triage services.
 - [x] Workspace-configurable ownership and prioritization policy beyond heuristic inference.
-- [ ] Durable customer or account views that outlive a single signed widget session.
+- [x] Durable customer or account views that outlive a single signed widget session.
 
 Exit criteria:
 
 - [x] A customer can inspect the status of submissions from the current hosted-feedback session without seeing unrelated project data.
 - [x] Ownership and prioritization policy become operator-configurable and auditable.
-- [ ] Broader customer identity or account access is only introduced when session-scoped access is no longer sufficient.
+- [x] Project/customer-scoped durable portal grants now extend visibility beyond a single widget session without exposing unrelated project data.
 
 ## Current Sprint
 
@@ -296,14 +296,14 @@ Current execution emphasis:
 3. [x] Add a session-scoped customer dashboard that surfaces current hosted-feedback status.
 4. [x] Expose ownership and refined impact hints in the customer-facing dashboard.
 5. [x] Turn ownership and prioritization from heuristics into workspace-configurable policy.
-6. [ ] Expand customer visibility from single-session dashboards into durable customer or account views only if the access model demands it.
+6. [x] Expand customer visibility from single-session dashboards into durable customer or account views when the access model demands it.
 
 ## Open Questions
 
 These do not block initial scaffolding, but they do affect later architecture:
 
 1. GitHub auth model for v1 has been answered as both PAT-backed service and GitHub App support.
-2. Observability ingestion now supports Sentry, Datadog, and New Relic; the remaining Phase 10 question is when durable customer identity should replace signed-session dashboard access.
+2. Observability ingestion now supports Sentry, Datadog, and New Relic; durable customer visibility is now handled through project/customer-scoped portal grants while broader account identity remains deferred.
 3. Does the browser extension need Chrome-only support at first, or Chromium plus Firefox?
 4. Should the first reproduction spike target a web frontend with stable staging auth, or a synthetic demo app?
 5. Should Phase 9 start with one repository per project, or support multiple repositories from the first slice?

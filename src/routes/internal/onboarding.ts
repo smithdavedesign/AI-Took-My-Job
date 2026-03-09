@@ -8,6 +8,7 @@ import {
   getGitHubAppInstallationDetails,
   listGitHubInstallationRepositories
 } from '../../integrations/github/client.js';
+import { createPublicCustomerPortalAccessToken, normalizeCustomerPortalEmail } from '../../support/public-customer-portal-access.js';
 import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 import { createGitHubAppInstallState, verifyGitHubAppInstallState } from '../../support/github-app-install-state.js';
 import { createPublicWidgetSessionToken } from '../../support/public-widget-access.js';
@@ -31,6 +32,10 @@ const projectKeyParamsSchema = z.object({
 
 const repoConnectionIdParamsSchema = z.object({
   repoConnectionId: z.string().uuid()
+});
+
+const customerPortalGrantIdParamsSchema = z.object({
+  customerPortalGrantId: z.string().uuid()
 });
 
 const widgetSessionSchema = z.object({
@@ -131,6 +136,13 @@ const workspaceTriagePolicySchema = z.object({
   priorityRules: z.array(priorityRuleSchema).max(50).default([])
 });
 
+const customerPortalGrantCreateSchema = z.object({
+  customerEmail: z.email(),
+  customerName: z.string().min(1).max(120).optional(),
+  ttlDays: z.coerce.number().int().min(1).max(365).optional(),
+  notes: z.string().min(1).max(1000).optional()
+});
+
 function slugify(value: string): string {
   return value
     .trim()
@@ -158,11 +170,25 @@ function buildProjectPublicUrls(baseUrl: string, projectKey: string): {
   widgetBaseUrl: string;
   embedScriptBaseUrl: string;
   feedbackUrl: string;
+  customerPortalBaseUrl: string;
 } {
   return {
     widgetBaseUrl: new URL(`/public/projects/${projectKey}/widget`, baseUrl).toString(),
     embedScriptBaseUrl: new URL(`/public/projects/${projectKey}/embed.js`, baseUrl).toString(),
-    feedbackUrl: new URL(`/public/projects/${projectKey}/feedback`, baseUrl).toString()
+    feedbackUrl: new URL(`/public/projects/${projectKey}/feedback`, baseUrl).toString(),
+    customerPortalBaseUrl: new URL(`/public/projects/${projectKey}/customer-portal`, baseUrl).toString()
+  };
+}
+
+function summarizeCustomerPortalGrant(grant: Awaited<ReturnType<FastifyInstance['customerPortalGrants']['findById']>>): Record<string, unknown> {
+  return {
+    id: grant?.id ?? null,
+    customerEmail: grant?.customerEmail ?? null,
+    customerName: grant?.customerName ?? null,
+    status: grant?.status ?? null,
+    expiresAt: grant?.expiresAt ?? null,
+    revokedAt: grant?.revokedAt ?? null,
+    updatedAt: grant?.updatedAt ?? null
   };
 }
 
@@ -587,6 +613,127 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     return project;
   });
 
+  app.get('/internal/projects/:projectId/customer-portal-grants', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+    const { projectId } = projectIdParamsSchema.parse(request.params);
+    const project = await app.projects.findById(projectId);
+    if (!project) {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const grants = await app.customerPortalGrants.listByProjectId(project.id);
+    return {
+      project,
+      grants: grants.map((grant) => summarizeCustomerPortalGrant(grant))
+    };
+  });
+
+  app.post('/internal/projects/:projectId/customer-portal-grants', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { projectId } = projectIdParamsSchema.parse(request.params);
+    const payload = customerPortalGrantCreateSchema.parse(request.body ?? {});
+    const project = await app.projects.findById(projectId);
+    if (!project) {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const customerEmail = normalizeCustomerPortalEmail(payload.customerEmail);
+    const baseUrl = getBaseUrl(app, request);
+    const existingGrant = await app.customerPortalGrants.findActiveByProjectIdAndEmail(project.id, customerEmail);
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * (payload.ttlDays ?? 30)).toISOString();
+    const grant = existingGrant ?? await app.customerPortalGrants.create({
+      id: randomUUID(),
+      projectId: project.id,
+      customerEmail,
+      ...(payload.customerName ? { customerName: payload.customerName } : {}),
+      status: 'active',
+      metadata: {
+        createdBy: principal.id,
+        ...(payload.notes ? { notes: payload.notes } : {})
+      },
+      expiresAt
+    });
+    const tokenExpiresAt = grant.expiresAt ?? expiresAt;
+    const { token, claims } = createPublicCustomerPortalAccessToken(app.config, {
+      grantId: grant.id,
+      projectId: project.id,
+      projectKey: project.projectKey,
+      customerEmail: grant.customerEmail,
+      expiresAt: tokenExpiresAt
+    });
+    const customerPortalUrl = new URL(`/public/projects/${project.projectKey}/customer-portal`, baseUrl);
+    customerPortalUrl.searchParams.set('accessToken', token);
+
+    if (!existingGrant) {
+      await app.audit.write({
+        eventType: 'project.customer_portal_grant_created',
+        actorType: 'service',
+        actorId: principal.id,
+        requestId: request.id,
+        payload: {
+          projectId: project.id,
+          customerPortalGrantId: grant.id,
+          customerEmail: grant.customerEmail,
+          expiresAt: tokenExpiresAt
+        }
+      });
+    }
+
+    return {
+      project: {
+        id: project.id,
+        projectKey: project.projectKey,
+        name: project.name
+      },
+      grant: summarizeCustomerPortalGrant(grant),
+      accessToken: token,
+      tokenClaims: claims,
+      customerPortalUrl: customerPortalUrl.toString(),
+      feedbackAuthHeader: 'x-nexus-customer-portal-token'
+    };
+  });
+
+  app.post('/internal/projects/:projectId/customer-portal-grants/:customerPortalGrantId/revoke', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { projectId, customerPortalGrantId } = z.object({
+      projectId: z.string().uuid(),
+      customerPortalGrantId: z.string().uuid()
+    }).parse(request.params);
+    const project = await app.projects.findById(projectId);
+    if (!project) {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const grant = await app.customerPortalGrants.findById(customerPortalGrantId);
+    if (!grant || grant.projectId !== project.id) {
+      throw app.httpErrors.notFound('customer portal grant not found');
+    }
+
+    const revoked = grant.status === 'revoked'
+      ? grant
+      : await app.customerPortalGrants.revoke(grant.id);
+    if (!revoked) {
+      throw app.httpErrors.notFound('customer portal grant not found');
+    }
+
+    await app.audit.write({
+      eventType: 'project.customer_portal_grant_revoked',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        projectId: project.id,
+        customerPortalGrantId: revoked.id,
+        customerEmail: revoked.customerEmail
+      }
+    });
+
+    return {
+      project,
+      grant: summarizeCustomerPortalGrant(revoked)
+    };
+  });
+
   app.get('/internal/projects/:projectId/operations', async (request) => {
     requireInternalServiceAuth(app, request, ['internal:read']);
     const { projectId } = projectIdParamsSchema.parse(request.params);
@@ -624,6 +771,8 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     })));
     const reviewByReportId = new Map(reviewRecords.map((entry) => [entry.reportId, entry.review]));
     const triagePolicy = await app.workspaceTriagePolicies.findByWorkspaceId(workspace.id);
+    const customerPortalGrants = await app.customerPortalGrants.listByProjectId(project.id);
+    const activeCustomerPortalGrants = customerPortalGrants.filter((grant) => grant.status === 'active');
     const linkedInstallationIds = new Set(repoScope.activeConnections.flatMap((connection) => connection.githubInstallationId ? [connection.githubInstallationId] : []));
     const supportIssues: string[] = [];
     if (repoScope.activeConnections.length === 0) {
@@ -631,6 +780,9 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     }
     if (repoScope.activeConnections.length > 1 && !repoScope.defaultConnection) {
       supportIssues.push('Multiple active repositories exist without a default connection.');
+    }
+    if (activeCustomerPortalGrants.length === 0) {
+      supportIssues.push('No durable customer portal grant has been issued for this project yet.');
     }
     const baseUrl = getBaseUrl(app, request);
     const publicUrls = buildProjectPublicUrls(baseUrl, project.projectKey);
@@ -664,6 +816,11 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       triagePolicy: {
         ...summarizeWorkspaceTriagePolicy(triagePolicy),
         policy: triagePolicy
+      },
+      customerPortal: {
+        totalGrants: customerPortalGrants.length,
+        activeGrantCount: activeCustomerPortalGrants.length,
+        grants: customerPortalGrants.slice(0, 10).map((grant) => summarizeCustomerPortalGrant(grant))
       },
       reports: {
         total: recentReports.length,
@@ -699,14 +856,16 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
           linkedInstallationCount: linkedInstallationIds.size,
           hasTriagePolicy: Boolean(triagePolicy),
           hasOwnershipRules: (triagePolicy?.ownershipRules.length ?? 0) > 0,
-          hasPriorityRules: (triagePolicy?.priorityRules.length ?? 0) > 0
+          hasPriorityRules: (triagePolicy?.priorityRules.length ?? 0) > 0,
+          hasCustomerPortalGrant: activeCustomerPortalGrants.length > 0
         },
         publicUrls,
         reviewQueueUrl: new URL(`/learn/review-queue?projectId=${project.id}`, baseUrl).toString(),
         onboardingUrl: new URL('/learn/onboarding', baseUrl).toString(),
         supportOpsUrl: new URL(`/learn/support-ops?projectId=${project.id}&projectKey=${project.projectKey}`, baseUrl).toString(),
         recentHostedFeedback: hostedFeedbackRecent,
-        triagePolicySummary: summarizeWorkspaceTriagePolicy(triagePolicy)
+        triagePolicySummary: summarizeWorkspaceTriagePolicy(triagePolicy),
+        customerPortalGrantCount: activeCustomerPortalGrants.length
       }
     };
   });

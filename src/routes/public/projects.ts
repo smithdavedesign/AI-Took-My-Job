@@ -15,6 +15,11 @@ import { resolveOwnershipCandidates } from '../../services/reports/ownership-can
 import { resolveRefinedImpactAssessment } from '../../services/reports/report-impact.js';
 import { ingestFeedbackReport } from '../../services/reports/report-ingestion.js';
 import { resolveWorkspaceTriagePolicyForReport } from '../../services/reports/triage-policy.js';
+import {
+  createPublicCustomerPortalAccessToken,
+  normalizeCustomerPortalEmail,
+  requirePublicCustomerPortalToken
+} from '../../support/public-customer-portal-access.js';
 import { requirePublicWidgetSession } from '../../support/public-widget-access.js';
 import type { PublicWidgetSessionClaims } from '../../support/public-widget-access.js';
 
@@ -80,10 +85,16 @@ interface PublicDashboardSummary {
     mode: 'widget' | 'embed';
     expiresAt: string;
     origin: string | null;
-  };
+  } | null;
+  customer: {
+    grantId: string;
+    email: string;
+    name: string | null;
+    expiresAt: string | null;
+  } | null;
   accessModel: {
-    mode: 'signed-widget-session';
-    customerAuth: 'deferred';
+    mode: 'signed-widget-session' | 'customer-portal-grant';
+    customerAuth: 'deferred' | 'project-customer-grant';
     policy: string;
   };
   triagePolicy: {
@@ -142,6 +153,15 @@ function readWidgetSessionId(payload: Record<string, unknown>): string | null {
 function readStringField(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function normalizeReporterIdentifier(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = normalizeCustomerPortalEmail(value);
+  return normalized.length > 0 ? normalized : null;
 }
 
 function describePublicNextStep(input: {
@@ -272,6 +292,7 @@ async function buildPublicDashboardSummary(input: {
       expiresAt: input.widgetSession.expiresAt,
       origin: input.widgetSession.origin ?? null
     },
+    customer: null,
     accessModel: {
       mode: 'signed-widget-session',
       customerAuth: 'deferred',
@@ -293,7 +314,134 @@ async function buildPublicDashboardSummary(input: {
   };
 }
 
-function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: string }, input: { accessToken: string; initialSummary: PublicDashboardSummary }): string {
+async function buildCustomerPortalSummary(input: {
+  app: FastifyInstance;
+  project: { id: string; workspaceId: string; projectKey: string; name: string };
+  grant: { id: string; customerEmail: string; customerName?: string; expiresAt?: string };
+}): Promise<PublicDashboardSummary> {
+  const recentReports = await input.app.reports.listRecent(200);
+  const workspaceTriagePolicy = await input.app.workspaceTriagePolicies.findByWorkspaceId(input.project.workspaceId);
+  const visibleReports = recentReports
+    .filter((report) => report.projectId === input.project.id
+      && report.source === 'hosted-feedback'
+      && normalizeReporterIdentifier(report.reporterIdentifier) === input.grant.customerEmail)
+    .slice(0, 25);
+
+  const items = await Promise.all(visibleReports.map(async (report) => {
+    const [embedding, draft, review] = await Promise.all([
+      input.app.reportEmbeddings.findByReportId(report.id),
+      input.app.githubIssueLinks.findByReportId(report.id),
+      input.app.reportReviews.findByReportId(report.id)
+    ]);
+    const triagePolicy = await resolveWorkspaceTriagePolicyForReport({
+      report,
+      projects: input.app.projects,
+      workspaceTriagePolicies: input.app.workspaceTriagePolicies
+    });
+
+    const [ownership, impact] = await Promise.all([
+      resolveOwnershipCandidates({
+        report,
+        ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => input.app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => input.app.reports.findById(neighborReportId)
+        } : {})
+      }),
+      resolveRefinedImpactAssessment({
+        report,
+        ...(draft?.repository ? { repository: draft.repository } : {}),
+        ...(triagePolicy ? { policy: triagePolicy } : {}),
+        ...(embedding ? {
+          embedding: embedding.embedding,
+          loadNearestNeighbors: (vector, limit) => input.app.reportEmbeddings.findNearestNeighbors(vector, limit),
+          loadReportById: (neighborReportId) => input.app.reports.findById(neighborReportId)
+        } : {}),
+        loadIssueLinkByReportId: (linkedReportId) => input.app.githubIssueLinks.findByReportId(linkedReportId),
+        loadTasksByReportId: (linkedReportId) => input.app.agentTasks.findByReportId(linkedReportId),
+        loadExecutionsByTaskId: (agentTaskId) => input.app.agentTaskExecutions.findByTaskId(agentTaskId),
+        loadPullRequestByExecutionId: (executionId) => input.app.agentTaskExecutionPullRequests.findByExecutionId(executionId)
+      })
+    ]);
+
+    const topOwner = ownership.candidates[0] ?? null;
+    const pageUrl = readStringField(report.payload, 'pageUrl');
+    const reviewStatus = review?.status ?? 'pending';
+    const draftState = draft?.state ?? null;
+    const issueUrl = draft?.issueUrl ?? null;
+
+    return {
+      reportId: report.id,
+      title: report.title ?? null,
+      severity: report.severity,
+      reportStatus: report.status,
+      createdAt: report.createdAt ?? null,
+      updatedAt: report.updatedAt ?? null,
+      pageUrl,
+      impact: {
+        score: impact.score,
+        band: impact.band,
+        reasons: impact.reasons.slice(0, 2)
+      },
+      owner: topOwner ? {
+        label: topOwner.label,
+        score: topOwner.score,
+        kind: topOwner.kind
+      } : null,
+      review: {
+        status: reviewStatus,
+        reviewedAt: review?.reviewedAt ?? null
+      },
+      draft: {
+        state: draftState,
+        repository: draft?.repository ?? null,
+        issueUrl
+      },
+      nextStep: describePublicNextStep({
+        draftState,
+        reviewStatus,
+        issueUrl
+      })
+    };
+  }));
+
+  return {
+    project: {
+      id: input.project.id,
+      projectKey: input.project.projectKey,
+      name: input.project.name
+    },
+    session: null,
+    customer: {
+      grantId: input.grant.id,
+      email: input.grant.customerEmail,
+      name: input.grant.customerName ?? null,
+      expiresAt: input.grant.expiresAt ?? null
+    },
+    accessModel: {
+      mode: 'customer-portal-grant',
+      customerAuth: 'project-customer-grant',
+      policy: 'This customer portal link is project-scoped and customer-scoped. It shows hosted feedback submitted under the granted customer identity, even after the original widget session has expired.'
+    },
+    triagePolicy: {
+      configured: Boolean(workspaceTriagePolicy),
+      ownershipRuleCount: workspaceTriagePolicy?.ownershipRules.length ?? 0,
+      priorityRuleCount: workspaceTriagePolicy?.priorityRules.length ?? 0,
+      updatedAt: workspaceTriagePolicy?.updatedAt ?? null
+    },
+    summary: {
+      submissionCount: items.length,
+      awaitingReviewCount: items.filter((item) => item.review.status === 'pending').length,
+      syncedCount: items.filter((item) => item.draft.state === 'synced').length,
+      rejectedCount: items.filter((item) => item.review.status === 'rejected' || item.draft.state === 'rejected').length
+    },
+    items
+  };
+}
+
+function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: string }, input: { accessToken: string; initialSummary: PublicDashboardSummary; summaryPath: string }): string {
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
@@ -343,14 +491,14 @@ function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: s
     '    <section class="hero">',
     '      <span class="eyebrow">Customer Status Dashboard</span>',
     `      <h1>${escapeHtml(project.name)} feedback is tracked here.</h1>`,
-    '      <p>This dashboard is scoped to the current signed widget session. It shows only the submissions made through this session, the current human-review state, and the same ownership and impact hints operators use for prioritization.</p>',
+    '      <p id="scopeCopy">This status view follows the access scope behind this link. It shows current human-review state along with the same ownership and impact hints operators use for prioritization.</p>',
     '      <div class="toolbar">',
     '        <button id="refresh" class="primary" type="button">Refresh Status</button>',
     `        <a class="button secondary" href="/public/projects/${escapeHtml(project.projectKey)}/widget?accessToken=${encodeURIComponent(input.accessToken)}">Open Feedback Form</a>`,
     '      </div>',
     '    </section>',
     '    <section class="summary-grid">',
-    '      <article class="card"><span class="helper">Submissions</span><strong id="submissionCount">0</strong><span class="helper">Hosted feedback reports submitted from this session.</span></article>',
+    '      <article class="card"><span class="helper">Submissions</span><strong id="submissionCount">0</strong><span id="submissionScopeNote" class="helper">Hosted feedback reports visible from this access scope.</span></article>',
     '      <article class="card"><span class="helper">Awaiting Review</span><strong id="awaitingReviewCount">0</strong><span class="helper">Items still gated by operator review.</span></article>',
     '      <article class="card"><span class="helper">Synced</span><strong id="syncedCount">0</strong><span class="helper">Reports that have reached GitHub.</span></article>',
     '      <article class="card"><span class="helper">Rejected</span><strong id="rejectedCount">0</strong><span class="helper">Reports rejected during review.</span></article>',
@@ -370,7 +518,7 @@ function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: s
     '    </section>',
     '  </main>',
     '  <script>',
-    `    const summaryPath = ${JSON.stringify(`/public/projects/${project.projectKey}/dashboard/summary?accessToken=${input.accessToken}`)};`,
+    `    const summaryPath = ${JSON.stringify(input.summaryPath)};`,
     `    const initialSummary = ${JSON.stringify(input.initialSummary)};`,
     '    const els = {',
     '      submissionCount: document.getElementById("submissionCount"),',
@@ -379,6 +527,8 @@ function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: s
     '      rejectedCount: document.getElementById("rejectedCount"),',
     '      reports: document.getElementById("reports"),',
     '      policy: document.getElementById("policy"),',
+      '      scopeCopy: document.getElementById("scopeCopy"),',
+      '      submissionScopeNote: document.getElementById("submissionScopeNote"),',
     '      sessionPills: document.getElementById("sessionPills"),',
     '      raw: document.getElementById("raw"),',
     '      refresh: document.getElementById("refresh")',
@@ -392,12 +542,16 @@ function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: s
     '      els.syncedCount.textContent = String(summary.summary.syncedCount);',
     '      els.rejectedCount.textContent = String(summary.summary.rejectedCount);',
     '      els.policy.textContent = summary.accessModel.policy;',
+    '      els.scopeCopy.textContent = summary.accessModel.mode === "customer-portal-grant" ? "This dashboard is scoped to the granted customer identity for this project. It stays useful after the original widget session ends and shows hosted feedback tied to that customer." : "This dashboard is scoped to the current signed widget session. It shows only the submissions made through this session, the current human-review state, and the same ownership and impact hints operators use for prioritization.";',
+    '      els.submissionScopeNote.textContent = summary.accessModel.mode === "customer-portal-grant" ? "Hosted feedback reports visible to this customer portal grant." : "Hosted feedback reports submitted from this session.";',
     '      els.sessionPills.innerHTML = "";',
     '      [',
     '        `mode:${summary.accessModel.mode}` ,',
     '        `customer-auth:${summary.accessModel.customerAuth}` ,',
-    '        `session:${summary.session.id}`',
+    '        summary.session ? `session:${summary.session.id}` : null,',
+    '        summary.customer ? `customer:${summary.customer.email}` : null',
     '      ].forEach((value) => {',
+    '        if (!value) { return; }',
     '        const pill = document.createElement("span");',
     '        pill.className = "pill";',
     '        pill.textContent = value;',
@@ -407,7 +561,7 @@ function buildHostedFeedbackDashboardPage(project: { projectKey: string; name: s
     '      if (!summary.items.length) {',
     '        const empty = document.createElement("div");',
     '        empty.className = "helper";',
-    '        empty.textContent = "No submissions have been captured for this session yet.";',
+    '        empty.textContent = summary.accessModel.mode === "customer-portal-grant" ? "No submissions are visible for this customer portal grant yet." : "No submissions have been captured for this session yet.";',
     '        els.reports.appendChild(empty);',
     '      }',
     '      summary.items.forEach((item) => {',
@@ -837,7 +991,71 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
     reply.type('text/html; charset=utf-8');
     return buildHostedFeedbackDashboardPage(project, {
       accessToken,
-      initialSummary
+      initialSummary,
+      summaryPath: `/public/projects/${project.projectKey}/dashboard/summary?accessToken=${encodeURIComponent(accessToken)}`
+    });
+  });
+
+  app.get('/public/projects/:projectKey/customer-portal/summary', async (request, reply) => {
+    const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    const project = await app.projects.findByKey(projectKey);
+    if (!project || project.status !== 'active') {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const claims = requirePublicCustomerPortalToken(app, request, reply, project);
+    const grant = await app.customerPortalGrants.findById(claims.grantId);
+    if (!grant || grant.projectId !== project.id || grant.status !== 'active') {
+      throw app.httpErrors.forbidden('customer portal grant is not active');
+    }
+
+    if (grant.customerEmail !== claims.customerEmail) {
+      throw app.httpErrors.forbidden('customer portal token email mismatch');
+    }
+
+    if (grant.expiresAt && Date.parse(grant.expiresAt) <= Date.now()) {
+      throw app.httpErrors.forbidden('customer portal grant expired');
+    }
+
+    return buildCustomerPortalSummary({
+      app,
+      project,
+      grant
+    });
+  });
+
+  app.get('/public/projects/:projectKey/customer-portal', async (request, reply) => {
+    const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    const query = widgetQuerySchema.parse(request.query);
+    const project = await app.projects.findByKey(projectKey);
+    if (!project || project.status !== 'active') {
+      throw app.httpErrors.notFound('project not found');
+    }
+
+    const claims = requirePublicCustomerPortalToken(app, request, reply, project);
+    const accessToken = query.accessToken ?? (typeof request.headers['x-nexus-customer-portal-token'] === 'string'
+      ? request.headers['x-nexus-customer-portal-token']
+      : null);
+    if (!accessToken) {
+      throw app.httpErrors.unauthorized('missing customer portal access token');
+    }
+
+    const grant = await app.customerPortalGrants.findById(claims.grantId);
+    if (!grant || grant.projectId !== project.id || grant.status !== 'active') {
+      throw app.httpErrors.forbidden('customer portal grant is not active');
+    }
+
+    const initialSummary = await buildCustomerPortalSummary({
+      app,
+      project,
+      grant
+    });
+
+    reply.type('text/html; charset=utf-8');
+    return buildHostedFeedbackDashboardPage(project, {
+      accessToken,
+      initialSummary,
+      summaryPath: `/public/projects/${project.projectKey}/customer-portal/summary?accessToken=${encodeURIComponent(accessToken)}`
     });
   });
 
@@ -958,6 +1176,18 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       : typeof (request.query as Record<string, unknown> | undefined)?.accessToken === 'string'
         ? (request.query as Record<string, unknown>).accessToken as string
         : null;
+    const customerPortalGrant = payload.reporter.email
+      ? await app.customerPortalGrants.findActiveByProjectIdAndEmail(project.id, normalizeCustomerPortalEmail(payload.reporter.email))
+      : null;
+    const customerPortalAccess = customerPortalGrant
+      ? createPublicCustomerPortalAccessToken(app.config, {
+        grantId: customerPortalGrant.id,
+        projectId: project.id,
+        projectKey: project.projectKey,
+        customerEmail: customerPortalGrant.customerEmail,
+        expiresAt: customerPortalGrant.expiresAt ?? new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString()
+      })
+      : null;
 
     return reply.code(202).send({
       accepted: true,
@@ -972,7 +1202,10 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       impactScore,
       dashboardUrl: dashboardAccessToken
         ? `/public/projects/${project.projectKey}/dashboard?accessToken=${encodeURIComponent(dashboardAccessToken)}`
-        : `/public/projects/${project.projectKey}/dashboard`
+        : `/public/projects/${project.projectKey}/dashboard`,
+      ...(customerPortalAccess ? {
+        customerPortalUrl: `/public/projects/${project.projectKey}/customer-portal?accessToken=${encodeURIComponent(customerPortalAccess.token)}`
+      } : {})
     });
   });
 }

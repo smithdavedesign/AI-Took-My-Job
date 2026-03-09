@@ -43,6 +43,17 @@ interface WidgetSessionResponse {
 interface PublicFeedbackResponse {
   reportId: string;
   dashboardUrl?: string;
+  customerPortalUrl?: string;
+}
+
+interface CustomerPortalGrantResponse {
+  accessToken: string;
+  customerPortalUrl: string;
+  grant: {
+    id: string;
+    customerEmail: string;
+    status: string;
+  };
 }
 
 interface PublicDashboardSummaryResponse {
@@ -98,6 +109,7 @@ interface ProjectOperationsResponse {
   support?: {
     readiness?: string;
     issues?: string[];
+    customerPortalGrantCount?: number;
     triagePolicySummary?: {
       configured: boolean;
     };
@@ -196,7 +208,9 @@ async function assertJavaScriptPage(url: string): Promise<void> {
 }
 
 function normalizeLocalUrl(rawUrl: string, baseUrl: string): string {
-  const parsed = new URL(rawUrl);
+  const parsed = rawUrl.startsWith('http://') || rawUrl.startsWith('https://')
+    ? new URL(rawUrl)
+    : new URL(rawUrl, baseUrl);
   return new URL(`${parsed.pathname}${parsed.search}`, baseUrl).toString();
 }
 
@@ -212,6 +226,7 @@ async function main(): Promise<void> {
   const authHeaders = { Authorization: `Bearer ${token.token}` };
   const targetRepository = process.env.E2E_TARGET_REPOSITORY ?? 'smithdavedesign/testRepo';
   const suffix = String(Date.now());
+  const customerEmail = `customer-handoff-${suffix}@example.test`;
   const startedAt = Date.now();
 
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
@@ -299,7 +314,12 @@ async function main(): Promise<void> {
   const operationsBeforeFeedback = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
     headers: authHeaders
   });
-  assert(operationsBeforeFeedback.support?.readiness === 'ready', `Expected ready support status, received ${operationsBeforeFeedback.support?.readiness ?? 'missing'}`);
+  assert(operationsBeforeFeedback.support?.readiness === 'attention-required', `Expected attention-required support status before issuing a durable grant, received ${operationsBeforeFeedback.support?.readiness ?? 'missing'}`);
+  assert(
+    Array.isArray(operationsBeforeFeedback.support?.issues)
+      && operationsBeforeFeedback.support.issues.some((issue) => issue.includes('durable customer portal grant')),
+    'Support snapshot did not flag the missing durable customer portal grant before issuance'
+  );
   assert(operationsBeforeFeedback.triagePolicy?.configured === true, 'Operations snapshot did not expose the configured triage policy');
   assert(operationsBeforeFeedback.support?.triagePolicySummary?.configured === true, 'Support snapshot did not surface triage policy status');
 
@@ -318,6 +338,28 @@ async function main(): Promise<void> {
   await assertHtmlPage(normalizeLocalUrl(widgetSession.widgetUrl, baseUrl));
   await assertJavaScriptPage(normalizeLocalUrl(widgetSession.embedScriptUrl, baseUrl));
   await assertHtmlPage(`${baseUrl}/public/projects/${project.projectKey}/dashboard?accessToken=${encodeURIComponent(widgetSession.accessToken)}`);
+
+  const customerPortalGrant = await requestJson<CustomerPortalGrantResponse>(`${baseUrl}/internal/projects/${project.id}/customer-portal-grants`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      customerEmail,
+      customerName: 'Customer Handoff Smoke',
+      notes: 'Durable access path for the customer handoff smoke.'
+    })
+  });
+  assert(customerPortalGrant.grant.customerEmail === customerEmail, 'Customer portal grant did not preserve the requested customer email');
+  await assertHtmlPage(normalizeLocalUrl(customerPortalGrant.customerPortalUrl, baseUrl));
+
+  const operationsWithPortalGrant = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
+    headers: authHeaders
+  });
+  assert(operationsWithPortalGrant.support?.readiness === 'ready', `Expected ready support status after issuing a durable grant, received ${operationsWithPortalGrant.support?.readiness ?? 'missing'}`);
+  assert(operationsWithPortalGrant.support?.customerPortalGrantCount === 1, 'Support snapshot did not count the active customer portal grant after issuance');
+
   const widgetReadyAt = Date.now();
   assertBudget('Customer handoff widget readiness', widgetReadyAt - startedAt, widgetReadyBudgetMs);
 
@@ -334,7 +376,7 @@ async function main(): Promise<void> {
       environment: 'staging',
       severity: 'high',
       reporter: {
-        email: `customer-handoff-${suffix}@example.test`,
+        email: customerEmail,
         role: 'end-user'
       },
       signals: {
@@ -359,6 +401,20 @@ async function main(): Promise<void> {
   const dashboardItem = dashboardSummary.items.find((item) => item.reportId === feedback.reportId);
   assert(dashboardItem?.owner?.label === 'customer-success', 'Dashboard summary did not apply the policy-backed owner');
   assert(dashboardItem?.owner?.kind === 'policy-owner', 'Dashboard summary did not expose a policy-backed owner kind');
+
+  assert(typeof feedback.customerPortalUrl === 'string', 'Hosted feedback response did not include a customer portal URL for the granted customer');
+  const normalizedCustomerPortalUrl = normalizeLocalUrl(feedback.customerPortalUrl ?? customerPortalGrant.customerPortalUrl, baseUrl);
+  await assertHtmlPage(normalizedCustomerPortalUrl);
+  const customerPortalSummary = await requestJson<PublicDashboardSummaryResponse>(
+    `${baseUrl}/public/projects/${project.projectKey}/customer-portal/summary?accessToken=${encodeURIComponent(customerPortalGrant.accessToken)}`
+  );
+  assert(customerPortalSummary.accessModel.mode === 'customer-portal-grant', 'Customer portal summary did not advertise durable grant access');
+  assert(customerPortalSummary.accessModel.customerAuth === 'project-customer-grant', 'Customer portal summary did not advertise project customer grant auth');
+  assert(customerPortalSummary.triagePolicy?.configured === true, 'Customer portal summary did not advertise the configured triage policy');
+  assert(customerPortalSummary.items.some((item) => item.reportId === feedback.reportId), 'Customer portal summary did not include the submitted report');
+  const customerPortalItem = customerPortalSummary.items.find((item) => item.reportId === feedback.reportId);
+  assert(customerPortalItem?.owner?.label === 'customer-success', 'Customer portal summary did not preserve the policy-backed owner');
+  assert(customerPortalItem?.owner?.kind === 'policy-owner', 'Customer portal summary did not preserve the policy-backed owner kind');
 
   const queueResult = await poll(
     () => requestJson<ReviewQueueResponse>(`${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&limit=20`, {
@@ -392,6 +448,7 @@ async function main(): Promise<void> {
   const operationsAfterFeedback = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
     headers: authHeaders
   });
+  assert(operationsAfterFeedback.support?.customerPortalGrantCount === 1, 'Support snapshot did not record the durable customer portal grant');
   assert(
     Array.isArray(operationsAfterFeedback.support?.recentHostedFeedback)
       && operationsAfterFeedback.support.recentHostedFeedback.some((entry) => entry.id === feedback.reportId),
@@ -409,8 +466,10 @@ async function main(): Promise<void> {
     supportReadiness: operationsAfterFeedback.support?.readiness ?? null,
     draftState: draft?.draft?.state ?? draft?.state ?? null,
     dashboardAccessMode: dashboardSummary.accessModel.mode,
+    customerPortalAccessMode: customerPortalSummary.accessModel.mode,
     policyConfigured: dashboardSummary.triagePolicy?.configured ?? false,
     dashboardOwner: dashboardItem?.owner?.label ?? null,
+    customerPortalOwner: customerPortalItem?.owner?.label ?? null,
     totalMs,
     budgetMs,
     budgets: {

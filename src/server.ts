@@ -12,6 +12,7 @@ import { createAgentTaskExecutionReviewRepository, type AgentTaskExecutionReview
 import { createAgentTaskReplayValidationRepository, type AgentTaskReplayValidationRepository } from './repositories/agent-task-replay-validation-repository.js';
 import { createAgentTaskValidationPolicyRepository, type AgentTaskValidationPolicyRepository } from './repositories/agent-task-validation-policy-repository.js';
 import { createArtifactBundleRepository, type ArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
+import { createCustomerPortalGrantRepository, type CustomerPortalGrantRepository } from './repositories/customer-portal-grant-repository.js';
 import { createFeedbackReportEmbeddingRepository, type FeedbackReportEmbeddingRepository } from './repositories/feedback-report-embedding-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import type { ArtifactStore, ArtifactStoreMetadata } from './services/artifacts/artifact-store.js';
@@ -68,6 +69,7 @@ declare module 'fastify' {
     githubInstallations: GitHubInstallationRepository;
     repoConnections: RepoConnectionRepository;
     workspaceTriagePolicies: WorkspaceTriagePolicyRepository;
+    customerPortalGrants: CustomerPortalGrantRepository;
     auditRepository: AuditRepository;
     triageJobs: TriageJobRepository;
     audit: AuditLogger;
@@ -106,6 +108,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const githubInstallationRepository = createGitHubInstallationRepository(database);
   const repoConnectionRepository = createRepoConnectionRepository(database);
   const workspaceTriagePolicyRepository = createWorkspaceTriagePolicyRepository(database);
+  const customerPortalGrantRepository = createCustomerPortalGrantRepository(database);
   const reportReviewRepository = createReportReviewRepository(database);
   const artifactBundleRepository = createArtifactBundleRepository(database);
   const agentTaskRepository = createAgentTaskRepository(database);
@@ -131,6 +134,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await serviceIdentityRepository.ensureSchema();
   await workspaceTriagePolicyRepository.ensureSchema();
+  await customerPortalGrantRepository.ensureSchema();
   await Promise.all(config.INTERNAL_SERVICE_TOKENS.map((principal) => serviceIdentityRepository.upsertBootstrapPrincipal({
     id: principal.id,
     token: principal.token,
@@ -150,6 +154,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('githubInstallations', githubInstallationRepository);
   app.decorate('repoConnections', repoConnectionRepository);
   app.decorate('workspaceTriagePolicies', workspaceTriagePolicyRepository);
+  app.decorate('customerPortalGrants', customerPortalGrantRepository);
   app.decorate('artifacts', artifactBundleRepository);
   app.decorate('agentTasks', agentTaskRepository);
   app.decorate('agentTaskExecutions', agentTaskExecutionRepository);
