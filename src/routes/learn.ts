@@ -1096,12 +1096,19 @@ function buildSupportOpsPage(): string {
     .status { padding: 12px 14px; border-top: 1px solid var(--line); min-height: 48px; color: var(--muted); background: rgba(24,33,43,0.03); }
     .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }
     .pill { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: rgba(11,101,87,0.1); color: var(--accent); font: 600 0.8rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .checklist-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .check-card { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.78); }
+    .check-card strong { display: block; font-size: 0.94rem; }
+    .check-card span { display: block; margin-top: 6px; color: var(--muted); font-size: 0.84rem; }
+    .check-pass strong { color: var(--accent); }
+    .check-fail strong { color: var(--danger); }
     .warn { color: var(--warn); }
     .danger { color: var(--danger); }
     .link-list { display: grid; gap: 8px; }
     .link-list a { color: var(--accent); text-decoration: none; word-break: break-all; }
     .activity-list { display: grid; gap: 10px; }
     .activity-item { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.78); }
+    .button-list { display: flex; flex-wrap: wrap; gap: 8px; }
     pre { margin: 0; padding: 14px; border-radius: 18px; background: #201d1f; color: #f7efe3; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
     @media (max-width: 1120px) { .shell, .summary-grid { grid-template-columns: 1fr; } }
   </style>
@@ -1121,8 +1128,22 @@ function buildSupportOpsPage(): string {
           <label>Project Key<input id="projectKey" value="" placeholder="checkout-prod" /></label>
           <label>Project Id<input id="projectId" value="" placeholder="project UUID optional" /></label>
           <div class="row">
+            <label style="flex:1 1 220px;">Customer Email<input id="customerPortalEmail" value="" placeholder="customer@example.com" /></label>
+            <label style="flex:1 1 220px;">Customer Name<input id="customerPortalName" value="" placeholder="Checkout Team" /></label>
+          </div>
+          <div class="row">
+            <label style="flex:1 1 140px;">Grant TTL Days<input id="customerPortalTtlDays" value="30" placeholder="30" /></label>
+            <label style="flex:1 1 220px;">Portal Grant Id<input id="customerPortalGrantId" value="" placeholder="customer portal grant UUID" /></label>
+          </div>
+          <label>Customer Portal Notes<textarea id="customerPortalNotes" placeholder="Why this durable customer portal link is being issued."></textarea></label>
+          <div class="row">
             <button id="lookupProject" class="secondary">Lookup Project</button>
             <button id="loadSupport" class="primary">Load Support Snapshot</button>
+          </div>
+          <div class="row">
+            <button id="loadCustomerPortalGrants" class="secondary">Load Portal Grants</button>
+            <button id="createCustomerPortalGrant" class="primary">Create Portal Grant</button>
+            <button id="revokeCustomerPortalGrant" class="secondary">Revoke Portal Grant</button>
           </div>
           <div class="row">
             <button id="openReviewQueue" class="secondary">Open Review Queue Link</button>
@@ -1140,8 +1161,14 @@ function buildSupportOpsPage(): string {
         </div>
         <section class="section">
           <h2 class="section-title">Checklist</h2>
-          <div id="checklist" class="pill-list"></div>
+          <div id="checklist" class="checklist-grid"></div>
           <div id="issues" class="helper">No support checks loaded yet.</div>
+        </section>
+        <section class="section">
+          <h2 class="section-title">Customer Portal Grants</h2>
+          <div id="customerPortalGrantSummary" class="helper">No customer portal grant action run yet.</div>
+          <div id="customerPortalGrantList" class="button-list"></div>
+          <pre id="customerPortalGrantResult">// customer portal grant responses appear here</pre>
         </section>
         <section class="section">
           <h2 class="section-title">Operational Links</h2>
@@ -1165,8 +1192,16 @@ function buildSupportOpsPage(): string {
       token: document.getElementById('token'),
       projectKey: document.getElementById('projectKey'),
       projectId: document.getElementById('projectId'),
+      customerPortalEmail: document.getElementById('customerPortalEmail'),
+      customerPortalName: document.getElementById('customerPortalName'),
+      customerPortalTtlDays: document.getElementById('customerPortalTtlDays'),
+      customerPortalGrantId: document.getElementById('customerPortalGrantId'),
+      customerPortalNotes: document.getElementById('customerPortalNotes'),
       lookupProject: document.getElementById('lookupProject'),
       loadSupport: document.getElementById('loadSupport'),
+      loadCustomerPortalGrants: document.getElementById('loadCustomerPortalGrants'),
+      createCustomerPortalGrant: document.getElementById('createCustomerPortalGrant'),
+      revokeCustomerPortalGrant: document.getElementById('revokeCustomerPortalGrant'),
       openReviewQueue: document.getElementById('openReviewQueue'),
       openOnboarding: document.getElementById('openOnboarding'),
       status: document.getElementById('status'),
@@ -1177,6 +1212,9 @@ function buildSupportOpsPage(): string {
       recentFeedbackCount: document.getElementById('recentFeedbackCount'),
       checklist: document.getElementById('checklist'),
       issues: document.getElementById('issues'),
+      customerPortalGrantSummary: document.getElementById('customerPortalGrantSummary'),
+      customerPortalGrantList: document.getElementById('customerPortalGrantList'),
+      customerPortalGrantResult: document.getElementById('customerPortalGrantResult'),
       links: document.getElementById('links'),
       recentFeedback: document.getElementById('recentFeedback'),
       result: document.getElementById('result')
@@ -1192,7 +1230,12 @@ function buildSupportOpsPage(): string {
         baseUrl: els.baseUrl.value.trim(),
         token: els.token.value.trim(),
         projectKey: els.projectKey.value.trim(),
-        projectId: els.projectId.value.trim()
+        projectId: els.projectId.value.trim(),
+        customerPortalEmail: els.customerPortalEmail.value.trim(),
+        customerPortalName: els.customerPortalName.value.trim(),
+        customerPortalTtlDays: els.customerPortalTtlDays.value.trim(),
+        customerPortalGrantId: els.customerPortalGrantId.value.trim(),
+        customerPortalNotes: els.customerPortalNotes.value
       }));
     }
     function readState() {
@@ -1206,6 +1249,17 @@ function buildSupportOpsPage(): string {
       }
       return JSON.parse(text);
     }
+    function parseCustomerPortalTtlDays() {
+      const raw = els.customerPortalTtlDays.value.trim();
+      if (!raw) {
+        return undefined;
+      }
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 365) {
+        throw new Error('Grant TTL Days must be a number between 1 and 365.');
+      }
+      return Math.round(parsed);
+    }
     function renderLink(name, href) {
       const anchor = document.createElement('a');
       anchor.href = href;
@@ -1213,6 +1267,30 @@ function buildSupportOpsPage(): string {
       anchor.rel = 'noreferrer';
       anchor.textContent = name + ': ' + href;
       els.links.appendChild(anchor);
+    }
+    function selectCustomerPortalGrant(grant) {
+      els.customerPortalGrantId.value = grant.id || '';
+      els.customerPortalEmail.value = grant.customerEmail || '';
+      els.customerPortalName.value = grant.customerName || '';
+      els.customerPortalGrantSummary.textContent = 'Loaded durable portal grant for ' + (grant.customerEmail || 'unknown customer') + '.';
+    }
+    function renderCustomerPortalGrants(result) {
+      const grants = Array.isArray(result && result.grants) ? result.grants : Array.isArray(result) ? result : [];
+      els.customerPortalGrantList.innerHTML = '';
+      els.customerPortalGrantResult.textContent = JSON.stringify(result, null, 2);
+      grants.forEach(function (grant) {
+        const button = document.createElement('button');
+        button.className = 'secondary';
+        button.textContent = (grant.customerEmail || 'unknown') + ' [' + (grant.status || 'unknown') + ']';
+        button.addEventListener('click', function () { selectCustomerPortalGrant(grant); });
+        els.customerPortalGrantList.appendChild(button);
+      });
+      if (!grants.length) {
+        els.customerPortalGrantSummary.textContent = 'No durable customer portal grants exist for this project yet.';
+      } else {
+        const activeCount = grants.filter(function (grant) { return grant && grant.status === 'active'; }).length;
+        els.customerPortalGrantSummary.textContent = 'Loaded ' + grants.length + ' grant(s). Active ' + activeCount + '.';
+      }
     }
     function renderSupportSnapshot(result) {
       lastSupport = result;
@@ -1230,10 +1308,16 @@ function buildSupportOpsPage(): string {
       els.links.innerHTML = '';
       els.recentFeedback.innerHTML = '';
       Object.entries(checklist).forEach(function (entry) {
-        const pill = document.createElement('span');
-        pill.className = 'pill';
-        pill.textContent = entry[0] + ': ' + entry[1];
-        els.checklist.appendChild(pill);
+        const card = document.createElement('div');
+        const passed = entry[1] === true;
+        const label = document.createElement('strong');
+        const detail = document.createElement('span');
+        card.className = 'check-card ' + (passed ? 'check-pass' : 'check-fail');
+        label.textContent = entry[0];
+        detail.textContent = passed ? 'ready' : 'missing';
+        card.appendChild(label);
+        card.appendChild(detail);
+        els.checklist.appendChild(card);
       });
       els.issues.className = 'helper' + (issues.length ? ' warn' : '');
       els.issues.textContent = issues.length ? issues.join(' ') : 'No open support blockers.';
@@ -1246,6 +1330,9 @@ function buildSupportOpsPage(): string {
       }
       if (publicUrls.feedbackUrl) {
         renderLink('Feedback Route', publicUrls.feedbackUrl);
+      }
+      if (publicUrls.customerPortalBaseUrl) {
+        renderLink('Customer Portal Base URL', publicUrls.customerPortalBaseUrl);
       }
       if (support.reviewQueueUrl) {
         renderLink('Review Queue', support.reviewQueueUrl);
@@ -1274,6 +1361,9 @@ function buildSupportOpsPage(): string {
         card.appendChild(meta);
         els.recentFeedback.appendChild(card);
       });
+      if (result.customerPortal) {
+        renderCustomerPortalGrants({ project: result.project, grants: result.customerPortal.grants || [] });
+      }
     }
     async function lookupProject() {
       saveState();
@@ -1315,6 +1405,93 @@ function buildSupportOpsPage(): string {
         setStatus(error instanceof Error ? error.message : 'Failed to load support snapshot.');
       }
     }
+    async function loadCustomerPortalGrants() {
+      saveState();
+      let projectId = els.projectId.value.trim();
+      const projectKey = els.projectKey.value.trim();
+      if (!projectId && projectKey) {
+        await lookupProject();
+        projectId = els.projectId.value.trim();
+      }
+      if (!projectId) {
+        setStatus('Project Id or Project Key is required to load customer portal grants.');
+        return;
+      }
+      setStatus('Loading customer portal grants for ' + projectId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/customer-portal-grants', { headers: authHeaders() });
+        renderCustomerPortalGrants(result);
+        setStatus('Customer portal grants loaded for ' + projectId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load customer portal grants.');
+      }
+    }
+    async function createCustomerPortalGrant() {
+      saveState();
+      let projectId = els.projectId.value.trim();
+      const projectKey = els.projectKey.value.trim();
+      const customerEmail = els.customerPortalEmail.value.trim();
+      if (!projectId && projectKey) {
+        await lookupProject();
+        projectId = els.projectId.value.trim();
+      }
+      if (!projectId || !customerEmail) {
+        setStatus('Project Id or Project Key plus Customer Email are required to create a customer portal grant.');
+        return;
+      }
+      setStatus('Creating customer portal grant for ' + customerEmail + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/customer-portal-grants', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({
+            customerEmail: customerEmail,
+            customerName: els.customerPortalName.value.trim() || undefined,
+            ttlDays: parseCustomerPortalTtlDays(),
+            notes: els.customerPortalNotes.value.trim() || undefined
+          })
+        });
+        els.customerPortalGrantResult.textContent = JSON.stringify(result, null, 2);
+        if (result && result.grant) {
+          selectCustomerPortalGrant(result.grant);
+        }
+        await loadSupport();
+        await loadCustomerPortalGrants();
+        setStatus('Customer portal grant created for ' + customerEmail + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to create customer portal grant.');
+      }
+    }
+    async function revokeCustomerPortalGrant() {
+      saveState();
+      let projectId = els.projectId.value.trim();
+      const projectKey = els.projectKey.value.trim();
+      const grantId = els.customerPortalGrantId.value.trim();
+      if (!projectId && projectKey) {
+        await lookupProject();
+        projectId = els.projectId.value.trim();
+      }
+      if (!projectId || !grantId) {
+        setStatus('Project Id or Project Key plus Portal Grant Id are required to revoke a customer portal grant.');
+        return;
+      }
+      setStatus('Revoking customer portal grant ' + grantId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/customer-portal-grants/' + encodeURIComponent(grantId) + '/revoke', {
+          method: 'POST',
+          headers: authHeaders()
+        });
+        els.customerPortalGrantResult.textContent = JSON.stringify(result, null, 2);
+        if (result && result.grant) {
+          selectCustomerPortalGrant(result.grant);
+        }
+        await loadSupport();
+        await loadCustomerPortalGrants();
+        setStatus('Customer portal grant ' + grantId + ' revoked.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to revoke customer portal grant.');
+      }
+    }
     function openLink(kind) {
       const support = lastSupport && lastSupport.support ? lastSupport.support : null;
       const url = kind === 'review'
@@ -1332,8 +1509,16 @@ function buildSupportOpsPage(): string {
     els.token.value = saved.token || '';
     els.projectKey.value = params.get('projectKey') || saved.projectKey || '';
     els.projectId.value = params.get('projectId') || saved.projectId || '';
+    els.customerPortalEmail.value = saved.customerPortalEmail || '';
+    els.customerPortalName.value = saved.customerPortalName || '';
+    els.customerPortalTtlDays.value = saved.customerPortalTtlDays || '30';
+    els.customerPortalGrantId.value = saved.customerPortalGrantId || '';
+    els.customerPortalNotes.value = saved.customerPortalNotes || '';
     els.lookupProject.addEventListener('click', lookupProject);
     els.loadSupport.addEventListener('click', loadSupport);
+    els.loadCustomerPortalGrants.addEventListener('click', loadCustomerPortalGrants);
+    els.createCustomerPortalGrant.addEventListener('click', createCustomerPortalGrant);
+    els.revokeCustomerPortalGrant.addEventListener('click', revokeCustomerPortalGrant);
     els.openReviewQueue.addEventListener('click', function () { openLink('review'); });
     els.openOnboarding.addEventListener('click', function () { openLink('onboarding'); });
     if (els.projectId.value || els.projectKey.value) {

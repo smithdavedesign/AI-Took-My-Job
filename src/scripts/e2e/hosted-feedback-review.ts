@@ -77,6 +77,17 @@ interface PublicFeedbackResponse {
     id: string;
     projectKey: string;
   };
+  customerPortalUrl?: string;
+}
+
+interface CustomerPortalGrantResponse {
+  accessToken: string;
+  customerPortalUrl: string;
+  grant: {
+    id: string;
+    customerEmail: string;
+    status: string;
+  };
 }
 
 interface ReviewQueueResponse {
@@ -125,6 +136,11 @@ interface ProjectOperationsResponse {
   };
   support?: {
     readiness?: string;
+    issues?: string[];
+    checklist?: {
+      hasCustomerPortalGrant?: boolean;
+    };
+    customerPortalGrantCount?: number;
     triagePolicySummary?: {
       configured: boolean;
     };
@@ -134,6 +150,9 @@ interface ProjectOperationsResponse {
   };
   triagePolicy?: {
     configured: boolean;
+  };
+  customerPortal?: {
+    activeGrantCount?: number;
   };
 }
 
@@ -267,6 +286,15 @@ async function assertHtmlPage(baseUrl: string, path: string, init?: RequestInit)
   assert(/<title>/i.test(response.text), `${path} did not include a title element`);
 }
 
+async function assertHtmlPageContains(baseUrl: string, path: string, snippets: string[]): Promise<void> {
+  const response = await requestText(`${baseUrl}${path}`);
+  assert(response.status === 200, `${path} did not return 200`);
+  assert(/text\/html/i.test(response.headers.get('content-type') ?? ''), `${path} did not return HTML`);
+  snippets.forEach((snippet) => {
+    assert(response.text.includes(snippet), `${path} did not include expected text: ${snippet}`);
+  });
+}
+
 async function assertJavaScriptPage(baseUrl: string, path: string, init?: RequestInit): Promise<void> {
   const response = await requestText(`${baseUrl}${path}`, init);
   assert(response.status === 200, `${path} did not return 200`);
@@ -361,6 +389,8 @@ async function main(): Promise<void> {
   await assertHtmlPage(baseUrl, '/learn/onboarding');
   await assertHtmlPage(baseUrl, '/learn/support-ops');
   await assertHtmlPage(baseUrl, '/learn/review-queue');
+  await assertHtmlPageContains(baseUrl, '/learn/onboarding', ['Create Portal Grant', 'Load Portal Grants', 'Customer Portal Grants']);
+  await assertHtmlPageContains(baseUrl, '/learn/support-ops', ['Create Portal Grant', 'Load Portal Grants', 'Customer Portal Grants', 'Checklist']);
   const serviceIdentity = await requestJson<ServiceIdentitySelfResponse>(`${baseUrl}/internal/service-identity/self`, {
     headers: authHeaders
   });
@@ -430,6 +460,12 @@ async function main(): Promise<void> {
   const refreshedOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
     headers: authHeaders
   });
+  assert(refreshedOperations.support?.readiness === 'attention-required', `Expected support readiness to be attention-required before a durable grant exists, received ${refreshedOperations.support?.readiness ?? 'missing'}`);
+  assert(
+    Array.isArray(refreshedOperations.support?.issues)
+      && refreshedOperations.support.issues.some((issue) => issue.includes('durable customer portal grant')),
+    'Support snapshot did not report the missing durable customer portal grant before issuance'
+  );
   if (refreshedOperations.repositories.available.length === 0) {
     const seededConnection = await requestJson<RepoConnectionResponse>(`${baseUrl}/internal/repo-connections`, {
       method: 'POST',
@@ -482,10 +518,29 @@ async function main(): Promise<void> {
     assert(restoredConnection.isDefault, 'Repo connection restore did not reassign the default');
   }
 
+  const portalCustomerEmail = `support-review-${suffix}@example.test`;
+  const customerPortalGrant = await requestJson<CustomerPortalGrantResponse>(`${baseUrl}/internal/projects/${project.id}/customer-portal-grants`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      customerEmail: portalCustomerEmail,
+      customerName: 'Hosted Feedback Review Smoke',
+      notes: 'Enable durable support portal access in smoke validation.'
+    })
+  });
+  assert(customerPortalGrant.grant.customerEmail === portalCustomerEmail, 'Customer portal grant did not preserve the requested customer email');
+  await assertHtmlPage(baseUrl, new URL(customerPortalGrant.customerPortalUrl).pathname + new URL(customerPortalGrant.customerPortalUrl).search);
+
   const supportReadyOperations = await requestJson<ProjectOperationsResponse>(`${baseUrl}/internal/projects/${project.id}/operations`, {
     headers: authHeaders
   });
   assert(supportReadyOperations.support?.readiness === 'ready', `Expected support readiness to become ready, received ${supportReadyOperations.support?.readiness ?? 'missing'}`);
+  assert(supportReadyOperations.support?.checklist?.hasCustomerPortalGrant === true, 'Support checklist did not expose the active customer portal grant');
+  assert(supportReadyOperations.support?.customerPortalGrantCount === 1, 'Support snapshot did not count the active customer portal grant');
+  assert(supportReadyOperations.customerPortal?.activeGrantCount === 1, 'Project operations did not expose the active customer portal grant count');
 
   await requestJson(`${baseUrl}/internal/workspaces/${workspace.id}/triage-policy`, {
     method: 'PUT',
