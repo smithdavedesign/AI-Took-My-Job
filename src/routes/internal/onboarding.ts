@@ -619,7 +619,10 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     return {
       workspace,
       project,
-      installation: synced.syncedInstallation,
+      installation: {
+        ...synced.syncedInstallation,
+        installationId: Number(synced.syncedInstallation.installationId)
+      },
       repositoryLink: {
         requested: payload.repository ?? null,
         linked: synced.linkedRepository,
@@ -700,7 +703,10 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     return {
       sourceWorkspace,
       targetWorkspace: workspace,
-      installation: synced.syncedInstallation,
+      installation: {
+        ...synced.syncedInstallation,
+        installationId: Number(synced.syncedInstallation.installationId)
+      },
       repositoryLink: {
         requested: payload.repository ?? null,
         linked: synced.linkedRepository,
