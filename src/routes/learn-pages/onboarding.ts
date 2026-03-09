@@ -45,6 +45,15 @@ export function buildOnboardingConsolePage(): string {
     a.inline-link { color: var(--accent); text-decoration: none; }
     .button-list { display: flex; flex-wrap: wrap; gap: 8px; }
     .button-list button { text-align: left; }
+    .guardrail-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .guardrail-card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
+    .guardrail-card strong { display: block; font-size: 0.95rem; }
+    .guardrail-card span { display: block; margin-top: 8px; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+    .guardrail-pass { border-color: rgba(13,105,91,0.28); background: rgba(13,105,91,0.08); }
+    .guardrail-pass strong { color: var(--accent); }
+    .guardrail-fail { border-color: rgba(139,98,8,0.26); background: rgba(139,98,8,0.09); }
+    .guardrail-fail strong { color: var(--warning); }
+    .guardrail-neutral { border-color: var(--line); }
     @media (max-width: 1120px) { .shell, .split, .summary-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -141,6 +150,15 @@ export function buildOnboardingConsolePage(): string {
           <article class="card"><span class="helper">Promote Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a support snapshot to score project readiness.</span></article>
         </div>
         <div class="section">
+          <h2 class="section-title">Readiness And Promotion Guardrails</h2>
+          <div class="guardrail-grid">
+            <article id="guardrailBoundary" class="guardrail-card guardrail-neutral"><strong>Project boundary unresolved</strong><span>Load a workspace, project, and repo connection before rollout moves forward.</span></article>
+            <article id="guardrailReadiness" class="guardrail-card guardrail-neutral"><strong>Launch readiness unknown</strong><span>Support readiness has not been loaded yet.</span></article>
+            <article id="guardrailReviewGate" class="guardrail-card guardrail-neutral"><strong>Review gate unknown</strong><span>Pending review work has not been loaded yet.</span></article>
+            <article id="guardrailPromotionScope" class="guardrail-card guardrail-neutral"><strong>Promotion scope unresolved</strong><span>Confirm a default repo and explicit customer-access scope before promoting work or durable access.</span></article>
+          </div>
+        </div>
+        <div class="section">
           <h2 class="section-title">Pilot Snapshot</h2>
           <div id="bindings" class="pill-list"></div>
           <div id="bindingNotes" class="helper">Load a workspace and project to inspect their current install and repository bindings.</div>
@@ -210,6 +228,7 @@ export function buildOnboardingConsolePage(): string {
   <script>
     const storageKey = 'nexus-onboarding-console';
     const contextState = { projects: [], installations: [], repoConnections: [], customerPortalGrants: [] };
+    const guardrailState = { projectCount: 0, repoConnectionCount: 0, hasDefaultRepo: false, readiness: 'unknown', pendingReviewCount: null, activeGrantCount: 0 };
     const els = {
       baseUrl: document.getElementById('baseUrl'),
       token: document.getElementById('token'),
@@ -284,7 +303,11 @@ export function buildOnboardingConsolePage(): string {
       transferSummary: document.getElementById('transferSummary'),
       transferResult: document.getElementById('transferResult'),
       widgetSummary: document.getElementById('widgetSummary'),
-      widgetResult: document.getElementById('widgetResult')
+      widgetResult: document.getElementById('widgetResult'),
+      guardrailBoundary: document.getElementById('guardrailBoundary'),
+      guardrailReadiness: document.getElementById('guardrailReadiness'),
+      guardrailReviewGate: document.getElementById('guardrailReviewGate'),
+      guardrailPromotionScope: document.getElementById('guardrailPromotionScope')
     };
 
     function setStatus(message) { els.status.textContent = message; }
@@ -379,6 +402,22 @@ export function buildOnboardingConsolePage(): string {
       els.readinessValue.textContent = value || 'unknown';
       els.readinessNote.textContent = note || 'Load a support snapshot to score project readiness.';
     }
+    function renderGuardrailCard(target, tone, title, detail) {
+      target.className = 'guardrail-card guardrail-' + tone;
+      target.innerHTML = '<strong>' + title + '</strong><span>' + detail + '</span>';
+    }
+    function renderPromotionGuardrails() {
+      const boundaryReady = guardrailState.projectCount > 0 && guardrailState.repoConnectionCount > 0;
+      renderGuardrailCard(els.guardrailBoundary, boundaryReady ? 'pass' : 'fail', boundaryReady ? 'Project boundary resolved' : 'Project boundary still open', boundaryReady ? 'Project and repo scope are loaded, so rollout decisions now have a concrete target.' : 'Load a project and at least one repo connection before launch or promotion decisions.');
+      const readinessReady = guardrailState.readiness === 'ready';
+      renderGuardrailCard(els.guardrailReadiness, readinessReady ? 'pass' : 'fail', readinessReady ? 'Launch readiness is green' : 'Launch readiness is not green', readinessReady ? 'Support readiness reports the project is ready for customer handoff.' : 'Do not broaden rollout while support readiness is blocked or unknown.');
+      const pendingReviewCount = typeof guardrailState.pendingReviewCount === 'number' ? guardrailState.pendingReviewCount : null;
+      const reviewGateReady = pendingReviewCount === 0;
+      renderGuardrailCard(els.guardrailReviewGate, reviewGateReady ? 'pass' : pendingReviewCount === null ? 'neutral' : 'fail', reviewGateReady ? 'Review gate is clear' : pendingReviewCount === null ? 'Review gate not loaded' : 'Review gate still has pending work', reviewGateReady ? 'No hosted-feedback backlog is currently blocking promotion decisions.' : pendingReviewCount === null ? 'Load project operations to inspect pending review work.' : String(pendingReviewCount) + ' hosted-feedback item(s) still need review before promotion should move forward.');
+      const promotionScoped = guardrailState.hasDefaultRepo && guardrailState.readiness === 'ready';
+      const grantNote = guardrailState.activeGrantCount > 0 ? ' Durable customer access is already constrained to ' + guardrailState.activeGrantCount + ' active grant(s).' : ' No durable customer grant is live yet.';
+      renderGuardrailCard(els.guardrailPromotionScope, promotionScoped ? 'pass' : 'fail', promotionScoped ? 'Promotion scope is explicit' : 'Promotion scope is still ambiguous', promotionScoped ? 'A default repo is resolved and readiness is green.' + grantNote : 'Resolve the default repo and readiness state before promoting work or customer access.' + grantNote);
+    }
     function selectCustomerPortalGrant(grant) {
       els.customerPortalGrantId.value = grant.id || '';
       els.customerPortalEmail.value = grant.customerEmail || '';
@@ -414,6 +453,7 @@ export function buildOnboardingConsolePage(): string {
       els.triagePolicySummary.textContent = summary.configured
         ? 'Configured. Ownership rules ' + (summary.ownershipRuleCount || 0) + '. Priority rules ' + (summary.priorityRuleCount || 0) + '. Updated ' + (summary.updatedAt || 'unknown') + '.'
         : 'No workspace triage policy is configured yet.';
+      renderPromotionGuardrails();
     }
     function applyProjectLookup(result) {
       const project = result && result.project ? result.project : result;
@@ -441,6 +481,9 @@ export function buildOnboardingConsolePage(): string {
       contextState.projects = Array.isArray(projects) ? projects : [];
       contextState.installations = Array.isArray(installations) ? installations : [];
       contextState.repoConnections = Array.isArray(repoConnections) ? repoConnections : [];
+      guardrailState.projectCount = contextState.projects.length;
+      guardrailState.repoConnectionCount = contextState.repoConnections.length;
+      guardrailState.hasDefaultRepo = contextState.repoConnections.some(function (connection) { return Boolean(connection && connection.isDefault); });
       els.projectCount.textContent = String(contextState.projects.length);
       els.installationCount.textContent = String(contextState.installations.length);
       els.connectionCount.textContent = String(contextState.repoConnections.length);
@@ -472,6 +515,7 @@ export function buildOnboardingConsolePage(): string {
         pill.textContent = value;
         els.bindings.appendChild(pill);
       });
+      renderPromotionGuardrails();
     }
     async function lookupProjectByKey() {
       saveState();
@@ -546,6 +590,10 @@ export function buildOnboardingConsolePage(): string {
         const issues = Array.isArray(support.issues) ? support.issues : [];
         const feedbackCount = Array.isArray(support.recentHostedFeedback) ? support.recentHostedFeedback.length : 0;
         const grantCount = typeof support.customerPortalGrantCount === 'number' ? support.customerPortalGrantCount : (customerPortal.activeGrantCount || 0);
+        guardrailState.readiness = support.readiness || 'unknown';
+        guardrailState.pendingReviewCount = pendingReviewCount;
+        guardrailState.hasDefaultRepo = defaultRepository !== 'none' || guardrailState.hasDefaultRepo;
+        guardrailState.activeGrantCount = grantCount;
         const policyNote = support.triagePolicySummary && support.triagePolicySummary.configured
           ? ' Policy configured with ' + ((support.triagePolicySummary.ownershipRuleCount || 0) + (support.triagePolicySummary.priorityRuleCount || 0)) + ' rules.'
           : ' No triage policy configured.';
@@ -557,6 +605,7 @@ export function buildOnboardingConsolePage(): string {
           renderCustomerPortalGrants({ project: result.project, grants: result.customerPortal.grants || [] });
         }
         setReadiness(support.readiness || 'unknown', issues.length ? issues.join(' ') : 'Project is ready for customer handoff.');
+        renderPromotionGuardrails();
         setStatus('Operations loaded for ' + projectId + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to load project operations.');
@@ -1038,6 +1087,7 @@ export function buildOnboardingConsolePage(): string {
     els.createServiceIdentity.addEventListener('click', createServiceIdentity);
     els.rotateServiceIdentity.addEventListener('click', rotateServiceIdentity);
     els.revokeServiceIdentity.addEventListener('click', revokeServiceIdentity);
+    renderPromotionGuardrails();
   </script>
 </body>
 </html>`;

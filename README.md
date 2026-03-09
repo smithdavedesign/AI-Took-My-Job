@@ -52,6 +52,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Workspace triage policy is now persisted per workspace, editable through `/internal/workspaces/:workspaceId/triage-policy`, and applied to ownership plus refined-impact scoring across worker triage, the review queue, and the public dashboard.
 - The onboarding console at `/learn/onboarding` now exposes project-key lookup, repo-connection create and update controls, workspace triage policy editing, project support-readiness snapshots, widget handoff links, and service-identity list, create, rotate, and revoke controls.
 - The dedicated support console at `/learn/support-ops` now resolves projects by key, loads the live support-readiness snapshot, exposes public widget and feedback routes, and links operators directly into review and onboarding follow-up paths.
+- Onboarding, review, and support learn surfaces now expose consistent readiness and promotion guardrails, and the review queue blocks single-item approval until target, context, and operator rationale are all visible.
 - Signed widget sessions remain the v1 hosted-intake access model, and operators can now issue durable customer portal grants that keep project/customer-scoped status visibility alive after the original widget session expires.
 - Durable service identities now support explicit lifecycle management through internal routes instead of startup-only env seeding.
 - The customer handoff path is now measured by a dedicated `npm run e2e:customer-handoff` smoke that validates project setup, widget minting, hosted feedback intake, review-queue visibility, and draft readiness against a stricter 30-second total budget plus stage-by-stage SLO thresholds.
@@ -75,7 +76,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 
 The repository now includes a standalone static onboarding site in `onboarding-site/`.
 
-The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence, persists rollout checklist state and notes in-browser, and links into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, and `/learn/prd`.
+The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence, persists rollout checklist state and notes in-browser, and links into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, and `/learn/prd` with shared readiness and promotion guardrails.
 
 Use it when you want a lightweight public-facing walkthrough for operators, prospects, or internal rollout leads without exposing the Fastify app itself.
 

@@ -282,7 +282,7 @@ Exit criteria:
 - [x] Ownership and prioritization policy become operator-configurable and auditable.
 - [x] Project/customer-scoped durable portal grants now extend visibility beyond a single widget session without exposing unrelated project data.
 
-### [-] Phase 11: Self-Serve Adoption And Operator Ergonomics
+### [x] Phase 11: Self-Serve Adoption And Operator Ergonomics
 
 Objective: make Nexus feel like a coherent operator product rather than a collection of powerful but loosely connected surfaces.
 
@@ -292,13 +292,13 @@ Deliverables:
 - [x] Split the runtime learn surfaces into dedicated page-builder modules so onboarding, review, and support copy can evolve independently.
 - [x] Add a step-aware learn landing page that makes the runtime surfaces feel like one guided workflow.
 - [x] Add self-serve checklist state so operators can see rollout progress without maintaining an external runbook.
-- [ ] Add operator-facing readiness and promotion guardrails that are consistent across onboarding, review, and support surfaces.
+- [x] Add operator-facing readiness and promotion guardrails that are consistent across onboarding, review, and support surfaces.
 
 Exit criteria:
 
-- [ ] A new operator can understand where to start and what comes next without external explanation.
-- [ ] Runtime learn pages, static onboarding, and repo docs all describe the same workflow in the same order.
-- [ ] The most common rollout actions can be completed without switching to an external checklist or tribal knowledge.
+- [x] A new operator can understand where to start and what comes next without external explanation.
+- [x] Runtime learn pages, static onboarding, and repo docs all describe the same workflow in the same order.
+- [x] The most common rollout actions can be completed without switching to an external checklist or tribal knowledge.
 
 ## Current Sprint
 
@@ -317,7 +317,7 @@ Current execution emphasis:
 3. [x] Break the runtime learn surfaces into dedicated modules so each stage can evolve cleanly.
 4. [x] Add a guided runtime learn landing page that ties onboarding, review, and support into one sequence.
 5. [x] Add step-aware rollout state and readiness guidance for operators.
-6. [ ] Keep customer visibility, policy, and promotion guardrails aligned with the new self-serve story.
+6. [x] Keep customer visibility, policy, and promotion guardrails aligned with the new self-serve story.
 
 ## Open Questions
 

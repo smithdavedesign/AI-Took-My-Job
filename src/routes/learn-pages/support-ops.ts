@@ -48,6 +48,15 @@ export function buildSupportOpsPage(): string {
     .activity-list { display: grid; gap: 10px; }
     .activity-item { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.78); }
     .button-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .guardrail-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .guardrail-card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
+    .guardrail-card strong { display: block; font-size: 0.95rem; }
+    .guardrail-card span { display: block; margin-top: 8px; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+    .guardrail-pass { border-color: rgba(11,101,87,0.28); background: rgba(11,101,87,0.08); }
+    .guardrail-pass strong { color: var(--accent); }
+    .guardrail-fail { border-color: rgba(139,98,8,0.26); background: rgba(139,98,8,0.09); }
+    .guardrail-fail strong { color: var(--warn); }
+    .guardrail-neutral { border-color: var(--line); }
     pre { margin: 0; padding: 14px; border-radius: 18px; background: #201d1f; color: #f7efe3; overflow: auto; font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
     @media (max-width: 1120px) { .shell, .summary-grid { grid-template-columns: 1fr; } }
   </style>
@@ -98,6 +107,15 @@ export function buildSupportOpsPage(): string {
           <article class="card"><span class="helper">Operate Queue</span><strong id="pendingReviewCount">0</strong><span class="helper">Hosted feedback items still awaiting review.</span></article>
           <article class="card"><span class="helper">Promote Context</span><strong id="recentFeedbackCount">0</strong><span class="helper">Latest hosted feedback items visible from support.</span></article>
         </div>
+        <section class="section">
+          <h2 class="section-title">Readiness And Promotion Guardrails</h2>
+          <div class="guardrail-grid">
+            <article id="guardrailBoundary" class="guardrail-card guardrail-neutral"><strong>Project boundary unresolved</strong><span>Load a support snapshot to confirm live repository scope.</span></article>
+            <article id="guardrailReadiness" class="guardrail-card guardrail-neutral"><strong>Readiness state unknown</strong><span>Support checks have not been loaded yet.</span></article>
+            <article id="guardrailReviewGate" class="guardrail-card guardrail-neutral"><strong>Review gate unknown</strong><span>Pending review work has not been evaluated yet.</span></article>
+            <article id="guardrailPromotionScope" class="guardrail-card guardrail-neutral"><strong>Customer access scope unknown</strong><span>Confirm durable access is either absent or explicitly scoped before promotion.</span></article>
+          </div>
+        </section>
         <section class="section">
           <h2 class="section-title">Operate Checklist</h2>
           <div id="checklist" class="checklist-grid"></div>
@@ -156,10 +174,26 @@ export function buildSupportOpsPage(): string {
       customerPortalGrantResult: document.getElementById('customerPortalGrantResult'),
       links: document.getElementById('links'),
       recentFeedback: document.getElementById('recentFeedback'),
-      result: document.getElementById('result')
+      result: document.getElementById('result'),
+      guardrailBoundary: document.getElementById('guardrailBoundary'),
+      guardrailReadiness: document.getElementById('guardrailReadiness'),
+      guardrailReviewGate: document.getElementById('guardrailReviewGate'),
+      guardrailPromotionScope: document.getElementById('guardrailPromotionScope')
+      guardrailBoundary: document.getElementById('guardrailBoundary'),
+      guardrailReadiness: document.getElementById('guardrailReadiness'),
+      guardrailReviewGate: document.getElementById('guardrailReviewGate'),
+    function renderGuardrailCard(target, tone, title, detail) {
+      target.className = 'guardrail-card guardrail-' + tone;
+      target.innerHTML = '<strong>' + title + '</strong><span>' + detail + '</span>';
+    }
+      guardrailPromotionScope: document.getElementById('guardrailPromotionScope')
     };
     let lastSupport = null;
     function setStatus(message) { els.status.textContent = message; }
+    function renderGuardrailCard(target, tone, title, detail) {
+      target.className = 'guardrail-card guardrail-' + tone;
+      target.innerHTML = '<strong>' + title + '</strong><span>' + detail + '</span>';
+    }
     function authHeaders() {
       const token = els.token.value.trim();
       return token ? { Authorization: 'Bearer ' + token } : {};
@@ -237,11 +271,18 @@ export function buildSupportOpsPage(): string {
       const issues = Array.isArray(support.issues) ? support.issues : [];
       const checklist = support.checklist || {};
       const recentHostedFeedback = Array.isArray(support.recentHostedFeedback) ? support.recentHostedFeedback : [];
+      const repositoryCount = Array.isArray(result.repositories && result.repositories.available) ? result.repositories.available.length : 0;
+      const pendingReviewCount = result.reports && typeof result.reports.pendingReviewCount === 'number' ? result.reports.pendingReviewCount : 0;
+      const grantCount = result.customerPortal && typeof result.customerPortal.activeGrantCount === 'number'
+        ? result.customerPortal.activeGrantCount
+        : Array.isArray(result.customerPortal && result.customerPortal.grants)
+          ? result.customerPortal.grants.filter(function (grant) { return grant && grant.status === 'active'; }).length
+          : 0;
       els.result.textContent = JSON.stringify(result, null, 2);
       els.readinessValue.textContent = support.readiness || 'unknown';
       els.readinessNote.textContent = issues.length ? issues.join(' ') : 'Support checks look good for this project.';
-      els.repositoryCount.textContent = String(Array.isArray(result.repositories && result.repositories.available) ? result.repositories.available.length : 0);
-      els.pendingReviewCount.textContent = String(result.reports && typeof result.reports.pendingReviewCount === 'number' ? result.reports.pendingReviewCount : 0);
+      els.repositoryCount.textContent = String(repositoryCount);
+      els.pendingReviewCount.textContent = String(pendingReviewCount);
       els.recentFeedbackCount.textContent = String(recentHostedFeedback.length);
       els.checklist.innerHTML = '';
       els.links.innerHTML = '';
@@ -260,6 +301,10 @@ export function buildSupportOpsPage(): string {
       });
       els.issues.className = 'helper' + (issues.length ? ' warn' : '');
       els.issues.textContent = issues.length ? issues.join(' ') : 'No open support blockers.';
+      renderGuardrailCard(els.guardrailBoundary, repositoryCount > 0 ? 'pass' : 'fail', repositoryCount > 0 ? 'Project boundary is visible' : 'Project boundary is still unresolved', repositoryCount > 0 ? 'Repository scope is loaded for this project, so promotion targets are visible.' : 'Load a project with active repository connections before extending rollout or access.');
+      renderGuardrailCard(els.guardrailReadiness, support.readiness === 'ready' ? 'pass' : 'fail', support.readiness === 'ready' ? 'Readiness is green' : 'Readiness is not green', support.readiness === 'ready' ? 'Support checks show the live project is ready for customer-facing use.' : 'Do not expand promotion or durable access while support readiness is blocked or unknown.');
+      renderGuardrailCard(els.guardrailReviewGate, pendingReviewCount === 0 ? 'pass' : 'fail', pendingReviewCount === 0 ? 'Review gate is clear' : 'Review gate still has pending work', pendingReviewCount === 0 ? 'No hosted-feedback backlog is waiting on operator review.' : String(pendingReviewCount) + ' hosted-feedback item(s) still need queue review before promotion should move forward.');
+      renderGuardrailCard(els.guardrailPromotionScope, support.readiness === 'ready' && pendingReviewCount === 0 ? (grantCount > 0 ? 'pass' : 'neutral') : 'fail', grantCount > 0 ? 'Customer access is explicitly scoped' : 'No durable customer access is live', grantCount > 0 ? 'Durable visibility is currently constrained to ' + grantCount + ' active customer portal grant(s).' : support.readiness === 'ready' && pendingReviewCount === 0 ? 'No durable customer portal grant is live yet, which is safe while rollout stays narrow.' : 'Hold customer access changes until readiness is green and the review gate is clear.');
       const publicUrls = support.publicUrls || {};
       if (publicUrls.widgetBaseUrl) {
         renderLink('Widget Base URL', publicUrls.widgetBaseUrl);
