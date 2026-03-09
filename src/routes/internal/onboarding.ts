@@ -40,7 +40,7 @@ const githubAppInstallLinkSchema = z.object({
 const githubAppInstallCallbackQuerySchema = z.object({
   installation_id: z.coerce.number().int().positive(),
   setup_action: z.string().optional(),
-  state: z.string().min(32)
+  state: z.string().min(32).optional()
 });
 
 const createWorkspaceSchema = z.object({
@@ -436,6 +436,20 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
 
   app.get('/github/app/install/callback', async (request, reply) => {
     const query = githubAppInstallCallbackQuerySchema.parse(request.query);
+
+    if (!query.state) {
+      reply.type('text/html; charset=utf-8');
+      return reply.code(200).send(buildGitHubAppInstallResultPage({
+        status: 'partial',
+        title: 'GitHub App installed manually',
+        message: 'GitHub redirected back without a signed install state. This usually means the app was installed directly from GitHub instead of starting from the Nexus install-link route. The installation itself is valid, but Nexus cannot auto-link it to a workspace or project from this callback alone.',
+        details: [
+          { label: 'Installation', value: String(query.installation_id) },
+          { label: 'Setup Action', value: query.setup_action ?? 'install' },
+          { label: 'Next Step', value: 'Set GITHUB_APP_INSTALLATION_ID or re-run the install from Nexus.' }
+        ]
+      }));
+    }
 
     let installState;
     try {
