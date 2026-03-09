@@ -323,3 +323,98 @@ These do not block initial scaffolding, but they do affect later architecture:
 - [x] New customer repository connection can now start from a GitHub App install link and callback, with broader operator-facing onboarding and support workflows available in the learn surfaces.
 - [x] Customer feedback submission completed in under 60 seconds through the hosted intake surface, with `npm run e2e:customer-handoff` currently enforcing a stricter 30-second total budget plus stage SLOs.
 - [x] Customers can now inspect session-scoped hosted-feedback status through `/public/projects/:projectKey/dashboard`, including current review state, refined impact, and ownership hints.
+
+## Tech Debt Reduction Plan
+
+Objective: improve maintainability and delivery confidence without changing the product contract shipped through Phase 10.
+
+### Immediate Blocker
+
+- [ ] Restore green push workflows first. Treat `.github/workflows/agent-and-deployment-smoke.yml` and `.github/workflows/developer-context-smoke.yml` as the first debt-reduction target, identify the exact failing job or smoke path, and keep CI stabilization ahead of broader refactors.
+
+### Focus Areas
+
+- [ ] Reduce CI brittleness and make failing push diagnostics faster to understand.
+- [ ] Break up oversized route files and embedded HTML or view builders.
+- [ ] Add fast automated coverage beneath the existing smoke suite.
+- [ ] Reduce high-churn query and hydration overhead in internal report routes.
+- [ ] Improve worker and job observability for replay and agent execution.
+
+### Planned Workstreams
+
+#### Phase A: CI Stabilization
+
+Deliverables:
+
+- [ ] Identify and fix the currently failing push workflow path before broader refactor work begins.
+- [ ] Reduce smoke flake and improve failure output for push-triggered workflow runs.
+- [ ] Keep `npm run check`, `npm run e2e:customer-handoff`, and `npm run e2e:hosted-feedback-review` aligned with the CI validation surface.
+
+Exit criteria:
+
+- [ ] Push workflows pass reliably on `main`.
+- [ ] Failing workflow steps point clearly to the broken smoke or runtime path.
+
+#### Phase B: Route And View Decomposition
+
+Deliverables:
+
+- [ ] Split the largest route and page-builder files starting with `src/routes/learn.ts`.
+- [ ] Extract public customer-facing page builders from `src/routes/public/projects.ts` into smaller adjacent modules.
+- [ ] Keep route registration focused on HTTP concerns rather than HTML construction and client-page state.
+
+Exit criteria:
+
+- [ ] The largest route or page-builder files are broken into smaller modules with clearer ownership boundaries.
+- [ ] Existing onboarding, support, review, and public dashboard behavior remains unchanged.
+
+#### Phase C: Fast Test Coverage
+
+Deliverables:
+
+- [ ] Add a lightweight unit or integration test layer beside the existing smoke scripts.
+- [ ] Cover high-risk logic such as policy evaluation, impact scoring, duplicate detection, and public token validation.
+- [ ] Preserve the existing smoke suite as end-to-end validation rather than replacing it.
+
+Exit criteria:
+
+- [ ] At least one fast non-smoke test layer exists in the repo.
+- [ ] High-risk pure logic no longer depends solely on smoke coverage to catch regressions.
+
+#### Phase D: Report Route Performance Cleanup
+
+Deliverables:
+
+- [ ] Reduce repeated per-report hydration work in `src/routes/internal/reports.ts`.
+- [ ] Consolidate high-volume report lookups where recent-report loops trigger multiple repository reads per item.
+- [ ] Preserve the current report context and active-issue contracts while lowering query pressure.
+
+Exit criteria:
+
+- [ ] Worst-path internal report routes perform fewer repository round-trips per request.
+- [ ] Review queue and active-issue contexts remain functionally unchanged.
+
+#### Phase E: Worker Observability
+
+Deliverables:
+
+- [ ] Replace ad hoc lifecycle logging in `src/worker.ts` with clearer structured job logs.
+- [ ] Improve replay, agent-task, and GitHub-sync failure breadcrumbs for production debugging.
+- [ ] Keep request and job correlation easier to trace across API and worker boundaries.
+
+Exit criteria:
+
+- [ ] Worker failures are easier to diagnose from logs without replaying the full scenario locally.
+- [ ] Replay and agent-task lifecycle transitions emit consistent structured output.
+
+### Secondary Cleanup
+
+- [ ] Keep repository-abstraction cleanup as a later track. The repository layer is repetitive, but it should follow CI repair, route decomposition, test coverage, and internal report performance work.
+
+### Success Criteria
+
+- [ ] Push workflows are green together with the local validation surface.
+- [ ] The current customer handoff and hosted-feedback review flows stay green throughout refactor work.
+- [ ] The largest route and page-builder files are smaller and easier to evolve.
+- [ ] The repo has fast automated coverage in addition to smoke tests.
+- [ ] Internal report routes are less query-heavy in their worst paths.
