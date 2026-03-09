@@ -36,7 +36,7 @@ const executionIdParamsSchema = z.object({
 
 const executionReviewSchema = z.object({
   status: z.enum(['approved', 'rejected']),
-  notes: z.string().min(1).max(5000).optional()
+  notes: z.string().trim().min(1).max(5000).optional()
 });
 
 const reportIdParamsSchema = z.object({
@@ -377,13 +377,18 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.conflict(`agent task execution cannot be reviewed while status is ${execution.status}`);
     }
 
+    const reviewNotes = payload.notes?.trim();
+    if (!reviewNotes) {
+      throw app.httpErrors.conflict('agent task execution review requires explicit notes');
+    }
+
     const review = {
       id: randomUUID(),
       agentTaskExecutionId: executionId,
       status: payload.status,
       reviewerId: principal.id,
       reviewedAt: new Date().toISOString(),
-      ...(payload.notes ? { notes: payload.notes } : {})
+      notes: reviewNotes
     } as const;
 
     await app.agentTaskExecutionReviews.upsert(review);
@@ -400,7 +405,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
         review: {
           status: payload.status,
           reviewerId: principal.id,
-          notes: payload.notes ?? null,
+          notes: reviewNotes,
           reviewedAt: review.reviewedAt
         }
       }
@@ -414,7 +419,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       payload: {
         executionId,
         status: payload.status,
-        ...(payload.notes ? { notes: payload.notes } : {})
+        notes: reviewNotes
       }
     });
 
@@ -480,6 +485,10 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     const review = await app.agentTaskExecutionReviews.findByExecutionId(executionId);
     if (!review || review.status !== 'approved') {
       throw app.httpErrors.conflict('agent task execution must be approved before promotion');
+    }
+
+    if (!review.notes?.trim()) {
+      throw app.httpErrors.conflict('agent task execution approval must include review notes before promotion');
     }
 
     const validationStatus = typeof execution.resultSummary.validationStatus === 'string'

@@ -36,16 +36,16 @@ const reviewQueueQuerySchema = z.object({
 
 const reportReviewSchema = z.object({
   status: z.enum(['approved', 'rejected']),
-  repository: z.string().min(1).max(255).optional(),
-  notes: z.string().min(1).max(4000).optional()
+  repository: z.string().trim().min(1).max(255).optional(),
+  notes: z.string().trim().min(1).max(4000).optional()
 });
 
 const reviewQueueActionSchema = z.object({
   action: z.enum(['assign', 'approve', 'reject']),
   reportIds: z.array(z.string().uuid()).min(1).max(50),
   reviewerId: z.string().min(1).max(255).optional(),
-  repository: z.string().min(1).max(255).optional(),
-  notes: z.string().min(1).max(4000).optional()
+  repository: z.string().trim().min(1).max(255).optional(),
+  notes: z.string().trim().min(1).max(4000).optional()
 });
 
 function normalizedText(value: unknown): string {
@@ -275,6 +275,17 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       throw app.httpErrors.notFound('draft not found');
     }
 
+    const decisionNotes = input.payload.notes?.trim();
+    const requestedRepository = input.payload.repository?.trim();
+
+    if (report.source === 'hosted-feedback' && !decisionNotes) {
+      throw app.httpErrors.conflict('hosted feedback reviews require explicit decision notes');
+    }
+
+    if (report.source === 'hosted-feedback' && input.payload.status === 'approved' && !requestedRepository) {
+      throw app.httpErrors.conflict('hosted feedback approvals must select an active project repository explicitly');
+    }
+
     const existingReview = await app.reportReviews.findByReportId(input.reportId);
     if (input.payload.status === 'approved' && draft.state === 'synced' && existingReview?.status === 'approved') {
       throw app.httpErrors.conflict('report review is already approved and synced');
@@ -287,7 +298,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         status: 'rejected' as const,
         reviewerId: input.principalId,
         repository: draft.repository,
-        ...(input.payload.notes ? { notes: input.payload.notes } : {}),
+        ...(decisionNotes ? { notes: decisionNotes } : {}),
         reviewedAt: new Date().toISOString()
       };
 
@@ -307,7 +318,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
           reportId: input.reportId,
           reviewStatus: 'rejected',
           repository: draft.repository,
-          notes: input.payload.notes ?? null
+          notes: decisionNotes ?? null
         }
       });
 
@@ -323,10 +334,10 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     const repository = input.payload.status === 'approved'
       ? await resolveApprovedProjectRepository({
         report,
-        requestedRepository: input.payload.repository,
+        requestedRepository,
         currentRepository: draft.repository
       })
-      : (input.payload.repository ?? draft.repository);
+      : (requestedRepository ?? draft.repository);
     const github = await app.github.resolve({
       projectId: report.projectId,
       repository,
@@ -362,7 +373,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       status: 'approved' as const,
       reviewerId: input.principalId,
       repository,
-      ...(input.payload.notes ? { notes: input.payload.notes } : {}),
+      ...(decisionNotes ? { notes: decisionNotes } : {}),
       reviewedAt: new Date().toISOString()
     };
 
@@ -388,7 +399,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         issueNumber: issueNumber ?? null,
         issueUrl: issueUrl ?? null,
         syncError: syncError ?? null,
-        notes: input.payload.notes ?? null
+        notes: decisionNotes ?? null
       }
     });
 

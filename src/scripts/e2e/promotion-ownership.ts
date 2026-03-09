@@ -349,6 +349,17 @@ async function main(): Promise<void> {
   assert(closeoutBeforeReview.promotable === false, 'Execution should not be promotable before review approval');
   assert(closeoutBeforeReview.blockers.some((blocker) => blocker.includes('approval')), 'Closeout blockers did not mention missing approval before review');
 
+  await requestExpectingStatus(`${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/review`, 409, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      status: 'approved'
+    })
+  });
+
   await requestJson(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/review`,
     {

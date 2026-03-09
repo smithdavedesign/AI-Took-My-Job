@@ -644,6 +644,17 @@ async function main(): Promise<void> {
   });
   assert(initialRejectedReview.review?.status === 'pending', 'Rejected test report did not start pending');
 
+  await requestExpectingStatus(`${baseUrl}/internal/reports/${rejectedReport.reportId}/review`, 409, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      status: 'rejected'
+    })
+  });
+
   const rejectedResult = await requestJson<ReviewResponse>(`${baseUrl}/internal/reports/${rejectedReport.reportId}/review`, {
     method: 'POST',
     headers: {
@@ -689,6 +700,31 @@ async function main(): Promise<void> {
   );
   const approvedItem = queuedApproved.items.find((item) => item.reportId === approvedReport.reportId);
   assert(approvedItem, 'Approved hosted feedback did not appear in review queue');
+
+  await requestExpectingStatus(`${baseUrl}/internal/reports/review-queue/actions`, 409, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      action: 'approve',
+      reportIds: [approvedReport.reportId],
+      repository: targetRepository
+    })
+  });
+
+  await requestExpectingStatus(`${baseUrl}/internal/reports/${approvedReport.reportId}/review`, 409, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      status: 'approved',
+      notes: 'Repository selection is required for approval.'
+    })
+  });
 
   const approvedResult = await requestJson<ReviewResponse>(`${baseUrl}/internal/reports/${approvedReport.reportId}/review`, {
     method: 'POST',

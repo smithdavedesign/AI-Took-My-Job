@@ -113,6 +113,16 @@ async function assertHtmlPage(baseUrl: string, path: string): Promise<void> {
   assert(/<title>/i.test(response.text), `${path} did not include a title element`);
 }
 
+async function assertHtmlContains(baseUrl: string, path: string, snippets: string[]): Promise<void> {
+  const response = await requestText(`${baseUrl}${path}`);
+  assert(response.status === 200, `${path} did not return 200`);
+  assert(/text\/html/i.test(response.headers.get('content-type') ?? ''), `${path} did not return HTML`);
+
+  for (const snippet of snippets) {
+    assert(response.text.includes(snippet), `${path} did not include expected snippet: ${snippet}`);
+  }
+}
+
 async function main(): Promise<void> {
   const baseUrl = getBaseUrl();
   const token = chooseServiceToken(parseServiceTokens(process.env.INTERNAL_SERVICE_TOKENS));
@@ -123,6 +133,25 @@ async function main(): Promise<void> {
 
   await assertHtmlPage(baseUrl, '/learn');
   await assertHtmlPage(baseUrl, '/learn/prd');
+  await assertHtmlContains(baseUrl, '/learn', [
+    'Operator Rollout Checklist',
+    'localStorage.getItem(storageKey)',
+    'localStorage.removeItem(storageKey)',
+    'resetChecklist'
+  ]);
+  await assertHtmlContains(baseUrl, '/learn/onboarding', [
+    'Readiness And Promotion Guardrails',
+    'Promote Customer Access'
+  ]);
+  await assertHtmlContains(baseUrl, '/learn/review-queue', [
+    'Readiness And Promotion Guardrails',
+    'Decision rationale missing',
+    'Approval stays blocked until repository target, context, and notes are all present.'
+  ]);
+  await assertHtmlContains(baseUrl, '/learn/support-ops', [
+    'Readiness And Promotion Guardrails',
+    'Promote Customer Access'
+  ]);
 
   const filePath = `src/routes/internal/reports.ts`;
   const seeded = await requestJson<WebhookResponse>(`${baseUrl}/webhooks/newrelic`, {
@@ -167,7 +196,7 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify({
     reportId: seeded.reportId,
-    learnRoutes: ['/learn', '/learn/prd'],
+    learnRoutes: ['/learn', '/learn/prd', '/learn/onboarding', '/learn/review-queue', '/learn/support-ops'],
     matchedPath: filePath,
     contextPath: matchedIssue.contextPath
   }, null, 2));
