@@ -166,6 +166,8 @@ locals {
     "GITHUB_APP_ID=${var.github_app_id}",
     "GITHUB_APP_INSTALLATION_ID=${var.github_app_installation_id}",
     "GITHUB_APP_PRIVATE_KEY=${var.github_app_private_key}",
+    "GITHUB_APP_STATE_SECRET=${var.github_app_state_secret}",
+    "PUBLIC_WIDGET_SIGNING_SECRET=${var.public_widget_signing_secret}",
     "AGENT_EXECUTION_COMMAND=${var.agent_execution_command}",
     "AGENT_EXECUTION_ARGS=${var.agent_execution_args}",
     "AGENT_EXECUTION_TIMEOUT_SECONDS=${var.agent_execution_timeout_seconds}",

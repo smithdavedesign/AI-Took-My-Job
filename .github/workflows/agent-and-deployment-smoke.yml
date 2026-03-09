@@ -291,6 +291,8 @@ jobs:
           GITHUB_APP_ID=
           GITHUB_APP_INSTALLATION_ID=
           GITHUB_APP_PRIVATE_KEY=
+          GITHUB_APP_STATE_SECRET=ci-github-app-state-secret-1234567890
+          PUBLIC_WIDGET_SIGNING_SECRET=ci-public-widget-signing-secret-1234567890
           AGENT_EXECUTION_COMMAND=
           AGENT_EXECUTION_ARGS=[]
           AGENT_EXECUTION_TIMEOUT_SECONDS=600
@@ -376,6 +378,8 @@ jobs:
             -e TF_VAR_minio_root_user=minioadmin \
             -e TF_VAR_minio_root_password=minioadmin \
             -e TF_VAR_minio_bucket=nexus-artifacts \
+            -e TF_VAR_github_app_state_secret=ci-github-app-state-secret-1234567890 \
+            -e TF_VAR_public_widget_signing_secret=ci-public-widget-signing-secret-1234567890 \
             -v "$PWD:/workspace" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace/infra/terraform \
@@ -413,6 +417,8 @@ jobs:
             -e TF_VAR_minio_root_user=minioadmin \
             -e TF_VAR_minio_root_password=minioadmin \
             -e TF_VAR_minio_bucket=nexus-artifacts \
+            -e TF_VAR_github_app_state_secret=ci-github-app-state-secret-1234567890 \
+            -e TF_VAR_public_widget_signing_secret=ci-public-widget-signing-secret-1234567890 \
             -v "$PWD:/workspace" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace/infra/terraform \

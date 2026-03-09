@@ -203,6 +203,16 @@ variable "github_app_private_key" {
   sensitive = true
 }
 
+variable "github_app_state_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "public_widget_signing_secret" {
+  type      = string
+  sensitive = true
+}
+
 variable "agent_execution_command" {
   type    = string
   default = ""
