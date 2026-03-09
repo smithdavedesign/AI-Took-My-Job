@@ -19,7 +19,8 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
 
     const github = await app.github.resolve({
       projectId: payload.projectId,
-      repository: payload.repository
+      repository: payload.repository,
+      strictProjectScoped: Boolean(payload.projectId)
     });
 
     if (!github.enabled) {
@@ -34,7 +35,7 @@ export function registerGitHubInternalRoutes(app: FastifyInstance): void {
 
     await app.audit.write({
       eventType: 'github.issue_draft_created',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: {

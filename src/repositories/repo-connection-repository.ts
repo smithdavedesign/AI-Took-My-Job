@@ -6,6 +6,7 @@ export interface RepoConnectionRepository {
   findById(id: string): Promise<StoredRepoConnection | null>;
   findByProjectId(projectId: string): Promise<StoredRepoConnection[]>;
   findByProjectIdAndRepository(projectId: string, repository: string): Promise<StoredRepoConnection | null>;
+  findByGitHubInstallationId(githubInstallationId: string): Promise<StoredRepoConnection[]>;
   findDefaultByProjectId(projectId: string): Promise<StoredRepoConnection | null>;
   update(id: string, input: RepoConnectionUpdateInput): Promise<StoredRepoConnection | null>;
 }
@@ -92,6 +93,17 @@ export function createRepoConnectionRepository(database: DatabaseClient): RepoCo
 
       const row = result.rows[0];
       return row ? mapRow(row) : null;
+    },
+    async findByGitHubInstallationId(githubInstallationId) {
+      const result = await database.query<RepoConnectionRow>(
+        `SELECT id, project_id, github_installation_id, provider, repository, is_default, status, config
+         FROM repo_connections
+         WHERE github_installation_id = $1
+         ORDER BY created_at DESC`,
+        [githubInstallationId]
+      );
+
+      return result.rows.map(mapRow);
     },
     async findDefaultByProjectId(projectId) {
       const result = await database.query<RepoConnectionRow>(

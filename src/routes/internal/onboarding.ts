@@ -16,6 +16,10 @@ const workspaceIdParamsSchema = z.object({
   workspaceId: z.string().uuid()
 });
 
+const installationIdParamsSchema = z.object({
+  installationId: z.coerce.number().int().positive()
+});
+
 const projectIdParamsSchema = z.object({
   projectId: z.string().uuid()
 });
@@ -35,6 +39,21 @@ const githubAppInstallLinkSchema = z.object({
   repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'repository must be owner/repo').optional(),
   isDefault: z.boolean().optional(),
   ttlSeconds: z.coerce.number().int().min(60).max(7200).optional()
+});
+
+const githubAppReconcileSchema = z.object({
+  installationId: z.coerce.number().int().positive(),
+  projectId: z.string().uuid().optional(),
+  repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'repository must be owner/repo').optional(),
+  isDefault: z.boolean().optional()
+});
+
+const githubAppTransferSchema = z.object({
+  installationId: z.coerce.number().int().positive(),
+  projectId: z.string().uuid().optional(),
+  repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'repository must be owner/repo').optional(),
+  isDefault: z.boolean().optional(),
+  deactivateSourceConnections: z.boolean().optional()
 });
 
 const githubAppInstallCallbackQuerySchema = z.object({
@@ -143,6 +162,150 @@ function buildGitHubAppInstallResultPage(input: {
   ].join('\n');
 }
 
+async function persistGitHubInstallationBinding(app: FastifyInstance, input: {
+  workspace: { id: string; name: string };
+  installationId: number;
+  setupAction?: string;
+  project?: { id: string; name: string } | null;
+  repository?: string | null;
+  isDefault?: boolean;
+  allowWorkspaceTransfer?: boolean;
+}): Promise<{
+  details: Awaited<ReturnType<typeof getGitHubAppInstallationDetails>>;
+  repositories: Awaited<ReturnType<typeof listGitHubInstallationRepositories>>;
+  syncedInstallation: Awaited<ReturnType<FastifyInstance['githubInstallations']['upsert']>>;
+  linkedRepository: string | null;
+  linkStatus: string;
+  repoConnectionId: string | null;
+}> {
+  const details = await getGitHubAppInstallationDetails(app.config, input.installationId);
+  const repositories = await listGitHubInstallationRepositories(app.config, input.installationId);
+  const existingInstallation = await app.githubInstallations.findByInstallationId(input.installationId);
+
+  if (existingInstallation && existingInstallation.workspaceId !== input.workspace.id && input.allowWorkspaceTransfer !== true) {
+    throw app.httpErrors.conflict('This GitHub App installation is already mapped to another workspace');
+  }
+
+  const syncedInstallation = await app.githubInstallations.upsert({
+    id: existingInstallation?.id ?? randomUUID(),
+    workspaceId: input.workspace.id,
+    provider: 'github',
+    installationId: input.installationId,
+    ...(details.accountLogin ? { accountLogin: details.accountLogin } : {}),
+    ...(details.accountType ? { accountType: details.accountType } : {}),
+    metadata: {
+      targetType: details.targetType ?? null,
+      repositoriesSelection: details.repositoriesSelection ?? null,
+      permissions: details.permissions,
+      repositoryCount: repositories.length,
+      lastSetupAction: input.setupAction ?? 'manual-reconcile',
+      lastSyncedAt: new Date().toISOString()
+    }
+  });
+
+  let linkedRepository = input.repository ?? null;
+  let linkStatus = 'installation persisted';
+  let repoConnectionId: string | null = null;
+
+  if (input.project && input.repository) {
+    const repositoryAvailable = repositories.some((repository) => repository.fullName === input.repository);
+    if (!repositoryAvailable) {
+      linkedRepository = null;
+      linkStatus = 'installation saved, repository not visible to this installation';
+    } else {
+      const existingConnection = await app.repoConnections.findByProjectIdAndRepository(input.project.id, input.repository);
+      if (existingConnection) {
+        const updatedConnection = await app.repoConnections.update(existingConnection.id, {
+          githubInstallationId: syncedInstallation.id,
+          ...(typeof input.isDefault === 'boolean' ? { isDefault: input.isDefault } : {}),
+          status: 'active',
+          config: {
+            onboardingSource: input.setupAction ?? 'manual-reconcile',
+            installationId: input.installationId,
+            accountLogin: details.accountLogin ?? null
+          }
+        });
+        repoConnectionId = updatedConnection?.id ?? existingConnection.id;
+      } else {
+        const existingConnections = await app.repoConnections.findByProjectId(input.project.id);
+        const shouldBeDefault = typeof input.isDefault === 'boolean'
+          ? input.isDefault
+          : existingConnections.length === 0;
+        const repoConnectionIdValue = randomUUID();
+        await app.repoConnections.create({
+          id: repoConnectionIdValue,
+          projectId: input.project.id,
+          githubInstallationId: syncedInstallation.id,
+          provider: 'github',
+          repository: input.repository,
+          isDefault: shouldBeDefault,
+          status: 'active',
+          config: {
+            onboardingSource: input.setupAction ?? 'manual-reconcile',
+            installationId: input.installationId,
+            accountLogin: details.accountLogin ?? null
+          }
+        });
+        repoConnectionId = repoConnectionIdValue;
+      }
+
+      linkStatus = 'installation persisted and repository linked';
+    }
+  }
+
+  return {
+    details,
+    repositories,
+    syncedInstallation,
+    linkedRepository,
+    linkStatus,
+    repoConnectionId
+  };
+}
+
+async function buildGitHubInstallationAdminSnapshot(app: FastifyInstance, installationId: number): Promise<{
+  installation: NonNullable<Awaited<ReturnType<FastifyInstance['githubInstallations']['findByInstallationId']>>>;
+  workspace: NonNullable<Awaited<ReturnType<FastifyInstance['workspaces']['findById']>>>;
+  linkedProjects: Array<{
+    project: { id: string; projectKey: string; name: string };
+    repoConnection: { id: string; repository: string; isDefault: boolean; status: 'active' | 'inactive' };
+  }>;
+}> {
+  const installation = await app.githubInstallations.findByInstallationId(installationId);
+  if (!installation) {
+    throw app.httpErrors.notFound('github installation not found');
+  }
+
+  const workspace = await app.workspaces.findById(installation.workspaceId);
+  if (!workspace) {
+    throw app.httpErrors.conflict('github installation workspace no longer exists');
+  }
+
+  const linkedConnections = await app.repoConnections.findByGitHubInstallationId(installation.id);
+  const linkedProjects = await Promise.all(linkedConnections.map(async (connection) => {
+    const project = await app.projects.findById(connection.projectId);
+    return project ? {
+      project: {
+        id: project.id,
+        projectKey: project.projectKey,
+        name: project.name
+      },
+      repoConnection: {
+        id: connection.id,
+        repository: connection.repository,
+        isDefault: connection.isDefault,
+        status: connection.status
+      }
+    } : null;
+  }));
+
+  return {
+    installation,
+    workspace,
+    linkedProjects: linkedProjects.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+  };
+}
+
 export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
   app.post('/internal/workspaces', async (request, reply) => {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
@@ -163,7 +326,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     await app.workspaces.create(workspace);
     await app.audit.write({
       eventType: 'workspace.created',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: workspace
@@ -195,6 +358,21 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     return app.githubInstallations.findByWorkspaceId(workspaceId);
   });
 
+  app.get('/internal/github-app/installations/:installationId', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+    const { installationId } = installationIdParamsSchema.parse(request.params);
+    const snapshot = await buildGitHubInstallationAdminSnapshot(app, installationId);
+
+    return {
+      installation: {
+        ...snapshot.installation,
+        installationId: Number(snapshot.installation.installationId)
+      },
+      workspace: snapshot.workspace,
+      linkedProjects: snapshot.linkedProjects
+    };
+  });
+
   app.post('/internal/projects', async (request, reply) => {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
     const payload = createProjectSchema.parse(request.body);
@@ -221,7 +399,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     await app.projects.create(project);
     await app.audit.write({
       eventType: 'project.created',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: project
@@ -278,7 +456,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     await app.githubInstallations.create(installation);
     await app.audit.write({
       eventType: 'github_installation.created',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: installation
@@ -334,7 +512,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     await app.repoConnections.create(connection);
     await app.audit.write({
       eventType: 'repo_connection.created',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: connection
@@ -391,6 +569,147 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     } catch (error) {
       throw app.httpErrors.conflict(error instanceof Error ? error.message : 'GitHub App onboarding is not configured');
     }
+  });
+
+  app.post('/internal/workspaces/:workspaceId/github-app/reconcile', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { workspaceId } = workspaceIdParamsSchema.parse(request.params);
+    const payload = githubAppReconcileSchema.parse(request.body ?? {});
+    const workspace = await app.workspaces.findById(workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.notFound('workspace not found');
+    }
+
+    let project = null;
+    if (payload.projectId) {
+      project = await app.projects.findById(payload.projectId);
+      if (!project) {
+        throw app.httpErrors.notFound('project not found');
+      }
+
+      if (project.workspaceId !== workspace.id) {
+        throw app.httpErrors.conflict('project workspace does not match reconcile workspace');
+      }
+    }
+
+    const synced = await persistGitHubInstallationBinding(app, {
+      workspace,
+      installationId: payload.installationId,
+      setupAction: 'manual-reconcile',
+      project,
+      repository: payload.repository ?? null,
+      ...(typeof payload.isDefault === 'boolean' ? { isDefault: payload.isDefault } : {})
+    });
+
+    await app.audit.write({
+      eventType: 'github_app.installation_reconciled',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        workspaceId: workspace.id,
+        projectId: project?.id ?? null,
+        installationId: payload.installationId,
+        repository: payload.repository ?? null,
+        repoConnectionId: synced.repoConnectionId,
+        result: synced.linkStatus
+      }
+    });
+
+    return {
+      workspace,
+      project,
+      installation: synced.syncedInstallation,
+      repositoryLink: {
+        requested: payload.repository ?? null,
+        linked: synced.linkedRepository,
+        repoConnectionId: synced.repoConnectionId,
+        result: synced.linkStatus
+      },
+      repositories: synced.repositories.map((repository) => repository.fullName),
+      account: synced.details.accountLogin ?? null
+    };
+  });
+
+  app.post('/internal/workspaces/:workspaceId/github-app/transfer-installation', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const { workspaceId } = workspaceIdParamsSchema.parse(request.params);
+    const payload = githubAppTransferSchema.parse(request.body ?? {});
+    const workspace = await app.workspaces.findById(workspaceId);
+    if (!workspace) {
+      throw app.httpErrors.notFound('workspace not found');
+    }
+
+    let project = null;
+    if (payload.projectId) {
+      project = await app.projects.findById(payload.projectId);
+      if (!project) {
+        throw app.httpErrors.notFound('project not found');
+      }
+
+      if (project.workspaceId !== workspace.id) {
+        throw app.httpErrors.conflict('project workspace does not match transfer workspace');
+      }
+    }
+
+    const current = await buildGitHubInstallationAdminSnapshot(app, payload.installationId);
+    const sourceWorkspace = current.workspace;
+    const sourceConnections = current.linkedProjects;
+    const shouldDeactivate = payload.deactivateSourceConnections !== false && sourceWorkspace.id !== workspace.id;
+
+    const deactivatedConnectionIds: string[] = [];
+    if (shouldDeactivate) {
+      for (const entry of sourceConnections) {
+        await app.repoConnections.update(entry.repoConnection.id, {
+          status: 'inactive',
+          config: {
+            transferredAt: new Date().toISOString(),
+            transferredToWorkspaceId: workspace.id,
+            transferredBy: principal.id
+          }
+        });
+        deactivatedConnectionIds.push(entry.repoConnection.id);
+      }
+    }
+
+    const synced = await persistGitHubInstallationBinding(app, {
+      workspace,
+      installationId: payload.installationId,
+      setupAction: 'manual-transfer',
+      project,
+      repository: payload.repository ?? null,
+      ...(typeof payload.isDefault === 'boolean' ? { isDefault: payload.isDefault } : {}),
+      allowWorkspaceTransfer: true
+    });
+
+    await app.audit.write({
+      eventType: 'github_app.installation_transferred',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        installationId: payload.installationId,
+        sourceWorkspaceId: sourceWorkspace.id,
+        targetWorkspaceId: workspace.id,
+        projectId: project?.id ?? null,
+        repository: payload.repository ?? null,
+        deactivatedConnectionIds
+      }
+    });
+
+    return {
+      sourceWorkspace,
+      targetWorkspace: workspace,
+      installation: synced.syncedInstallation,
+      repositoryLink: {
+        requested: payload.repository ?? null,
+        linked: synced.linkedRepository,
+        repoConnectionId: synced.repoConnectionId,
+        result: synced.linkStatus
+      },
+      deactivatedConnectionIds,
+      account: synced.details.accountLogin ?? null
+    };
   });
 
   app.post('/internal/projects/:projectId/widget-session', async (request) => {
@@ -499,85 +818,19 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
     }
 
     try {
-      const details = await getGitHubAppInstallationDetails(app.config, query.installation_id);
-      const repositories = await listGitHubInstallationRepositories(app.config, query.installation_id);
-      const existingInstallation = await app.githubInstallations.findByInstallationId(query.installation_id);
-      if (existingInstallation && existingInstallation.workspaceId !== workspace.id) {
-        reply.type('text/html; charset=utf-8');
-        return reply.code(409).send(buildGitHubAppInstallResultPage({
-          status: 'error',
-          title: 'Installation already linked',
-          message: 'This GitHub App installation is already mapped to a different workspace.',
-          details: [
-            { label: 'Installation', value: String(query.installation_id) },
-            { label: 'Workspace Id', value: existingInstallation.workspaceId }
-          ]
-        }));
-      }
-
-      const syncedInstallation = await app.githubInstallations.upsert({
-        id: existingInstallation?.id ?? randomUUID(),
-        workspaceId: workspace.id,
-        provider: 'github',
+      const synced = await persistGitHubInstallationBinding(app, {
+        workspace,
         installationId: query.installation_id,
-        ...(details.accountLogin ? { accountLogin: details.accountLogin } : {}),
-        ...(details.accountType ? { accountType: details.accountType } : {}),
-        metadata: {
-          targetType: details.targetType ?? null,
-          repositoriesSelection: details.repositoriesSelection ?? null,
-          permissions: details.permissions,
-          repositoryCount: repositories.length,
-          lastSetupAction: query.setup_action ?? 'install',
-          lastSyncedAt: new Date().toISOString()
-        }
+        setupAction: query.setup_action ?? 'install',
+        project,
+        repository: installState.repository ?? null,
+        ...(typeof installState.isDefault === 'boolean' ? { isDefault: installState.isDefault } : {})
       });
-
-      let linkedRepository = installState.repository ?? null;
-      let linkStatus = 'installation persisted';
-      if (project && installState.repository) {
-        const repositoryAvailable = repositories.some((repository) => repository.fullName === installState.repository);
-        if (!repositoryAvailable) {
-          linkStatus = 'installation saved, repository not visible to this installation';
-          linkedRepository = null;
-        } else {
-          const existingConnection = await app.repoConnections.findByProjectIdAndRepository(project.id, installState.repository);
-          if (existingConnection) {
-            await app.repoConnections.update(existingConnection.id, {
-              githubInstallationId: syncedInstallation.id,
-              status: 'active',
-              config: {
-                onboardingSource: 'github-app-callback',
-                installationId: query.installation_id,
-                accountLogin: details.accountLogin ?? null
-              }
-            });
-          } else {
-            const existingConnections = await app.repoConnections.findByProjectId(project.id);
-            const shouldBeDefault = installState.isDefault === true && !existingConnections.some((connection) => connection.isDefault);
-            await app.repoConnections.create({
-              id: randomUUID(),
-              projectId: project.id,
-              githubInstallationId: syncedInstallation.id,
-              provider: 'github',
-              repository: installState.repository,
-              isDefault: shouldBeDefault || existingConnections.length === 0,
-              status: 'active',
-              config: {
-                onboardingSource: 'github-app-callback',
-                installationId: query.installation_id,
-                accountLogin: details.accountLogin ?? null
-              }
-            });
-          }
-
-          linkStatus = 'installation persisted and repository linked';
-        }
-      }
 
       await app.audit.write({
         eventType: 'github_app.installation_synced',
         actorType: 'system',
-        actorId: details.accountLogin ?? String(query.installation_id),
+        actorId: synced.details.accountLogin ?? String(query.installation_id),
         requestId: request.id,
         payload: {
           workspaceId: workspace.id,
@@ -585,26 +838,26 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
           repository: installState.repository ?? null,
           installationId: query.installation_id,
           setupAction: query.setup_action ?? 'install',
-          linkStatus
+          linkStatus: synced.linkStatus
         }
       });
 
       reply.type('text/html; charset=utf-8');
       return reply.send(buildGitHubAppInstallResultPage({
-        status: linkedRepository || !installState.repository ? 'success' : 'partial',
-        title: linkedRepository || !installState.repository ? 'GitHub App connected' : 'GitHub App connected with follow-up needed',
-        message: linkedRepository || !installState.repository
+        status: synced.linkedRepository || !installState.repository ? 'success' : 'partial',
+        title: synced.linkedRepository || !installState.repository ? 'GitHub App connected' : 'GitHub App connected with follow-up needed',
+        message: synced.linkedRepository || !installState.repository
           ? 'The installation metadata is now stored locally and ready for project-scoped GitHub resolution.'
           : 'The installation was stored, but the requested repository was not visible to this installation. Re-run the install flow after expanding repository access or attach the installation manually to another repository connection.',
         details: [
           { label: 'Workspace', value: workspace.name },
           { label: 'Project', value: project ? project.name : 'Not linked during install' },
           { label: 'Installation', value: String(query.installation_id) },
-          { label: 'Account', value: details.accountLogin ?? 'Unknown account' },
-          { label: 'Repository Link', value: linkedRepository ?? 'No repository linked' },
-          { label: 'Result', value: linkStatus }
+          { label: 'Account', value: synced.details.accountLogin ?? 'Unknown account' },
+          { label: 'Repository Link', value: synced.linkedRepository ?? 'No repository linked' },
+          { label: 'Result', value: synced.linkStatus }
         ],
-        repositories: repositories.map((repository) => repository.fullName)
+        repositories: synced.repositories.map((repository) => repository.fullName)
       }));
     } catch (error) {
       reply.type('text/html; charset=utf-8');

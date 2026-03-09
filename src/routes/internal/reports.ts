@@ -197,7 +197,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
       await app.audit.write({
         eventType: 'report.reviewed',
-        actorType: 'system',
+          actorType: 'service',
         actorId: input.principalId,
         requestId: input.requestId,
         payload: {
@@ -220,7 +220,8 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     const repository = input.payload.repository ?? draft.repository;
     const github = await app.github.resolve({
       projectId: report.projectId,
-      repository
+      repository,
+      strictProjectScoped: Boolean(report.projectId)
     });
 
     let issueNumber: number | undefined;
@@ -268,7 +269,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
 
     await app.audit.write({
       eventType: 'report.reviewed',
-      actorType: 'system',
+      actorType: 'service',
       actorId: input.principalId,
       requestId: input.requestId,
       payload: {
@@ -1027,7 +1028,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         await app.reportReviews.upsert(assignedReview);
         await app.audit.write({
           eventType: 'report.review_assigned',
-          actorType: 'system',
+          actorType: 'service',
           actorId: principal.id,
           requestId: request.id,
           payload: {

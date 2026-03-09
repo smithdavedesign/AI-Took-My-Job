@@ -143,6 +143,20 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS audit_events_type_idx
   ON audit_events (event_type, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS service_identities (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source TEXT NOT NULL DEFAULT 'manual',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS service_identities_revoked_idx
+  ON service_identities (revoked_at, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS replay_runs (
   id UUID PRIMARY KEY,
   feedback_report_id UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,

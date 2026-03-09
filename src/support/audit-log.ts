@@ -5,7 +5,7 @@ import type { AuditRepository } from '../repositories/audit-repository.js';
 
 export interface AuditEvent {
   eventType: string;
-  actorType: 'system' | 'user' | 'integration';
+  actorType: 'system' | 'user' | 'integration' | 'service';
   actorId?: string;
   requestId?: string;
   payload: Record<string, unknown>;

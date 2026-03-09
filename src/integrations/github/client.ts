@@ -42,9 +42,9 @@ export interface GitHubIntegrationResolver {
   enabled: boolean;
   repository: string;
   usingTestRepository: boolean;
-  resolve(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<GitHubIntegration>;
-  resolveRepository(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<string>;
-  isEnabled(input?: { projectId?: string | undefined; repository?: string | null | undefined }): Promise<boolean>;
+  resolve(input?: { projectId?: string | undefined; repository?: string | null | undefined; strictProjectScoped?: boolean | undefined }): Promise<GitHubIntegration>;
+  resolveRepository(input?: { projectId?: string | undefined; repository?: string | null | undefined; strictProjectScoped?: boolean | undefined }): Promise<string>;
+  isEnabled(input?: { projectId?: string | undefined; repository?: string | null | undefined; strictProjectScoped?: boolean | undefined }): Promise<boolean>;
 }
 
 export interface GitHubAppInstallationDetails {
@@ -392,6 +392,7 @@ export function createGitHubIntegrationResolver(input: {
     usingTestRepository: defaultIntegration.usingTestRepository,
     async resolve(options = {}) {
       const requestedRepository = options.repository ?? undefined;
+      const strictProjectScoped = options.strictProjectScoped === true;
       if (requestedRepository && (!requestedRepository.includes('/') || requestedRepository.startsWith('/') || requestedRepository.startsWith('.'))) {
         return createGitHubIntegration(input.config, {
           repository: requestedRepository,
@@ -416,6 +417,13 @@ export function createGitHubIntegrationResolver(input: {
 
         return createGitHubIntegration(input.config, {
           repository: connection.repository,
+          enabled: false
+        });
+      }
+
+      if (strictProjectScoped || options.projectId) {
+        return createGitHubIntegration(input.config, {
+          repository: requestedRepository ?? (defaultIntegration.repository || 'unconfigured'),
           enabled: false
         });
       }

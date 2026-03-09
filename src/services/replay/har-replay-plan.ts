@@ -1,6 +1,6 @@
 import { URL } from 'node:url';
 
-import type { ReplayPlan, ReplayStep } from '../../types/replay.js';
+import type { ReplayCookieRecord, ReplayPlan, ReplayStep } from '../../types/replay.js';
 
 interface HarHeader {
   name?: string;
@@ -65,6 +65,75 @@ function extractCookieNames(headers: HarHeader[]): string[] {
     .split(';')
     .map((part) => part.trim().split('=')[0])
     .filter((value): value is string => Boolean(value));
+}
+
+function parseSameSite(value: string): ReplayCookieRecord['sameSite'] | undefined {
+  const normalized = value.toLowerCase();
+  if (normalized === 'strict') {
+    return 'Strict';
+  }
+
+  if (normalized === 'none') {
+    return 'None';
+  }
+
+  if (normalized === 'lax') {
+    return 'Lax';
+  }
+
+  return undefined;
+}
+
+function extractSetCookieRecords(headers: HarHeader[], requestUrl: string): ReplayCookieRecord[] {
+  const url = new URL(requestUrl);
+
+  return headers
+    .filter((header) => header.name?.toLowerCase() === 'set-cookie' && typeof header.value === 'string' && header.value.length > 0)
+    .map((header) => {
+      const parts = header.value!.split(';').map((part) => part.trim()).filter(Boolean);
+      const [cookiePair, ...attributes] = parts;
+      const separator = cookiePair?.indexOf('=') ?? -1;
+      if (!cookiePair || separator <= 0) {
+        return null;
+      }
+
+      const record: ReplayCookieRecord = {
+        name: cookiePair.slice(0, separator),
+        value: cookiePair.slice(separator + 1),
+        domain: url.hostname,
+        path: '/'
+      };
+
+      for (const attribute of attributes) {
+        const attributeSeparator = attribute.indexOf('=');
+        const key = (attributeSeparator >= 0 ? attribute.slice(0, attributeSeparator) : attribute).trim().toLowerCase();
+        const rawValue = attributeSeparator >= 0 ? attribute.slice(attributeSeparator + 1).trim() : '';
+        if (key === 'domain' && rawValue) {
+          record.domain = rawValue.replace(/^\./, '');
+        } else if (key === 'path' && rawValue) {
+          record.path = rawValue;
+        } else if (key === 'secure') {
+          record.secure = true;
+        } else if (key === 'httponly') {
+          record.httpOnly = true;
+        } else if (key === 'samesite' && rawValue) {
+          const sameSite = parseSameSite(rawValue);
+          if (sameSite) {
+            record.sameSite = sameSite;
+          }
+        } else if (key === 'expires' && rawValue) {
+          record.expiresAt = rawValue;
+        } else if (key === 'max-age' && rawValue) {
+          const maxAgeSeconds = Number(rawValue);
+          if (Number.isFinite(maxAgeSeconds)) {
+            record.expiresAt = new Date(Date.now() + (maxAgeSeconds * 1000)).toISOString();
+          }
+        }
+      }
+
+      return record;
+    })
+    .filter((record): record is ReplayCookieRecord => record !== null);
 }
 
 function toHeaderMap(headers: HarHeader[]): Record<string, string> {
@@ -185,6 +254,14 @@ export function buildReplayArtifacts(harText: string, storageState?: ReplayPlan[
     ...extractBodyDependencies(step.executionStep.bodyText)
   ]))];
   const cookieNames = [...new Set(steps.flatMap((step) => step.cookieNames))];
+  const responseCookies = entries.flatMap((entry) => {
+    if (!entry.request.url) {
+      return [];
+    }
+
+    return extractSetCookieRecords(entry.response.headers ?? [], entry.request.url);
+  });
+  const cookies = [...new Map(responseCookies.map((cookie) => [`${cookie.name}|${cookie.domain ?? ''}|${cookie.path ?? ''}`, cookie])).values()];
 
   return {
     plan: {
@@ -200,7 +277,8 @@ export function buildReplayArtifacts(harText: string, storageState?: ReplayPlan[
       storageState: {
         localStorageKeys: storageState?.localStorageKeys ?? [],
         sessionStorageKeys: storageState?.sessionStorageKeys ?? [],
-        cookieNames
+        cookieNames,
+        ...(cookies.length > 0 ? { cookies } : {})
       }
     },
     executionSteps

@@ -77,7 +77,8 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
     const existingDraft = await app.githubIssueLinks.findByReportId(report.id);
     const defaultRepository = await app.github.resolveRepository({
-      projectId: report.projectId
+      projectId: report.projectId,
+      strictProjectScoped: Boolean(report.projectId)
     });
     const taskId = randomUUID();
     const targetRepository = payload.targetRepository
@@ -119,7 +120,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
     await app.audit.write({
       eventType: 'agent_task.requested',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: {
@@ -190,7 +191,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
     await app.audit.write({
       eventType: 'agent_task.execution_requested',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: {
@@ -308,7 +309,8 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       validationPolicy,
       githubPromotionEnabled: await app.github.isEnabled({
         projectId: task.projectId,
-        repository: task.targetRepository
+        repository: task.targetRepository,
+        strictProjectScoped: Boolean(task.projectId)
       }) && isGitHubRepository(task.targetRepository)
     });
   });
@@ -380,7 +382,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
     await app.audit.write({
       eventType: 'agent_task.execution_reviewed',
-      actorType: 'system',
+      actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: {
@@ -437,7 +439,8 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
     const github = await app.github.resolve({
       projectId: task.projectId,
-      repository: task.targetRepository
+      repository: task.targetRepository,
+      strictProjectScoped: Boolean(task.projectId)
     });
 
     if (!github.enabled) {
@@ -553,7 +556,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
       await app.audit.write({
         eventType: 'agent_task.execution_promoted',
-        actorType: 'system',
+        actorType: 'service',
         actorId: principal.id,
         requestId: request.id,
         payload: {
@@ -590,7 +593,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
       await app.audit.write({
         eventType: 'agent_task.execution_promotion_failed',
-        actorType: 'system',
+        actorType: 'service',
         actorId: principal.id,
         requestId: request.id,
         payload: {
@@ -647,7 +650,8 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
     const github = await app.github.resolve({
       projectId: task.projectId,
-      repository: task.targetRepository
+      repository: task.targetRepository,
+      strictProjectScoped: Boolean(task.projectId)
     });
 
     if (!github.enabled) {
@@ -705,7 +709,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       await app.agentTaskExecutions.update(completedExecution);
       await app.audit.write({
         eventType: 'agent_task.execution_merged',
-        actorType: 'system',
+        actorType: 'service',
         actorId: principal.id,
         requestId: request.id,
         payload: {
@@ -739,7 +743,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
       await app.audit.write({
         eventType: 'agent_task.execution_merge_failed',
-        actorType: 'system',
+        actorType: 'service',
         actorId: principal.id,
         requestId: request.id,
         payload: {

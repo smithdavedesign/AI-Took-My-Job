@@ -34,6 +34,14 @@ interface ReplayResponse {
       localStorageKeys: string[];
       sessionStorageKeys: string[];
       cookieNames?: string[];
+      cookies?: Array<{
+        name: string;
+        domain?: string;
+        path?: string;
+        sameSite?: 'Strict' | 'Lax' | 'None';
+        secure?: boolean;
+        httpOnly?: boolean;
+      }>;
     };
     execution?: {
       status: 'reproduced' | 'not-reproduced' | 'partial' | 'execution-failed';
@@ -41,6 +49,14 @@ interface ReplayResponse {
       isolatedThirdPartyRequests: number;
       resolvedStateReferenceCount: number;
       restoredCookieNames: string[];
+      restoredCookies?: Array<{
+        name: string;
+        domain?: string;
+        path?: string;
+        sameSite?: 'Strict' | 'Lax' | 'None';
+        secure?: boolean;
+        httpOnly?: boolean;
+      }>;
       restoredLocalStorageKeys: string[];
       restoredSessionStorageKeys: string[];
     };
@@ -195,7 +211,11 @@ function buildHarBase64(baseUrl: string): string {
           },
           response: {
             status: 200,
-            headers: [{ name: 'content-type', value: 'application/json' }],
+            headers: [
+              { name: 'content-type', value: 'application/json' },
+              { name: 'set-cookie', value: 'sessionId=abc123; Path=/; HttpOnly; Secure; SameSite=Lax' },
+              { name: 'set-cookie', value: 'cartId=cart-456; Path=/checkout; SameSite=Strict' }
+            ],
             content: { mimeType: 'application/json', size: 64, text: '{}' }
           }
         },
@@ -326,6 +346,8 @@ async function main(): Promise<void> {
   expectIncludesAll(replay.replayPlan.storageState.localStorageKeys, ['cartId', 'userId'], 'Replay localStorage keys');
   expectIncludesAll(replay.replayPlan.storageState.sessionStorageKeys, ['currentOrderId', 'refreshToken'], 'Replay sessionStorage keys');
   expectIncludesAll(replay.replayPlan.storageState.cookieNames ?? [], ['sessionId', 'cartId'], 'Replay cookie names');
+  assert(replay.replayPlan.storageState.cookies?.some((cookie) => cookie.name === 'sessionId' && cookie.httpOnly === true && cookie.secure === true), 'Replay cookie metadata did not capture secure HttpOnly session cookie');
+  assert(replay.replayPlan.execution.restoredCookies?.some((cookie) => cookie.name === 'cartId' && cookie.path === '/checkout' && cookie.sameSite === 'Strict'), 'Replay execution did not preserve cookie path and SameSite metadata');
 
   const artifactTypes = artifacts.map((artifact) => artifact.artifactType).sort();
   assert(JSON.stringify(artifactTypes) === JSON.stringify(['console-logs', 'har', 'local-storage', 'screen-recording', 'session-storage']), `Unexpected artifact types: ${artifactTypes.join(', ')}`);

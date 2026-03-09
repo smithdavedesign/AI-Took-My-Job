@@ -1,8 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
+import { hashServiceToken } from '../repositories/service-identity-repository.js';
+
 export interface AuthenticatedServicePrincipal {
   id: string;
   scopes: string[];
+  source?: 'env' | 'manual';
+  metadata?: Record<string, unknown>;
 }
 
 function parseBearerToken(headerValue: unknown): string | null {
@@ -25,7 +29,8 @@ export function requireInternalServiceAuth(
     throw app.httpErrors.unauthorized('missing bearer token');
   }
 
-  const principal = app.config.INTERNAL_SERVICE_TOKENS.find((entry) => entry.token === token);
+  const tokenHash = hashServiceToken(token);
+  const principal = app.servicePrincipals.find((entry) => entry.tokenHash === tokenHash);
   if (!principal) {
     throw app.httpErrors.unauthorized('invalid service token');
   }
@@ -38,6 +43,8 @@ export function requireInternalServiceAuth(
 
   return {
     id: principal.id,
-    scopes: principal.scopes
+    scopes: principal.scopes,
+    ...(principal.source ? { source: principal.source } : {}),
+    ...(Object.keys(principal.metadata).length > 0 ? { metadata: principal.metadata } : {})
   };
 }

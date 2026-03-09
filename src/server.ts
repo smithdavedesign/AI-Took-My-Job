@@ -24,6 +24,7 @@ import { createReportReviewRepository, type ReportReviewRepository } from './rep
 import { createRepoConnectionRepository, type RepoConnectionRepository } from './repositories/repo-connection-repository.js';
 import { createShadowSuiteRepository, type ShadowSuiteRepository } from './repositories/shadow-suite-repository.js';
 import { createShadowSuiteRunRepository, type ShadowSuiteRunRepository } from './repositories/shadow-suite-run-repository.js';
+import { createServiceIdentityRepository, type ServiceIdentityRepository, type StoredServiceIdentity } from './repositories/service-identity-repository.js';
 import { createTriageJobRepository, type TriageJobRepository } from './repositories/triage-job-repository.js';
 import { createWorkspaceRepository, type WorkspaceRepository } from './repositories/workspace-repository.js';
 import { loadConfig, type AppConfig } from './support/config.js';
@@ -59,6 +60,8 @@ declare module 'fastify' {
     reportEmbeddings: FeedbackReportEmbeddingRepository;
     githubIssueLinks: GitHubIssueLinkRepository;
     reportReviews: ReportReviewRepository;
+    serviceIdentityRepository: ServiceIdentityRepository;
+    servicePrincipals: StoredServiceIdentity[];
     workspaces: WorkspaceRepository;
     projects: ProjectRepository;
     githubInstallations: GitHubInstallationRepository;
@@ -113,6 +116,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const replayRunRepository = createReplayRunRepository(database);
   const shadowSuiteRepository = createShadowSuiteRepository(database);
   const shadowSuiteRunRepository = createShadowSuiteRunRepository(database);
+  const serviceIdentityRepository = createServiceIdentityRepository(database);
   const auditRepository = createAuditRepository(database);
   const triageJobRepository = createTriageJobRepository(database);
   const artifactStorage = createArtifactStore(config);
@@ -121,6 +125,17 @@ export async function buildApp(): Promise<FastifyInstance> {
     bodyLimit: 5 * 1024 * 1024,
     requestIdHeader: 'x-request-id'
   });
+
+  await serviceIdentityRepository.ensureSchema();
+  await Promise.all(config.INTERNAL_SERVICE_TOKENS.map((principal) => serviceIdentityRepository.upsertBootstrapPrincipal({
+    id: principal.id,
+    token: principal.token,
+    scopes: principal.scopes,
+    metadata: {
+      bootstrap: true
+    }
+  })));
+  const servicePrincipals = await serviceIdentityRepository.listActive();
 
   app.decorate('config', config);
   app.decorate('db', database);
@@ -145,6 +160,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('shadowSuiteRuns', shadowSuiteRunRepository);
   app.decorate('githubIssueLinks', githubIssueLinkRepository);
   app.decorate('reportReviews', reportReviewRepository);
+  app.decorate('serviceIdentityRepository', serviceIdentityRepository);
+  app.decorate('servicePrincipals', servicePrincipals);
   app.decorate('auditRepository', auditRepository);
   app.decorate('triageJobs', triageJobRepository);
   app.decorate('audit', createAuditLogger(app.log as FastifyBaseLogger, auditRepository));

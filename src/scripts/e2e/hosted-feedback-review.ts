@@ -22,6 +22,46 @@ interface ProjectResponse {
   name: string;
 }
 
+interface WorkspaceProjectResponse {
+  workspace: WorkspaceResponse;
+  project: ProjectResponse;
+}
+
+interface ServiceIdentitySelfResponse {
+  id: string;
+  scopes: string[];
+  source?: string | null;
+}
+
+interface ReconcileInstallResponse {
+  installation: {
+    installationId: number;
+  };
+  repositoryLink: {
+    linked: string | null;
+    result: string;
+  };
+}
+
+interface InstallationLookupResponse {
+  installation: {
+    installationId: number;
+    workspaceId: string;
+  };
+  workspace: WorkspaceResponse;
+  linkedProjects: Array<{
+    project: ProjectResponse;
+    repoConnection: {
+      repository: string;
+      status: 'active' | 'inactive';
+    };
+  }>;
+}
+
+interface ErrorResponse {
+  message?: string;
+}
+
 interface WidgetSessionResponse {
   accessToken: string;
   embedScriptUrl: string;
@@ -177,7 +217,7 @@ async function assertJavaScriptPage(baseUrl: string, path: string, init?: Reques
   assert(/nexus-hosted-widget/i.test(response.text), `${path} did not include the embed bootstrap`);
 }
 
-async function createWorkspaceAndProject(baseUrl: string, headers: Record<string, string>, suffix: string): Promise<ProjectResponse> {
+async function createWorkspaceAndProject(baseUrl: string, headers: Record<string, string>, suffix: string): Promise<WorkspaceProjectResponse> {
   const workspace = await requestJson<WorkspaceResponse>(`${baseUrl}/internal/workspaces`, {
     method: 'POST',
     headers: {
@@ -190,7 +230,7 @@ async function createWorkspaceAndProject(baseUrl: string, headers: Record<string
     })
   });
 
-  return requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
+  const project = await requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -202,6 +242,11 @@ async function createWorkspaceAndProject(baseUrl: string, headers: Record<string
       projectKey: `checkout-review-${suffix}`
     })
   });
+
+  return {
+    workspace,
+    project
+  };
 }
 
 async function createWidgetSession(baseUrl: string, projectId: string, headers: Record<string, string>): Promise<WidgetSessionResponse> {
@@ -256,9 +301,48 @@ async function main(): Promise<void> {
   assert(health.status === 'ok', 'Health endpoint did not return ok');
 
   await assertHtmlPage(baseUrl, '/learn');
+  await assertHtmlPage(baseUrl, '/learn/onboarding');
   await assertHtmlPage(baseUrl, '/learn/review-queue');
+  const serviceIdentity = await requestJson<ServiceIdentitySelfResponse>(`${baseUrl}/internal/service-identity/self`, {
+    headers: authHeaders
+  });
+  assert(serviceIdentity.id === token.id, 'Service identity self-check did not resolve the active principal');
 
-  const project = await createWorkspaceAndProject(baseUrl, authHeaders, suffix);
+  const { workspace, project } = await createWorkspaceAndProject(baseUrl, authHeaders, suffix);
+  const githubInstallationId = Number(process.env.GITHUB_APP_INSTALLATION_ID ?? '');
+  let strictProjectScopedSyncExpected = false;
+  if (Number.isFinite(githubInstallationId) && githubInstallationId > 0) {
+    const reconcileResponse = await fetch(`${baseUrl}/internal/workspaces/${workspace.id}/github-app/reconcile`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        installationId: githubInstallationId,
+        projectId: project.id,
+        repository: targetRepository,
+        isDefault: true
+      })
+    });
+    const reconcileText = await reconcileResponse.text();
+    if (reconcileResponse.status === 200) {
+      const reconcileResult = JSON.parse(reconcileText) as ReconcileInstallResponse;
+      assert(reconcileResult.installation.installationId === githubInstallationId, 'Install reconciliation did not persist the requested GitHub installation');
+      assert(reconcileResult.repositoryLink.linked === targetRepository, 'Install reconciliation did not bind the project repository');
+      strictProjectScopedSyncExpected = true;
+    } else {
+      assert(reconcileResponse.status === 409, `Unexpected reconcile status ${reconcileResponse.status}: ${reconcileText}`);
+      const conflict = JSON.parse(reconcileText) as ErrorResponse;
+      assert((conflict.message ?? '').includes('already mapped to another workspace'), 'Reconcile conflict did not explain the existing workspace mapping');
+      const installationLookup = await requestJson<InstallationLookupResponse>(`${baseUrl}/internal/github-app/installations/${githubInstallationId}`, {
+        headers: authHeaders
+      });
+      assert(installationLookup.installation.installationId === githubInstallationId, 'Installation lookup did not return the conflicted installation');
+      assert(installationLookup.workspace.id !== workspace.id, 'Installation lookup should point at the existing mapped workspace during conflict');
+    }
+  }
+
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/widget`, 401);
   await requestExpectingStatus(`${baseUrl}/public/projects/${project.projectKey}/embed.js`, 401);
   const widgetSession = await createWidgetSession(baseUrl, project.id, authHeaders);
@@ -381,7 +465,11 @@ async function main(): Promise<void> {
     })
   });
   assert(approvedResult.review?.status === 'approved', 'Approved review did not persist approved state');
-  assert(approvedResult.draft?.state === 'local-draft' || approvedResult.draft?.state === 'synced' || approvedResult.draft?.state === 'sync-failed', 'Approved review did not transition draft out of awaiting-review');
+  if (strictProjectScopedSyncExpected) {
+    assert(approvedResult.draft?.state === 'synced', 'Approved review did not use the reconciled project-scoped GitHub connection');
+  } else {
+    assert(approvedResult.draft?.state === 'local-draft' || approvedResult.draft?.state === 'synced' || approvedResult.draft?.state === 'sync-failed', 'Approved review did not transition draft out of awaiting-review');
+  }
 
   const createdTask = await requestJson<AgentTaskCreatedResponse>(`${baseUrl}/internal/agent-tasks`, {
     method: 'POST',
@@ -404,6 +492,7 @@ async function main(): Promise<void> {
     ok: true,
     projectId: project.id,
     projectKey: project.projectKey,
+    workspaceId: workspace.id,
     rejectedReportId: rejectedReport.reportId,
     approvedReportId: approvedReport.reportId,
     approvedDraftState: approvedResult.draft?.state ?? null,

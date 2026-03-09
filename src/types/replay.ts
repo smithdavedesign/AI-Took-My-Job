@@ -1,3 +1,14 @@
+export interface ReplayCookieRecord {
+  name: string;
+  value?: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: 'Strict' | 'Lax' | 'None';
+  expiresAt?: string | null;
+}
+
 export interface ReplayStep {
   order: number;
   startedAt?: string;
@@ -20,6 +31,7 @@ export interface ReplayStorageSnapshotSummary {
   localStorageKeys: string[];
   sessionStorageKeys: string[];
   cookieNames?: string[];
+  cookies?: ReplayCookieRecord[];
 }
 
 export interface ReplayExecutionStepResult {
@@ -41,6 +53,7 @@ export interface ReplayExecutionResult {
   matchedFailingStepOrders: number[];
   resolvedStateReferenceCount: number;
   restoredCookieNames: string[];
+  restoredCookies?: ReplayCookieRecord[];
   restoredLocalStorageKeys: string[];
   restoredSessionStorageKeys: string[];
   stepResults: ReplayExecutionStepResult[];

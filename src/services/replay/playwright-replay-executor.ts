@@ -1,7 +1,7 @@
 import { request } from 'playwright-core';
 import { URL } from 'node:url';
 
-import type { ReplayExecutionResult, ReplayExecutionStepResult, ReplayPlan } from '../../types/replay.js';
+import type { ReplayCookieRecord, ReplayExecutionResult, ReplayExecutionStepResult, ReplayPlan } from '../../types/replay.js';
 
 function parseCookieHeader(value: string): Record<string, string> {
   return Object.fromEntries(
@@ -54,6 +54,65 @@ function filterHeaders(headers: Record<string, string>): Record<string, string> 
   return Object.fromEntries(
     Object.entries(headers).filter(([key]) => !blocked.has(key.toLowerCase()))
   );
+}
+
+function toCookieExpiry(expiresAt?: string | null): number {
+  if (!expiresAt) {
+    return -1;
+  }
+
+  const unixSeconds = Math.floor(new Date(expiresAt).getTime() / 1000);
+  return Number.isFinite(unixSeconds) ? unixSeconds : -1;
+}
+
+function buildRestoredCookies(input: {
+  plan: ReplayPlan;
+  resolvedOrigin?: string | undefined;
+  cookieMap: Record<string, string>;
+}): ReplayCookieRecord[] {
+  const baseDomain = input.resolvedOrigin ? new URL(input.resolvedOrigin).hostname : undefined;
+  const plannedCookies = input.plan.storageState.cookies ?? [];
+  const restored = new Map<string, ReplayCookieRecord>();
+
+  for (const cookie of plannedCookies) {
+    const value = cookie.value ?? input.cookieMap[cookie.name];
+    if (typeof value !== 'string' || value.length === 0) {
+      continue;
+    }
+
+    const restoredCookie: ReplayCookieRecord = {
+      ...cookie,
+      value,
+      path: cookie.path ?? '/'
+    };
+    const resolvedDomain = cookie.domain ?? baseDomain;
+    if (typeof resolvedDomain === 'string' && resolvedDomain.length > 0) {
+      restoredCookie.domain = resolvedDomain;
+    }
+
+    restored.set(`${cookie.name}|${cookie.domain ?? ''}|${cookie.path ?? '/'}`, {
+      ...restoredCookie
+    });
+  }
+
+  for (const [name, value] of Object.entries(input.cookieMap)) {
+    const key = `${name}|${baseDomain ?? ''}|/`;
+    if (!restored.has(key)) {
+      const restoredCookie: ReplayCookieRecord = {
+        name,
+        value,
+        path: '/',
+        sameSite: 'Lax'
+      };
+      if (baseDomain) {
+        restoredCookie.domain = baseDomain;
+      }
+
+      restored.set(key, restoredCookie);
+    }
+  }
+
+  return [...restored.values()];
 }
 
 function computeVerificationStatus(stepResults: ReplayExecutionStepResult[]): ReplayExecutionResult['status'] {
@@ -109,20 +168,25 @@ export async function executeReplayPlan(input: {
     localStorage,
     sessionStorage
   };
+  const restoredCookies = buildRestoredCookies({
+    plan: input.plan,
+    resolvedOrigin,
+    cookieMap
+  });
   const hasStorageState = resolvedOrigin && (Object.keys(cookieMap).length > 0 || Object.keys(localStorage).length > 0);
   const client = await request.newContext({
     ignoreHTTPSErrors: true,
     ...(hasStorageState ? {
       storageState: {
-        cookies: Object.entries(cookieMap).map(([name, value]) => ({
-          name,
-          value: String(value),
-          domain: new URL(resolvedOrigin).hostname,
-          path: '/',
-          expires: -1,
-          httpOnly: false,
-          secure: false,
-          sameSite: 'Lax' as const
+        cookies: restoredCookies.map((cookie) => ({
+          name: cookie.name,
+          value: String(cookie.value ?? ''),
+          domain: cookie.domain ?? new URL(resolvedOrigin).hostname,
+          path: cookie.path ?? '/',
+          expires: toCookieExpiry(cookie.expiresAt),
+          httpOnly: cookie.httpOnly ?? false,
+          secure: cookie.secure ?? false,
+          sameSite: cookie.sameSite ?? 'Lax'
         })),
         origins: Object.keys(localStorage).length > 0
           ? [{
@@ -219,7 +283,29 @@ export async function executeReplayPlan(input: {
       .filter((step) => step.expectedStatus >= 400 && step.result === 'matched')
       .map((step) => step.order),
     resolvedStateReferenceCount,
-    restoredCookieNames: Object.keys(cookieMap),
+    restoredCookieNames: restoredCookies.map((cookie) => cookie.name),
+    restoredCookies: restoredCookies.map((cookie) => {
+      const result: ReplayCookieRecord = {
+        name: cookie.name,
+        ...(cookie.path ? { path: cookie.path } : {}),
+        ...(cookie.expiresAt ? { expiresAt: cookie.expiresAt } : { expiresAt: null })
+      };
+
+      if (cookie.domain) {
+        result.domain = cookie.domain;
+      }
+      if (typeof cookie.secure === 'boolean') {
+        result.secure = cookie.secure;
+      }
+      if (typeof cookie.httpOnly === 'boolean') {
+        result.httpOnly = cookie.httpOnly;
+      }
+      if (cookie.sameSite) {
+        result.sameSite = cookie.sameSite;
+      }
+
+      return result;
+    }),
     restoredLocalStorageKeys: Object.keys(localStorage),
     restoredSessionStorageKeys: Object.keys(sessionStorage),
     stepResults
