@@ -99,6 +99,15 @@ function buildOnboardingConsolePage(): string {
             <label>Widget Origin<input id="origin" value="" placeholder="https://customer.example" /></label>
             <label>Service Identity Id<input id="serviceIdentityId" value="" placeholder="service-operator" /></label>
           </div>
+          <div class="split">
+            <label>Customer Email<input id="customerPortalEmail" value="" placeholder="customer@example.com" /></label>
+            <label>Customer Name<input id="customerPortalName" value="" placeholder="Checkout Team" /></label>
+          </div>
+          <div class="split">
+            <label>Grant TTL Days<input id="customerPortalTtlDays" value="30" placeholder="30" /></label>
+            <label>Portal Grant Id<input id="customerPortalGrantId" value="" placeholder="customer portal grant UUID" /></label>
+          </div>
+          <label>Customer Portal Notes<textarea id="customerPortalNotes" placeholder="Why this durable portal access link exists."></textarea></label>
           <label>Service Identity Scopes<input id="serviceIdentityScopes" value="internal:read" placeholder="internal:read, github:draft" /></label>
           <label>Workspace Triage Policy (JSON)<textarea id="triagePolicyJson" placeholder='{"ownershipRules":[{"id":"00000000-0000-0000-0000-000000000000","field":"page-host","operator":"equals","value":"checkout.example.com","owner":"checkout-team","scoreBoost":1.4}],"priorityRules":[{"id":"00000000-0000-0000-0000-000000000001","field":"severity","operator":"equals","value":"critical","scoreDelta":15}]}'></textarea></label>
           <div class="row">
@@ -123,6 +132,11 @@ function buildOnboardingConsolePage(): string {
           <div class="row">
             <button id="transferInstall" class="primary">Transfer Install</button>
             <button id="mintWidget" class="secondary">Mint Widget Session</button>
+          </div>
+          <div class="row">
+            <button id="loadCustomerPortalGrants" class="secondary">Load Portal Grants</button>
+            <button id="createCustomerPortalGrant" class="primary">Create Portal Grant</button>
+            <button id="revokeCustomerPortalGrant" class="secondary">Revoke Portal Grant</button>
           </div>
           <div class="row">
             <button id="listServiceIdentities" class="secondary">List Service Identities</button>
@@ -170,6 +184,12 @@ function buildOnboardingConsolePage(): string {
             <pre id="triagePolicyResult">// workspace triage policy appears here</pre>
           </section>
           <section class="section">
+            <h2 class="section-title">Customer Portal Grants</h2>
+            <div id="customerPortalGrantSummary" class="helper">No customer portal grant action run yet.</div>
+            <div id="customerPortalGrantList" class="button-list"></div>
+            <pre id="customerPortalGrantResult">// customer portal grant responses appear here</pre>
+          </section>
+          <section class="section">
             <h2 class="section-title">Service Identities</h2>
             <div id="serviceIdentitySummary" class="helper">No service identity action run yet.</div>
             <pre id="serviceIdentityResult">// service identity responses appear here</pre>
@@ -205,7 +225,7 @@ function buildOnboardingConsolePage(): string {
   </main>
   <script>
     const storageKey = 'nexus-onboarding-console';
-    const contextState = { projects: [], installations: [], repoConnections: [] };
+    const contextState = { projects: [], installations: [], repoConnections: [], customerPortalGrants: [] };
     const els = {
       baseUrl: document.getElementById('baseUrl'),
       token: document.getElementById('token'),
@@ -221,6 +241,11 @@ function buildOnboardingConsolePage(): string {
       repoConnectionConfig: document.getElementById('repoConnectionConfig'),
       origin: document.getElementById('origin'),
       mode: document.getElementById('mode'),
+      customerPortalEmail: document.getElementById('customerPortalEmail'),
+      customerPortalName: document.getElementById('customerPortalName'),
+      customerPortalTtlDays: document.getElementById('customerPortalTtlDays'),
+      customerPortalGrantId: document.getElementById('customerPortalGrantId'),
+      customerPortalNotes: document.getElementById('customerPortalNotes'),
       triagePolicyJson: document.getElementById('triagePolicyJson'),
       serviceIdentityId: document.getElementById('serviceIdentityId'),
       serviceIdentityScopes: document.getElementById('serviceIdentityScopes'),
@@ -237,6 +262,9 @@ function buildOnboardingConsolePage(): string {
       reconcileInstall: document.getElementById('reconcileInstall'),
       transferInstall: document.getElementById('transferInstall'),
       mintWidget: document.getElementById('mintWidget'),
+      loadCustomerPortalGrants: document.getElementById('loadCustomerPortalGrants'),
+      createCustomerPortalGrant: document.getElementById('createCustomerPortalGrant'),
+      revokeCustomerPortalGrant: document.getElementById('revokeCustomerPortalGrant'),
       listServiceIdentities: document.getElementById('listServiceIdentities'),
       createServiceIdentity: document.getElementById('createServiceIdentity'),
       rotateServiceIdentity: document.getElementById('rotateServiceIdentity'),
@@ -258,6 +286,9 @@ function buildOnboardingConsolePage(): string {
       operationsResult: document.getElementById('operationsResult'),
       triagePolicySummary: document.getElementById('triagePolicySummary'),
       triagePolicyResult: document.getElementById('triagePolicyResult'),
+      customerPortalGrantSummary: document.getElementById('customerPortalGrantSummary'),
+      customerPortalGrantList: document.getElementById('customerPortalGrantList'),
+      customerPortalGrantResult: document.getElementById('customerPortalGrantResult'),
       serviceIdentitySummary: document.getElementById('serviceIdentitySummary'),
       serviceIdentityResult: document.getElementById('serviceIdentityResult'),
       installLinkSummary: document.getElementById('installLinkSummary'),
@@ -296,6 +327,11 @@ function buildOnboardingConsolePage(): string {
         repoConnectionConfig: els.repoConnectionConfig.value,
         origin: els.origin.value.trim(),
         mode: els.mode.value,
+        customerPortalEmail: els.customerPortalEmail.value.trim(),
+        customerPortalName: els.customerPortalName.value.trim(),
+        customerPortalTtlDays: els.customerPortalTtlDays.value.trim(),
+        customerPortalGrantId: els.customerPortalGrantId.value.trim(),
+        customerPortalNotes: els.customerPortalNotes.value,
         triagePolicyJson: els.triagePolicyJson.value,
         serviceIdentityId: els.serviceIdentityId.value.trim(),
         serviceIdentityScopes: els.serviceIdentityScopes.value.trim()
@@ -344,9 +380,45 @@ function buildOnboardingConsolePage(): string {
       }
       return parsed;
     }
+    function parseCustomerPortalTtlDays() {
+      const raw = els.customerPortalTtlDays.value.trim();
+      if (!raw) {
+        return undefined;
+      }
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 365) {
+        throw new Error('Grant TTL Days must be a number between 1 and 365.');
+      }
+      return Math.round(parsed);
+    }
     function setReadiness(value, note) {
       els.readinessValue.textContent = value || 'unknown';
       els.readinessNote.textContent = note || 'Load a support snapshot to score project readiness.';
+    }
+    function selectCustomerPortalGrant(grant) {
+      els.customerPortalGrantId.value = grant.id || '';
+      els.customerPortalEmail.value = grant.customerEmail || '';
+      els.customerPortalName.value = grant.customerName || '';
+      els.customerPortalGrantSummary.textContent = 'Loaded durable customer portal grant for ' + (grant.customerEmail || 'unknown customer') + '.';
+    }
+    function renderCustomerPortalGrants(result) {
+      const grants = Array.isArray(result && result.grants) ? result.grants : Array.isArray(result) ? result : [];
+      contextState.customerPortalGrants = grants;
+      els.customerPortalGrantList.innerHTML = '';
+      writeJson(els.customerPortalGrantResult, result);
+      grants.forEach(function (grant) {
+        const button = document.createElement('button');
+        button.className = 'secondary mini';
+        button.textContent = (grant.customerEmail || 'unknown') + ' [' + (grant.status || 'unknown') + ']';
+        button.addEventListener('click', function () { selectCustomerPortalGrant(grant); });
+        els.customerPortalGrantList.appendChild(button);
+      });
+      if (!grants.length) {
+        els.customerPortalGrantSummary.textContent = 'No durable customer portal grants exist for this project yet.';
+      } else {
+        const activeCount = grants.filter(function (grant) { return grant && grant.status === 'active'; }).length;
+        els.customerPortalGrantSummary.textContent = 'Loaded ' + grants.length + ' grant(s). Active ' + activeCount + '.';
+      }
     }
     function renderTriagePolicy(result) {
       const summary = result && result.summary ? result.summary : {};
@@ -484,16 +556,21 @@ function buildOnboardingConsolePage(): string {
         const pendingReviewCount = result.reports && typeof result.reports.pendingReviewCount === 'number' ? result.reports.pendingReviewCount : 0;
         const taskCount = result.agentTasks && typeof result.agentTasks.total === 'number' ? result.agentTasks.total : 0;
         const triagePolicySummary = result.triagePolicy || {};
-        els.operationsSummary.textContent = 'Default repo ' + defaultRepository + '. Pending review ' + pendingReviewCount + '. Agent tasks ' + taskCount + '. Policy rules ' + ((triagePolicySummary.ownershipRuleCount || 0) + (triagePolicySummary.priorityRuleCount || 0)) + '.';
+        const customerPortal = result.customerPortal || {};
+        els.operationsSummary.textContent = 'Default repo ' + defaultRepository + '. Pending review ' + pendingReviewCount + '. Agent tasks ' + taskCount + '. Policy rules ' + ((triagePolicySummary.ownershipRuleCount || 0) + (triagePolicySummary.priorityRuleCount || 0)) + '. Durable grants ' + (customerPortal.activeGrantCount || 0) + '.';
         const support = result.support || {};
         const issues = Array.isArray(support.issues) ? support.issues : [];
         const feedbackCount = Array.isArray(support.recentHostedFeedback) ? support.recentHostedFeedback.length : 0;
+        const grantCount = typeof support.customerPortalGrantCount === 'number' ? support.customerPortalGrantCount : (customerPortal.activeGrantCount || 0);
         const policyNote = support.triagePolicySummary && support.triagePolicySummary.configured
           ? ' Policy configured with ' + ((support.triagePolicySummary.ownershipRuleCount || 0) + (support.triagePolicySummary.priorityRuleCount || 0)) + ' rules.'
           : ' No triage policy configured.';
-        els.supportSummary.textContent = 'Readiness ' + (support.readiness || 'unknown') + '. Recent hosted feedback ' + feedbackCount + '. ' + (issues[0] || 'No open support blockers.') + policyNote;
+        els.supportSummary.textContent = 'Readiness ' + (support.readiness || 'unknown') + '. Recent hosted feedback ' + feedbackCount + '. Active durable grants ' + grantCount + '. ' + (issues[0] || 'No open support blockers.') + policyNote;
         if (result.triagePolicy) {
           renderTriagePolicy({ workspace: result.workspace, policy: result.triagePolicy.policy || null, summary: result.triagePolicy });
+        }
+        if (result.customerPortal) {
+          renderCustomerPortalGrants({ project: result.project, grants: result.customerPortal.grants || [] });
         }
         setReadiness(support.readiness || 'unknown', issues.length ? issues.join(' ') : 'Project is ready for customer handoff.');
         setStatus('Operations loaded for ' + projectId + '.');
@@ -857,6 +934,82 @@ function buildOnboardingConsolePage(): string {
         setStatus(error instanceof Error ? error.message : 'Failed to mint widget session.');
       }
     }
+    async function loadCustomerPortalGrants() {
+      saveState();
+      const projectId = els.projectId.value.trim();
+      if (!projectId) {
+        setStatus('Project Id is required to load customer portal grants.');
+        return;
+      }
+      setStatus('Loading customer portal grants for ' + projectId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/customer-portal-grants', { headers: authHeaders() });
+        renderCustomerPortalGrants(result);
+        setStatus('Customer portal grants loaded for ' + projectId + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to load customer portal grants.');
+      }
+    }
+    async function createCustomerPortalGrant() {
+      saveState();
+      const projectId = els.projectId.value.trim();
+      const customerEmail = els.customerPortalEmail.value.trim();
+      if (!projectId || !customerEmail) {
+        setStatus('Project Id and Customer Email are required to create a customer portal grant.');
+        return;
+      }
+      setStatus('Creating customer portal grant for ' + customerEmail + '...');
+      try {
+        const payload = {
+          customerEmail: customerEmail,
+          customerName: els.customerPortalName.value.trim() || undefined,
+          ttlDays: parseCustomerPortalTtlDays(),
+          notes: els.customerPortalNotes.value.trim() || undefined
+        };
+        const result = await request('/internal/projects/' + projectId + '/customer-portal-grants', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(payload)
+        });
+        writeJson(els.customerPortalGrantResult, result);
+        if (result && result.grant) {
+          selectCustomerPortalGrant(result.grant);
+        }
+        els.customerPortalGrantSummary.textContent = result && result.customerPortalUrl
+          ? 'Created durable portal grant. Share ' + result.customerPortalUrl
+          : 'Created durable portal grant.';
+        await loadCustomerPortalGrants();
+        await loadOperations();
+        setStatus('Customer portal grant created for ' + customerEmail + '.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to create customer portal grant.');
+      }
+    }
+    async function revokeCustomerPortalGrant() {
+      saveState();
+      const projectId = els.projectId.value.trim();
+      const grantId = els.customerPortalGrantId.value.trim();
+      if (!projectId || !grantId) {
+        setStatus('Project Id and Portal Grant Id are required to revoke a customer portal grant.');
+        return;
+      }
+      setStatus('Revoking customer portal grant ' + grantId + '...');
+      try {
+        const result = await request('/internal/projects/' + projectId + '/customer-portal-grants/' + encodeURIComponent(grantId) + '/revoke', {
+          method: 'POST',
+          headers: authHeaders()
+        });
+        writeJson(els.customerPortalGrantResult, result);
+        if (result && result.grant) {
+          selectCustomerPortalGrant(result.grant);
+        }
+        await loadCustomerPortalGrants();
+        await loadOperations();
+        setStatus('Customer portal grant ' + grantId + ' revoked.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Failed to revoke customer portal grant.');
+      }
+    }
 
     const saved = readState();
     els.baseUrl.value = saved.baseUrl || window.location.origin;
@@ -873,6 +1026,11 @@ function buildOnboardingConsolePage(): string {
     els.repoConnectionConfig.value = saved.repoConnectionConfig || '';
     els.origin.value = saved.origin || '';
     els.mode.value = saved.mode || 'embed';
+    els.customerPortalEmail.value = saved.customerPortalEmail || '';
+    els.customerPortalName.value = saved.customerPortalName || '';
+    els.customerPortalTtlDays.value = saved.customerPortalTtlDays || '30';
+    els.customerPortalGrantId.value = saved.customerPortalGrantId || '';
+    els.customerPortalNotes.value = saved.customerPortalNotes || '';
     els.triagePolicyJson.value = saved.triagePolicyJson || '';
     els.serviceIdentityId.value = saved.serviceIdentityId || '';
     els.serviceIdentityScopes.value = saved.serviceIdentityScopes || 'internal:read';
@@ -889,6 +1047,9 @@ function buildOnboardingConsolePage(): string {
     els.reconcileInstall.addEventListener('click', reconcileInstall);
     els.transferInstall.addEventListener('click', transferInstall);
     els.mintWidget.addEventListener('click', mintWidget);
+    els.loadCustomerPortalGrants.addEventListener('click', loadCustomerPortalGrants);
+    els.createCustomerPortalGrant.addEventListener('click', createCustomerPortalGrant);
+    els.revokeCustomerPortalGrant.addEventListener('click', revokeCustomerPortalGrant);
     els.listServiceIdentities.addEventListener('click', listServiceIdentities);
     els.createServiceIdentity.addEventListener('click', createServiceIdentity);
     els.rotateServiceIdentity.addEventListener('click', rotateServiceIdentity);
