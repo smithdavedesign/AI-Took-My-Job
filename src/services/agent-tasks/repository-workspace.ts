@@ -87,7 +87,7 @@ async function createAskPassScript(token: string): Promise<{ scriptPath: string;
   };
 }
 
-async function buildCloneTarget(config: AppConfig, targetRepository: string, github?: GitHubIntegration): Promise<{
+export async function buildCloneTarget(config: AppConfig, targetRepository: string, github?: GitHubIntegration): Promise<{
   cloneSource: string;
   env?: NodeJS.ProcessEnv;
   cleanup?: () => Promise<void>;

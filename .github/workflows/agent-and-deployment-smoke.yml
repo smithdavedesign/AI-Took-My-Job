@@ -69,6 +69,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run config and clone guardrails
+        run: npm run e2e:config-guardrails
+
       - name: Install Chromium for replay smoke
         run: npm exec playwright-core -- install --with-deps chromium
 
@@ -104,6 +107,9 @@ jobs:
 
       - name: Run hosted feedback review smoke
         run: npm run e2e:hosted-feedback-review
+
+      - name: Run review dashboard regression smoke
+        run: npm run e2e:review-dashboard-regression
 
       - name: Run replay browser-context smoke
         run: npm run e2e:replay-browser-context
@@ -213,11 +219,11 @@ jobs:
         if: steps.promotion-secrets.outputs.available == 'true'
         run: node dist/index.js > /tmp/nexus-api.log 2>&1 &
 
-      - name: Start worker with promotable fixture
+      - name: Start worker with dashboard promotable fixture
         if: steps.promotion-secrets.outputs.available == 'true'
         run: |
           AGENT_EXECUTION_COMMAND="$GITHUB_WORKSPACE/node_modules/.bin/tsx" \
-          AGENT_EXECUTION_ARGS="[\"$GITHUB_WORKSPACE/src/scripts/e2e/agent-execution-promotable-fixture.ts\"]" \
+          AGENT_EXECUTION_ARGS="[\"$GITHUB_WORKSPACE/src/scripts/e2e/agent-execution-review-dashboard-promotable-fixture.ts\"]" \
           node dist/worker.js > /tmp/nexus-worker.log 2>&1 &
 
       - name: Wait for health
@@ -235,6 +241,10 @@ jobs:
       - name: Run promotion ownership smoke
         if: steps.promotion-secrets.outputs.available == 'true'
         run: E2E_TARGET_REPOSITORY="${{ steps.promotion-secrets.outputs.target_repository }}" npm run e2e:promotion-ownership
+
+      - name: Run review dashboard promotion smoke
+        if: steps.promotion-secrets.outputs.available == 'true'
+        run: E2E_TARGET_REPOSITORY="${{ steps.promotion-secrets.outputs.target_repository }}" npm run e2e:review-dashboard-promotion
 
       - name: Report skipped promotion smoke
         if: steps.promotion-secrets.outputs.available != 'true'

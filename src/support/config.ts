@@ -113,24 +113,22 @@ const configSchema = z.object({
   EXTENSION_MAX_INLINE_ARTIFACT_BYTES: z.coerce.number().int().min(1024).max(25 * 1024 * 1024).default(1024 * 1024),
   EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES: z.coerce.number().int().min(1024).max(50 * 1024 * 1024).default(5 * 1024 * 1024)
 }).superRefine((config, context) => {
-  if (config.ARTIFACT_STORAGE_PROVIDER !== 's3') {
-    return;
-  }
+  if (config.ARTIFACT_STORAGE_PROVIDER === 's3') {
+    const requiredS3Fields: Array<keyof Pick<typeof config, 'S3_REGION' | 'S3_BUCKET' | 'S3_ACCESS_KEY_ID' | 'S3_SECRET_ACCESS_KEY'>> = [
+      'S3_REGION',
+      'S3_BUCKET',
+      'S3_ACCESS_KEY_ID',
+      'S3_SECRET_ACCESS_KEY'
+    ];
 
-  const requiredS3Fields: Array<keyof Pick<typeof config, 'S3_REGION' | 'S3_BUCKET' | 'S3_ACCESS_KEY_ID' | 'S3_SECRET_ACCESS_KEY'>> = [
-    'S3_REGION',
-    'S3_BUCKET',
-    'S3_ACCESS_KEY_ID',
-    'S3_SECRET_ACCESS_KEY'
-  ];
-
-  for (const field of requiredS3Fields) {
-    if (!config[field]) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [field],
-        message: `${field} is required when ARTIFACT_STORAGE_PROVIDER=s3`
-      });
+    for (const field of requiredS3Fields) {
+      if (!config[field]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is required when ARTIFACT_STORAGE_PROVIDER=s3`
+        });
+      }
     }
   }
 

@@ -31,6 +31,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - A Phase 7 MCP stdio server now exposes active issue lookup, issue context, reproduction status, and observability context for IDE integrations.
 - The active-issue lookup now supports persisted report indexing for services and repository file paths, and the MCP issue-context tool can inline previews for logs, storage snapshots, HARs, and execution JSON artifacts.
 - Public learn-more pages are now hosted at `/learn`, `/learn/prd`, and `/learn/developer-workbench`.
+- A standalone operator onboarding static site now lives under `onboarding-site/` for Vercel-hosted product education and rollout handoff.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
 - Ownership candidate inference from explicit report metadata, linked repository context, and nearest-neighbor reports.
@@ -69,6 +70,34 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Phase 8: complete
 - Phase 9: complete
 - Phase 10: complete
+
+## Operator Onboarding Site
+
+The repository now includes a standalone static onboarding site in `onboarding-site/`.
+
+Use it when you want a lightweight public-facing walkthrough for operators, prospects, or internal rollout leads without exposing the Fastify app itself.
+
+What it covers:
+
+- what Nexus is and where it fits in the workflow
+- first-day project and GitHub setup
+- the review-queue-driven operating model
+- agent execution and promotion guardrails
+- common onboarding questions
+
+Deployment model:
+
+- import this repository into Vercel
+- set the project root directory to `onboarding-site`
+- keep the framework preset as `Other`
+- leave the build command empty
+- leave the output directory empty
+
+Current deployment:
+
+- public site: `https://onboarding-site-eight.vercel.app`
+
+See `onboarding-site/README.md` for the deployment details.
 
 ## How It Works
 

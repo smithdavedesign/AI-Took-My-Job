@@ -48,6 +48,7 @@ Status legend:
 - [x] Time-box and validate the under-60-second customer handoff target end to end.
 - [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
 - [x] Add a session-scoped customer dashboard for hosted feedback status, ownership hints, and prioritization visibility.
+- [x] Publish a standalone Vercel-hosted operator onboarding site so rollout guidance can evolve separately from the runtime surfaces.
 
 ### Blocked
 
@@ -231,6 +232,7 @@ Recent Phase 9 progress:
 - CI now installs Chromium before running the replay browser-context smoke, and `npm run e2e:customer-handoff` enforces a tighter 30-second total budget with stage-by-stage SLOs for bootstrap, widget readiness, feedback submission, queue visibility, and draft readiness.
 - The hosted feedback public surface now includes `/public/projects/:projectKey/dashboard`, a session-scoped customer dashboard that reuses the signed widget token and exposes submission status, ownership hints, and refined impact bands without broadening access scope.
 - The v1 customer access decision is now explicit: keep signed-session distribution and defer broader customer auth until multi-user customer identity becomes necessary.
+- The repository now includes `onboarding-site/`, a standalone static onboarding experience intended to be deployed on Vercel as the operator-facing handoff and rollout guide.
 
 Phase 9 architecture snapshot:
 

@@ -167,12 +167,60 @@ function summarizeTriagePolicy(policy: Awaited<ReturnType<FastifyInstance['works
 }
 
 export function registerReportInternalRoutes(app: FastifyInstance): void {
-  async function loadWorkspaceTriagePolicy(report: NonNullable<Awaited<ReturnType<FastifyInstance['reports']['findById']>>>) {
-    return resolveWorkspaceTriagePolicyForReport({
-      report,
+  const projectCache = new Map<string, Promise<Awaited<ReturnType<FastifyInstance['projects']['findById']>>>>();
+  const workspaceTriagePolicyCache = new Map<string, Promise<Awaited<ReturnType<FastifyInstance['workspaceTriagePolicies']['findByWorkspaceId']>>>>();
+  const repositoryScopeCache = new Map<string, Promise<Awaited<ReturnType<typeof resolveProjectRepositoryScope>>>>();
+
+  async function loadProject(projectId: string | null | undefined) {
+    if (!projectId) {
+      return null;
+    }
+
+    const cached = projectCache.get(projectId);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = app.projects.findById(projectId);
+    projectCache.set(projectId, pending);
+    return pending;
+  }
+
+  async function loadWorkspaceTriagePolicy(report: NonNullable<Awaited<ReturnType<FastifyInstance['reports']['findById']>>>, project?: Awaited<ReturnType<FastifyInstance['projects']['findById']>> | null) {
+    const resolvedProject = project ?? await loadProject(report.projectId);
+    if (!resolvedProject) {
+      return null;
+    }
+
+    const cached = workspaceTriagePolicyCache.get(resolvedProject.workspaceId);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = app.workspaceTriagePolicies.findByWorkspaceId(resolvedProject.workspaceId);
+    workspaceTriagePolicyCache.set(resolvedProject.workspaceId, pending);
+    return pending;
+  }
+
+  async function loadRepositoryScope(projectId: string | null | undefined, repository: string | null | undefined) {
+    if (!projectId) {
+      return null;
+    }
+
+    const cacheKey = `${projectId}:${repository ?? ''}`;
+    const cached = repositoryScopeCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = resolveProjectRepositoryScope({
+      projectId,
+      repoConnections: app.repoConnections,
       projects: app.projects,
-      workspaceTriagePolicies: app.workspaceTriagePolicies
+      repository
     });
+    repositoryScopeCache.set(cacheKey, pending);
+    return pending;
   }
 
   async function resolveApprovedProjectRepository(input: {
@@ -381,7 +429,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
       const [draft, review, project] = await Promise.all([
         app.githubIssueLinks.findByReportId(report.id),
         app.reportReviews.findByReportId(report.id),
-        report.projectId ? app.projects.findById(report.projectId) : Promise.resolve(null)
+        loadProject(report.projectId)
       ]);
 
       if (!draft || draft.state !== 'awaiting-review') {
@@ -396,16 +444,10 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
         return null;
       }
 
-      const repoScope = report.projectId
-        ? await resolveProjectRepositoryScope({
-          projectId: report.projectId,
-          repoConnections: app.repoConnections,
-          projects: app.projects,
-          repository: draft.repository
-        })
-        : null;
-
-      const triagePolicy = await loadWorkspaceTriagePolicy(report);
+      const [repoScope, triagePolicy] = await Promise.all([
+        loadRepositoryScope(report.projectId, draft.repository),
+        loadWorkspaceTriagePolicy(report, project)
+      ]);
       const ownership = await resolveOwnershipCandidates({
         report,
         ...(draft.repository ? { repository: draft.repository } : {}),

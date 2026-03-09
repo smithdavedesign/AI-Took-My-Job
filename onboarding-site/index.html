@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus Onboarding</title>
+    <meta
+      name="description"
+      content="A static onboarding guide for AI-DevOps Nexus covering setup, review workflow, agent execution, and rollout guidance."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#top">Nexus</a>
+        <p class="sidebar-copy">Operator onboarding for teams adopting AI-DevOps Nexus.</p>
+        <nav class="section-nav" aria-label="Primary">
+          <a href="#overview">Overview</a>
+          <a href="#setup">Setup</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#surfaces">Surfaces</a>
+          <a href="#playbooks">Playbooks</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div class="sidebar-note">
+          <span class="eyebrow">Deployment</span>
+          <p>Deploy this folder as a standalone Vercel project by setting the root directory to <strong>onboarding-site</strong>.</p>
+        </div>
+      </aside>
+
+      <main class="content" id="top">
+        <section class="hero panel">
+          <div>
+            <p class="eyebrow">AI-DevOps Nexus</p>
+            <h1>Onboard operators without handing them a pile of routes and env vars.</h1>
+            <p class="hero-copy">
+              This site teaches a new team member how Nexus moves from incoming feedback to reviewed,
+              validated, and promotion-ready engineering work.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#setup">Start setup</a>
+              <a class="button button-secondary" href="#workflow">See the daily workflow</a>
+            </div>
+          </div>
+          <div class="hero-card">
+            <span class="eyebrow">What operators should learn first</span>
+            <ul>
+              <li>How a workspace and project are created</li>
+              <li>Which GitHub auth mode to choose first</li>
+              <li>How the review queue gates GitHub actions</li>
+              <li>When an agent execution is safe to promote</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="metrics-grid" aria-label="Key concepts">
+          <article class="metric panel">
+            <span class="metric-value">4</span>
+            <span class="metric-label">Core stages</span>
+            <p>Connect the project, capture feedback, review the queue, then promote approved work.</p>
+          </article>
+          <article class="metric panel">
+            <span class="metric-value">2</span>
+            <span class="metric-label">GitHub modes</span>
+            <p>PAT mode for speed, GitHub App mode for production-grade scoping and auditability.</p>
+          </article>
+          <article class="metric panel">
+            <span class="metric-value">1</span>
+            <span class="metric-label">Golden rule</span>
+            <p>No issue creation or PR promotion should happen before review and validation gates are clear.</p>
+          </article>
+        </section>
+
+        <section class="panel section" id="overview">
+          <div class="section-heading">
+            <p class="eyebrow">Overview</p>
+            <h2>What Nexus actually does</h2>
+          </div>
+          <div class="two-column">
+            <div>
+              <p>
+                Nexus is a control plane for operational signal. It accepts incoming feedback and observability
+                reports, stores artifacts, prepares draft engineering context, and blocks GitHub-side actions
+                until a human approves what should happen next.
+              </p>
+              <p>
+                For a new operator, the important distinction is this: Nexus is not just intake, and it is not
+                just an agent runtime. It is the workflow between signal capture, decision-making, and controlled
+                code promotion.
+              </p>
+            </div>
+            <div class="callout">
+              <h3>Operator mental model</h3>
+              <ol>
+                <li>Resolve the project and repository context.</li>
+                <li>Confirm the report is actionable in the review queue.</li>
+                <li>Approve or reject downstream GitHub and agent activity.</li>
+                <li>Promote only after review, validation, and merge readiness are visible.</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section" id="setup">
+          <div class="section-heading">
+            <p class="eyebrow">Setup</p>
+            <h2>First-day setup sequence</h2>
+          </div>
+          <div class="timeline">
+            <article>
+              <span>01</span>
+              <div>
+                <h3>Create the workspace and project</h3>
+                <p>Use the onboarding console to create a workspace, then create a project with a stable project key.</p>
+              </div>
+            </article>
+            <article>
+              <span>02</span>
+              <div>
+                <h3>Attach GitHub access</h3>
+                <p>Start with PAT mode for internal demos. Move to GitHub App mode when you need tighter repository scoping.</p>
+              </div>
+            </article>
+            <article>
+              <span>03</span>
+              <div>
+                <h3>Configure intake surfaces</h3>
+                <p>Mint widget sessions, validate the hosted feedback page, and confirm the public dashboard and customer portal work end to end.</p>
+              </div>
+            </article>
+            <article>
+              <span>04</span>
+              <div>
+                <h3>Set triage policy and review ownership</h3>
+                <p>Define default routing so the review queue and dashboard both reflect the same ownership model.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="snippet-grid">
+            <article class="snippet panel-soft">
+              <div class="snippet-header">
+                <h3>Baseline environment</h3>
+                <button class="copy-button" data-copy-target="env-snippet">Copy</button>
+              </div>
+              <pre id="env-snippet"><code>APP_BASE_URL=https://your-nexus-host
+GITHUB_AUTH_MODE=pat
+GITHUB_TOKEN=github_pat_or_service_account_token
+WEBHOOK_SHARED_SECRET=replace-me
+PUBLIC_WIDGET_SIGNING_SECRET=replace-me
+GITHUB_APP_STATE_SECRET=replace-me</code></pre>
+            </article>
+
+            <article class="snippet panel-soft">
+              <div class="snippet-header">
+                <h3>Routes operators should know</h3>
+                <button class="copy-button" data-copy-target="routes-snippet">Copy</button>
+              </div>
+              <pre id="routes-snippet"><code>/learn/onboarding
+/learn/review-queue
+/learn/support-ops
+/public/projects/:projectKey/widget
+/public/projects/:projectKey/dashboard</code></pre>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel section" id="workflow">
+          <div class="section-heading">
+            <p class="eyebrow">Workflow</p>
+            <h2>The daily operating loop</h2>
+          </div>
+          <div class="workflow-grid">
+            <article class="workflow-step">
+              <h3>1. Capture</h3>
+              <p>Feedback arrives from the hosted widget, browser extension, or observability routes and is persisted with its project context.</p>
+            </article>
+            <article class="workflow-step">
+              <h3>2. Review</h3>
+              <p>The review queue becomes the gate. Operators search, assign, inspect history, and approve or reject action.</p>
+            </article>
+            <article class="workflow-step">
+              <h3>3. Execute</h3>
+              <p>Approved reports can spawn agent tasks that build a worktree, attach evidence, and persist validation results.</p>
+            </article>
+            <article class="workflow-step">
+              <h3>4. Promote</h3>
+              <p>Only approved, validation-safe executions should be promoted into PRs and eventually merged.</p>
+            </article>
+          </div>
+
+          <div class="diagram panel-soft">
+            <div class="diagram-step">Hosted feedback or webhook</div>
+            <div class="diagram-arrow"></div>
+            <div class="diagram-step">Persisted report + artifacts</div>
+            <div class="diagram-arrow"></div>
+            <div class="diagram-step">Review queue approval</div>
+            <div class="diagram-arrow"></div>
+            <div class="diagram-step">Agent task + PR promotion</div>
+          </div>
+        </section>
+
+        <section class="panel section" id="surfaces">
+          <div class="section-heading">
+            <p class="eyebrow">Surfaces</p>
+            <h2>The actual operator screens</h2>
+          </div>
+          <div class="gallery-grid">
+            <article class="gallery-card">
+              <img
+                src="./assets/onboarding-console.png"
+                alt="Nexus onboarding console showing workspace, project, repo, and service identity controls"
+                loading="lazy"
+              />
+              <div class="gallery-copy">
+                <h3>Onboarding Console</h3>
+                <p>Project lookup, repo connection management, widget handoff, GitHub installation work, and service identity lifecycle from one operator surface.</p>
+              </div>
+            </article>
+            <article class="gallery-card">
+              <img
+                src="./assets/review-queue.png"
+                alt="Nexus review queue showing hosted feedback triage, assignment, filters, and approval controls"
+                loading="lazy"
+              />
+              <div class="gallery-copy">
+                <h3>Review Queue</h3>
+                <p>The approval gate for hosted feedback, with queue search, assignment, paging, and the operator actions that control downstream GitHub activity.</p>
+              </div>
+            </article>
+            <article class="gallery-card">
+              <img
+                src="./assets/support-ops.png"
+                alt="Nexus support operations page showing project readiness, support links, and recent hosted feedback"
+                loading="lazy"
+              />
+              <div class="gallery-copy">
+                <h3>Support Ops</h3>
+                <p>Readiness checks, recent hosted feedback visibility, public-route verification, and fast links back into onboarding and review follow-up.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel section" id="playbooks">
+          <div class="section-heading">
+            <p class="eyebrow">Playbooks</p>
+            <h2>Practical usage patterns</h2>
+          </div>
+          <div class="playbook-grid">
+            <article class="playbook-card">
+              <h3>Internal pilot</h3>
+              <p>Use PAT mode, run the gateway and worker locally, and expose callback routes through a tunnel if you need GitHub App validation later.</p>
+            </article>
+            <article class="playbook-card">
+              <h3>Hosted feedback launch</h3>
+              <p>Create widget sessions, validate customer portal grants, and confirm the dashboard only shows project-scoped, session-safe data.</p>
+            </article>
+            <article class="playbook-card">
+              <h3>Review-led GitHub rollout</h3>
+              <p>Train operators that issue creation and PR promotion are not defaults. They are explicit post-review actions.</p>
+            </article>
+            <article class="playbook-card accent-card">
+              <h3>Promotion hygiene</h3>
+              <p>Before promotion, confirm the execution has changes, review approval, non-failed validation, and a resolvable target repository.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel section" id="faq">
+          <div class="section-heading">
+            <p class="eyebrow">FAQ</p>
+            <h2>Answers new teams usually need</h2>
+          </div>
+          <div class="faq-list">
+            <details>
+              <summary>Should we start with PAT mode or GitHub App mode?</summary>
+              <p>Start with PAT mode for speed. Use GitHub App mode once you need cleaner repository scoping, installation lifecycle control, and stronger auditability.</p>
+            </details>
+            <details>
+              <summary>Do we need Vercel to test GitHub App onboarding locally?</summary>
+              <p>No. For local validation, a tunnel to the running Nexus gateway is lower friction. Vercel is useful when you want a persistent public host for this documentation site or for a separately deployed environment.</p>
+            </details>
+            <details>
+              <summary>What is the first page an operator should learn?</summary>
+              <p>Start with the onboarding console, then move to the review queue. Those two screens establish project context and show the approval gate that governs downstream actions.</p>
+            </details>
+            <details>
+              <summary>When should an operator promote an execution into a PR?</summary>
+              <p>Only after the execution has changes, review approval, acceptable validation, and a healthy closeout state. The review queue and closeout surfaces exist to prevent premature promotion.</p>
+            </details>
+          </div>
+        </section>
+
+        <section class="footer-band">
+          <p class="eyebrow">Launch checklist</p>
+          <h2>Use this site as the operator handoff page for your Vercel deployment.</h2>
+          <p>
+            Keep the content versioned with the product so onboarding guidance changes with the workflow, not weeks after it.
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
