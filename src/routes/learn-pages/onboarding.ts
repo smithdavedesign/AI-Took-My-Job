@@ -54,6 +54,18 @@ export function buildOnboardingConsolePage(): string {
     .guardrail-fail { border-color: rgba(139,98,8,0.26); background: rgba(139,98,8,0.09); }
     .guardrail-fail strong { color: var(--warning); }
     .guardrail-neutral { border-color: var(--line); }
+    .wizard-step-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wizard-step { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
+    .wizard-step strong { display: block; font-size: 0.95rem; }
+    .wizard-step span { display: block; margin-top: 8px; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+    .wizard-complete { border-color: rgba(13,105,91,0.28); background: rgba(13,105,91,0.08); }
+    .wizard-complete strong { color: var(--accent); }
+    .wizard-ready { border-color: rgba(13,105,91,0.2); background: rgba(13,105,91,0.05); }
+    .wizard-ready strong { color: var(--ink); }
+    .wizard-attention { border-color: rgba(139,98,8,0.26); background: rgba(139,98,8,0.09); }
+    .wizard-attention strong { color: var(--warning); }
+    .wizard-blocked { border-color: rgba(146,47,47,0.2); background: rgba(146,47,47,0.08); }
+    .wizard-blocked strong { color: #922f2f; }
     @media (max-width: 1120px) { .shell, .split, .summary-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -121,6 +133,14 @@ export function buildOnboardingConsolePage(): string {
             <button id="createInstallLink" class="primary">Create Install Link</button>
             <button id="lookupInstall" class="secondary">Lookup Install</button>
             <button id="reconcileInstall" class="primary">Reconcile Install</button>
+          </div>
+          <div class="section">
+            <h2 class="section-title">GitHub Setup Wizard</h2>
+            <div id="wizardInlineSummary" class="helper">No GitHub setup status loaded yet.</div>
+            <div class="row">
+              <button id="loadGitHubSetup" class="secondary">Check GitHub Setup</button>
+              <button id="runGitHubWizard" class="primary">Run Next GitHub Step</button>
+            </div>
           </div>
           <div class="row">
             <button id="transferInstall" class="primary">Transfer Install</button>
@@ -212,6 +232,12 @@ export function buildOnboardingConsolePage(): string {
             <pre id="reconcileResult">// reconcile response appears here</pre>
           </section>
           <section class="section">
+            <h2 class="section-title">GitHub Setup Wizard</h2>
+            <div id="wizardSummary" class="helper">Check GitHub setup to see the next blocking step for project-scoped GitHub promotion.</div>
+            <div id="wizardSteps" class="wizard-step-grid"></div>
+            <pre id="wizardResult">// github setup status appears here</pre>
+          </section>
+          <section class="section">
             <h2 class="section-title">Transfer</h2>
             <div id="transferSummary" class="helper">No installation transfer run yet.</div>
             <pre id="transferResult">// transfer response appears here</pre>
@@ -300,6 +326,12 @@ export function buildOnboardingConsolePage(): string {
       lookupResult: document.getElementById('lookupResult'),
       reconcileSummary: document.getElementById('reconcileSummary'),
       reconcileResult: document.getElementById('reconcileResult'),
+      wizardInlineSummary: document.getElementById('wizardInlineSummary'),
+      loadGitHubSetup: document.getElementById('loadGitHubSetup'),
+      runGitHubWizard: document.getElementById('runGitHubWizard'),
+      wizardSummary: document.getElementById('wizardSummary'),
+      wizardSteps: document.getElementById('wizardSteps'),
+      wizardResult: document.getElementById('wizardResult'),
       transferSummary: document.getElementById('transferSummary'),
       transferResult: document.getElementById('transferResult'),
       widgetSummary: document.getElementById('widgetSummary'),
@@ -353,6 +385,27 @@ export function buildOnboardingConsolePage(): string {
       return JSON.parse(text);
     }
     function writeJson(target, data) { target.textContent = JSON.stringify(data, null, 2); }
+    function describeWizardNextAction(nextAction) {
+      switch (nextAction) {
+        case 'enable-draft-sync': return 'Enable GITHUB_DRAFT_SYNC_ENABLED so GitHub promotion is allowed.';
+        case 'switch-to-app-auth': return 'Switch to GitHub App auth so project-scoped repo bindings use installation-backed credentials.';
+        case 'set-app-id': return 'Set GITHUB_APP_ID in the app environment.';
+        case 'set-private-key': return 'Set GITHUB_APP_PRIVATE_KEY in the app environment.';
+        case 'set-app-slug': return 'Set GITHUB_APP_SLUG so Nexus can generate the GitHub install link.';
+        case 'select-workspace': return 'Choose the workspace you want to wire to GitHub.';
+        case 'select-project': return 'Choose the project whose repository promotion should be enabled.';
+        case 'select-repository': return 'Choose the owner/repo to link into the selected project.';
+        case 'create-install-link': return 'Generate the GitHub install link and complete installation in GitHub.';
+        case 'select-installation': return 'Select which existing workspace installation should back this project.';
+        case 'transfer-installation': return 'Transfer the selected installation into this workspace before linking the repository.';
+        case 'grant-repository-access': return 'Update the GitHub App installation so it can see the selected repository.';
+        case 'reconcile-installation': return 'Persist the installation and create or refresh the default repo connection for this project.';
+        case 'verify-app-permissions': return 'GitHub App credentials are present, but Nexus could not inspect the installation repositories.';
+        case 'verify-project-scope': return 'The installation and connection exist, but project-scoped GitHub promotion is still not enabled.';
+        case 'ready': return 'GitHub setup is complete for this project and repository.';
+        default: return 'Check GitHub setup to see the next step.';
+      }
+    }
     function parseScopes() {
       return els.serviceIdentityScopes.value.split(',').map(function (value) { return value.trim(); }).filter(Boolean);
     }
@@ -441,6 +494,79 @@ export function buildOnboardingConsolePage(): string {
       } else {
         const activeCount = grants.filter(function (grant) { return grant && grant.status === 'active'; }).length;
         els.customerPortalGrantSummary.textContent = 'Loaded ' + grants.length + ' grant(s). Active ' + activeCount + '.';
+      }
+    }
+    function renderGitHubSetup(result) {
+      writeJson(els.wizardResult, result);
+      els.wizardSteps.innerHTML = '';
+      const steps = result && result.wizard && Array.isArray(result.wizard.steps) ? result.wizard.steps : [];
+      steps.forEach(function (step) {
+        const card = document.createElement('article');
+        card.className = 'wizard-step wizard-' + (step.status || 'blocked');
+        card.innerHTML = '<strong>' + step.label + '</strong><span>' + (step.detail || '') + '</span>';
+        els.wizardSteps.appendChild(card);
+      });
+      const nextAction = result && result.wizard ? result.wizard.nextAction : null;
+      const summary = describeWizardNextAction(nextAction);
+      els.wizardSummary.textContent = summary;
+      els.wizardInlineSummary.textContent = summary;
+      if (result && result.installation && result.installation.selected) {
+        if (result.installation.selected.installationId) {
+          els.installationId.value = String(result.installation.selected.installationId);
+        }
+        if (result.installation.selected.id) {
+          els.githubInstallationRecordId.value = result.installation.selected.id;
+        }
+      }
+      if (result && result.repository && result.repository.selected) {
+        els.repository.value = result.repository.selected;
+      }
+    }
+    function buildGitHubSetupQuery() {
+      const params = new URLSearchParams();
+      const workspaceId = els.workspaceId.value.trim();
+      const projectId = els.projectId.value.trim();
+      const repository = els.repository.value.trim();
+      const installationId = els.installationId.value.trim();
+      if (workspaceId) {
+        params.set('workspaceId', workspaceId);
+      }
+      if (projectId) {
+        params.set('projectId', projectId);
+      }
+      if (repository) {
+        params.set('repository', repository);
+      }
+      if (installationId) {
+        params.set('installationId', installationId);
+      }
+      return params;
+    }
+    async function loadGitHubSetupStatus(options) {
+      const silent = Boolean(options && options.silent);
+      saveState();
+      const query = buildGitHubSetupQuery();
+      if (!query.get('workspaceId') && !query.get('projectId')) {
+        if (!silent) {
+          setStatus('Workspace Id or Project Id is required to check GitHub setup.');
+        }
+        return null;
+      }
+      if (!silent) {
+        setStatus('Checking GitHub setup...');
+      }
+      try {
+        const result = await request('/internal/github-app/setup-status?' + query.toString(), { headers: authHeaders() });
+        renderGitHubSetup(result);
+        if (!silent) {
+          setStatus('GitHub setup loaded. ' + describeWizardNextAction(result && result.wizard ? result.wizard.nextAction : null));
+        }
+        return result;
+      } catch (error) {
+        if (!silent) {
+          setStatus(error instanceof Error ? error.message : 'Failed to load GitHub setup status.');
+        }
+        return null;
       }
     }
     function renderTriagePolicy(result) {
@@ -560,6 +686,7 @@ export function buildOnboardingConsolePage(): string {
         }
         renderBindings(projects, installations, repoConnections);
         renderTriagePolicy(triagePolicy);
+        await loadGitHubSetupStatus({ silent: true });
         setStatus('Loaded onboarding context for workspace ' + workspaceId + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to load onboarding context.');
@@ -606,6 +733,7 @@ export function buildOnboardingConsolePage(): string {
         }
         setReadiness(support.readiness || 'unknown', issues.length ? issues.join(' ') : 'Project is ready for customer handoff.');
         renderPromotionGuardrails();
+        await loadGitHubSetupStatus({ silent: true });
         setStatus('Operations loaded for ' + projectId + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to load project operations.');
@@ -696,6 +824,7 @@ export function buildOnboardingConsolePage(): string {
         selectRepoConnection(result);
         await loadContext();
         await loadOperations();
+        await loadGitHubSetupStatus({ silent: true });
         setStatus('Repo connection created for ' + repository + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to create repo connection.');
@@ -740,6 +869,7 @@ export function buildOnboardingConsolePage(): string {
         selectRepoConnection(result);
         await loadContext();
         await loadOperations();
+        await loadGitHubSetupStatus({ silent: true });
         setStatus('Repo connection ' + repoConnectionId + ' updated.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to update repo connection.');
@@ -849,6 +979,7 @@ export function buildOnboardingConsolePage(): string {
         } else {
           els.installLinkSummary.textContent = 'Install link created.';
         }
+        els.wizardInlineSummary.textContent = 'Install link ready. Complete the GitHub install flow, then return and run the wizard again.';
         setStatus('GitHub App install link generated.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to create install link.');
@@ -902,6 +1033,7 @@ export function buildOnboardingConsolePage(): string {
         }
         await loadContext();
         await loadOperations();
+        await loadGitHubSetupStatus({ silent: true });
         setStatus('Installation ' + installationId + ' reconciled.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to reconcile install.');
@@ -931,10 +1063,57 @@ export function buildOnboardingConsolePage(): string {
         els.transferSummary.textContent = 'Transferred from ' + (result.sourceWorkspace ? result.sourceWorkspace.name : 'unknown') + ' to ' + (result.targetWorkspace ? result.targetWorkspace.name : 'unknown') + '. Deactivated ' + (Array.isArray(result.deactivatedConnectionIds) ? result.deactivatedConnectionIds.length : 0) + ' source connection(s).';
         await loadContext();
         await loadOperations();
+        await loadGitHubSetupStatus({ silent: true });
         setStatus('Installation ' + installationId + ' transferred.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to transfer install.');
       }
+    }
+    async function runGitHubWizard() {
+      const statusResult = await loadGitHubSetupStatus({ silent: false });
+      if (!statusResult || !statusResult.wizard) {
+        return;
+      }
+      const nextAction = statusResult.wizard.nextAction;
+      const suggested = statusResult.wizard.suggestedPayload || {};
+      if (suggested.workspaceId && !els.workspaceId.value.trim()) {
+        els.workspaceId.value = suggested.workspaceId;
+      }
+      if (suggested.projectId && !els.projectId.value.trim()) {
+        els.projectId.value = suggested.projectId;
+      }
+      if (suggested.repository && !els.repository.value.trim()) {
+        els.repository.value = suggested.repository;
+      }
+      if (suggested.installationId) {
+        els.installationId.value = String(suggested.installationId);
+      }
+      if (suggested.githubInstallationRecordId) {
+        els.githubInstallationRecordId.value = suggested.githubInstallationRecordId;
+      }
+
+      if (nextAction === 'create-install-link') {
+        await createInstallLink();
+        return;
+      }
+
+      if (nextAction === 'reconcile-installation') {
+        await reconcileInstall();
+        return;
+      }
+
+      if (nextAction === 'transfer-installation') {
+        await transferInstall();
+        return;
+      }
+
+      if (nextAction === 'ready') {
+        await loadOperations();
+        setStatus('GitHub setup is already ready for this project.');
+        return;
+      }
+
+      setStatus(describeWizardNextAction(nextAction));
     }
     async function mintWidget() {
       saveState();
@@ -1078,6 +1257,8 @@ export function buildOnboardingConsolePage(): string {
     els.createInstallLink.addEventListener('click', createInstallLink);
     els.lookupInstall.addEventListener('click', lookupInstall);
     els.reconcileInstall.addEventListener('click', reconcileInstall);
+    els.loadGitHubSetup.addEventListener('click', function () { void loadGitHubSetupStatus(); });
+    els.runGitHubWizard.addEventListener('click', function () { void runGitHubWizard(); });
     els.transferInstall.addEventListener('click', transferInstall);
     els.mintWidget.addEventListener('click', mintWidget);
     els.loadCustomerPortalGrants.addEventListener('click', loadCustomerPortalGrants);
@@ -1088,6 +1269,9 @@ export function buildOnboardingConsolePage(): string {
     els.rotateServiceIdentity.addEventListener('click', rotateServiceIdentity);
     els.revokeServiceIdentity.addEventListener('click', revokeServiceIdentity);
     renderPromotionGuardrails();
+    if (els.workspaceId.value || els.projectId.value) {
+      void loadGitHubSetupStatus({ silent: true });
+    }
   </script>
 </body>
 </html>`;

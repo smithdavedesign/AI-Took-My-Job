@@ -141,7 +141,9 @@ async function main(): Promise<void> {
   ]);
   await assertHtmlContains(baseUrl, '/learn/onboarding', [
     'Readiness And Promotion Guardrails',
-    'Promote Customer Access'
+    'Promote Customer Access',
+    'GitHub Setup Wizard',
+    'Run Next GitHub Step'
   ]);
   await assertHtmlContains(baseUrl, '/learn/review-queue', [
     'Readiness And Promotion Guardrails',

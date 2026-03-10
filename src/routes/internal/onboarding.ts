@@ -8,6 +8,7 @@ import {
   getGitHubAppInstallationDetails,
   listGitHubInstallationRepositories
 } from '../../integrations/github/client.js';
+import { isGitHubRepository } from '../../services/agent-tasks/pull-request-promotion.js';
 import { createPublicCustomerPortalAccessToken, normalizeCustomerPortalEmail } from '../../support/public-customer-portal-access.js';
 import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 import { createGitHubAppInstallState, verifyGitHubAppInstallState } from '../../support/github-app-install-state.js';
@@ -70,6 +71,13 @@ const githubAppInstallCallbackQuerySchema = z.object({
   installation_id: z.coerce.number().int().positive(),
   setup_action: z.string().optional(),
   state: z.string().min(32).optional()
+});
+
+const githubAppSetupStatusQuerySchema = z.object({
+  workspaceId: z.string().uuid().optional(),
+  projectId: z.string().uuid().optional(),
+  repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'repository must be owner/repo').optional(),
+  installationId: z.coerce.number().int().positive().optional()
 });
 
 const createWorkspaceSchema = z.object({
@@ -219,6 +227,292 @@ function summarizeWorkspaceTriagePolicy(policy: Awaited<ReturnType<FastifyInstan
     priorityRuleCount: policy?.priorityRules.length ?? 0,
     ownershipOwners: Array.from(new Set((policy?.ownershipRules ?? []).map((rule) => rule.owner))).slice(0, 8),
     updatedAt: policy?.updatedAt ?? null
+  };
+}
+
+function summarizeGitHubSetupStep(input: {
+  id: string;
+  label: string;
+  status: 'complete' | 'ready' | 'attention' | 'blocked';
+  detail: string;
+}): { id: string; label: string; status: string; detail: string } {
+  return input;
+}
+
+async function buildGitHubSetupStatus(app: FastifyInstance, input: {
+  workspaceId: string | undefined;
+  projectId: string | undefined;
+  repository: string | undefined;
+  installationId: number | undefined;
+}): Promise<Record<string, unknown>> {
+  const authModeIsApp = app.config.GITHUB_AUTH_MODE === 'app';
+  const draftSyncEnabled = app.config.GITHUB_DRAFT_SYNC_ENABLED;
+  const appIdConfigured = Boolean(app.config.GITHUB_APP_ID);
+  const privateKeyConfigured = Boolean(app.config.GITHUB_APP_PRIVATE_KEY);
+  const slugConfigured = Boolean(app.config.GITHUB_APP_SLUG);
+  const appCredentialsConfigured = authModeIsApp && appIdConfigured && privateKeyConfigured;
+  const installLinkReady = appCredentialsConfigured && slugConfigured;
+
+  let project = null as Awaited<ReturnType<FastifyInstance['projects']['findById']>>;
+  if (input.projectId) {
+    project = await app.projects.findById(input.projectId);
+    if (!project) {
+      throw app.httpErrors.notFound('project not found');
+    }
+  }
+
+  let workspace = null as Awaited<ReturnType<FastifyInstance['workspaces']['findById']>>;
+  const resolvedWorkspaceId = input.workspaceId ?? project?.workspaceId;
+  if (resolvedWorkspaceId) {
+    workspace = await app.workspaces.findById(resolvedWorkspaceId);
+    if (!workspace) {
+      throw app.httpErrors.notFound('workspace not found');
+    }
+  }
+
+  if (workspace && project && project.workspaceId !== workspace.id) {
+    throw app.httpErrors.conflict('project workspace does not match requested workspace');
+  }
+
+  const repoScope = project
+    ? await resolveProjectRepositoryScope({
+      projectId: project.id,
+      repository: input.repository,
+      projects: app.projects,
+      repoConnections: app.repoConnections
+    })
+    : null;
+  const activeConnections = repoScope?.activeConnections ?? [];
+  const selectedRepository = input.repository
+    ?? repoScope?.selectedConnection?.repository
+    ?? repoScope?.defaultConnection?.repository
+    ?? null;
+  const selectedConnection = selectedRepository
+    ? activeConnections.find((connection) => connection.repository === selectedRepository) ?? null
+    : null;
+
+  const workspaceInstallations = workspace ? await app.githubInstallations.findByWorkspaceId(workspace.id) : [];
+  const selectedInstallation = input.installationId
+    ? await app.githubInstallations.findByInstallationId(input.installationId)
+    : workspaceInstallations.length === 1
+      ? workspaceInstallations[0] ?? null
+      : null;
+
+  let installationRepositories: Awaited<ReturnType<typeof listGitHubInstallationRepositories>> = [];
+  let installationRepositoryLoadError: string | null = null;
+  if (selectedInstallation && appCredentialsConfigured) {
+    try {
+      installationRepositories = await listGitHubInstallationRepositories(app.config, Number(selectedInstallation.installationId));
+    } catch (error) {
+      installationRepositoryLoadError = error instanceof Error ? error.message : 'Failed to load installation repositories';
+    }
+  }
+
+  const repositoryIsGitHub = selectedRepository ? isGitHubRepository(selectedRepository) : false;
+  const repositoryVisibleToInstallation = repositoryIsGitHub && selectedInstallation
+    ? installationRepositories.some((repository) => repository.fullName === selectedRepository)
+    : false;
+  const connectionLinkedToSelectedInstallation = Boolean(selectedConnection && selectedInstallation && selectedConnection.githubInstallationId === selectedInstallation.id);
+  const strictProjectScopedEnabled = project && selectedRepository && repositoryIsGitHub
+    ? await app.github.isEnabled({
+      projectId: project.id,
+      repository: selectedRepository,
+      strictProjectScoped: true
+    })
+    : false;
+
+  let nextAction = 'ready';
+  let status = 'ready';
+
+  if (!draftSyncEnabled) {
+    nextAction = 'enable-draft-sync';
+    status = 'blocked';
+  } else if (!authModeIsApp) {
+    nextAction = 'switch-to-app-auth';
+    status = 'blocked';
+  } else if (!appIdConfigured) {
+    nextAction = 'set-app-id';
+    status = 'blocked';
+  } else if (!privateKeyConfigured) {
+    nextAction = 'set-private-key';
+    status = 'blocked';
+  } else if (!slugConfigured) {
+    nextAction = 'set-app-slug';
+    status = 'blocked';
+  } else if (!workspace) {
+    nextAction = 'select-workspace';
+    status = 'attention';
+  } else if (!project) {
+    nextAction = 'select-project';
+    status = 'attention';
+  } else if (!selectedRepository) {
+    nextAction = 'select-repository';
+    status = 'attention';
+  } else if (!selectedInstallation) {
+    nextAction = workspaceInstallations.length > 0 ? 'select-installation' : 'create-install-link';
+    status = 'ready';
+  } else if (selectedInstallation.workspaceId !== workspace.id) {
+    nextAction = 'transfer-installation';
+    status = 'attention';
+  } else if (installationRepositoryLoadError) {
+    nextAction = 'verify-app-permissions';
+    status = 'attention';
+  } else if (repositoryIsGitHub && !repositoryVisibleToInstallation) {
+    nextAction = 'grant-repository-access';
+    status = 'attention';
+  } else if (!selectedConnection || !connectionLinkedToSelectedInstallation || selectedConnection.status !== 'active') {
+    nextAction = 'reconcile-installation';
+    status = 'ready';
+  } else if (!strictProjectScopedEnabled) {
+    nextAction = 'verify-project-scope';
+    status = 'attention';
+  }
+
+  const steps = [
+    summarizeGitHubSetupStep({
+      id: 'env',
+      label: 'Configure App Auth',
+      status: draftSyncEnabled && authModeIsApp && appIdConfigured && privateKeyConfigured && slugConfigured ? 'complete' : (!draftSyncEnabled || !authModeIsApp ? 'blocked' : 'attention'),
+      detail: !draftSyncEnabled
+        ? 'Set GITHUB_DRAFT_SYNC_ENABLED=true before GitHub promotion can run.'
+        : !authModeIsApp
+          ? 'Set GITHUB_AUTH_MODE=app so project-scoped connections can use installation-backed auth.'
+          : !appIdConfigured
+            ? 'Provide GITHUB_APP_ID.'
+            : !privateKeyConfigured
+              ? 'Provide GITHUB_APP_PRIVATE_KEY.'
+              : !slugConfigured
+                ? 'Provide GITHUB_APP_SLUG so Nexus can generate the GitHub install link.'
+                : 'GitHub App auth and install-link settings are configured.'
+    }),
+    summarizeGitHubSetupStep({
+      id: 'scope',
+      label: 'Select Project Scope',
+      status: workspace && project && selectedRepository ? 'complete' : workspace ? 'ready' : 'attention',
+      detail: !workspace
+        ? 'Select or load a workspace first.'
+        : !project
+          ? 'Select a project so the wizard can resolve project-scoped GitHub promotion.'
+          : !selectedRepository
+            ? 'Choose the target owner/repo for this project.'
+            : 'Workspace, project, and repository target are resolved.'
+    }),
+    summarizeGitHubSetupStep({
+      id: 'installation',
+      label: 'Install GitHub App',
+      status: !workspace ? 'blocked' : selectedInstallation ? 'complete' : installLinkReady ? 'ready' : 'blocked',
+      detail: selectedInstallation
+        ? `Installation ${selectedInstallation.installationId} is available for this workspace.`
+        : installLinkReady
+          ? 'Generate the install link and complete GitHub installation for the target account or repository.'
+          : 'Install-link generation stays blocked until app auth and slug are configured.'
+    }),
+    summarizeGitHubSetupStep({
+      id: 'link',
+      label: 'Reconcile And Link Repository',
+      status: !project || !selectedRepository || !selectedInstallation
+        ? 'blocked'
+        : selectedConnection && connectionLinkedToSelectedInstallation && selectedConnection.status === 'active'
+          ? 'complete'
+          : repositoryIsGitHub && installationRepositoryLoadError
+            ? 'attention'
+            : repositoryIsGitHub && !repositoryVisibleToInstallation
+              ? 'attention'
+              : 'ready',
+      detail: !project || !selectedRepository || !selectedInstallation
+        ? 'Resolve project scope and installation before linking the default repository.'
+        : installationRepositoryLoadError
+          ? installationRepositoryLoadError
+          : repositoryIsGitHub && !repositoryVisibleToInstallation
+            ? 'The selected repository is not visible to this installation yet.'
+            : selectedConnection && connectionLinkedToSelectedInstallation && selectedConnection.status === 'active'
+              ? 'The project already has an active installation-backed repository connection.'
+              : 'Run reconcile to persist the installation and create or refresh the default repo connection.'
+    }),
+    summarizeGitHubSetupStep({
+      id: 'promotion',
+      label: 'Verify Promotion Gate',
+      status: strictProjectScopedEnabled ? 'complete' : project && selectedRepository ? 'attention' : 'blocked',
+      detail: strictProjectScopedEnabled
+        ? 'Project-scoped GitHub promotion is enabled for this repository.'
+        : project && selectedRepository
+          ? 'Promotion is still blocked until the project-scoped installation-backed repository binding is active.'
+          : 'Project and repository scope must be selected before promotion can be verified.'
+    })
+  ];
+
+  return {
+    status,
+    nextAction,
+    githubApp: {
+      draftSyncEnabled,
+      authMode: app.config.GITHUB_AUTH_MODE,
+      appIdConfigured,
+      privateKeyConfigured,
+      slugConfigured,
+      installLinkReady,
+      reconcileReady: appCredentialsConfigured
+    },
+    workspace: workspace ? {
+      id: workspace.id,
+      name: workspace.name,
+      installationCount: workspaceInstallations.length
+    } : null,
+    project: project ? {
+      id: project.id,
+      name: project.name,
+      projectKey: project.projectKey
+    } : null,
+    repository: {
+      selected: selectedRepository,
+      requested: input.repository ?? null,
+      isGitHubRepository: repositoryIsGitHub,
+      activeConnectionCount: activeConnections.length,
+      defaultConnection: repoScope?.defaultConnection ? {
+        id: repoScope.defaultConnection.id,
+        repository: repoScope.defaultConnection.repository,
+        githubInstallationId: repoScope.defaultConnection.githubInstallationId ?? null,
+        status: repoScope.defaultConnection.status,
+        isDefault: repoScope.defaultConnection.isDefault
+      } : null,
+      selectedConnection: selectedConnection ? {
+        id: selectedConnection.id,
+        repository: selectedConnection.repository,
+        githubInstallationId: selectedConnection.githubInstallationId ?? null,
+        status: selectedConnection.status,
+        isDefault: selectedConnection.isDefault
+      } : null,
+      strictProjectScopedEnabled
+    },
+    installation: {
+      requestedInstallationId: input.installationId ?? null,
+      selected: selectedInstallation ? {
+        id: selectedInstallation.id,
+        installationId: Number(selectedInstallation.installationId),
+        workspaceId: selectedInstallation.workspaceId,
+        accountLogin: selectedInstallation.accountLogin ?? null,
+        accountType: selectedInstallation.accountType ?? null
+      } : null,
+      repositoryVisible: repositoryVisibleToInstallation,
+      repositoryCount: installationRepositories.length,
+      repositoryPreview: installationRepositories.slice(0, 10).map((repository) => repository.fullName),
+      repositoryLoadError: installationRepositoryLoadError
+    },
+    wizard: {
+      status,
+      nextAction,
+      canCreateInstallLink: Boolean(workspace && installLinkReady),
+      canReconcile: Boolean(workspace && project && selectedRepository && selectedInstallation),
+      suggestedPayload: {
+        workspaceId: workspace?.id ?? null,
+        projectId: project?.id ?? null,
+        repository: selectedRepository,
+        installationId: selectedInstallation ? Number(selectedInstallation.installationId) : null,
+        githubInstallationRecordId: selectedInstallation?.id ?? null,
+        isDefault: true
+      },
+      steps
+    }
   };
 }
 
@@ -421,6 +715,17 @@ async function buildGitHubInstallationAdminSnapshot(app: FastifyInstance, instal
 }
 
 export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
+  app.get('/internal/github-app/setup-status', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+    const query = githubAppSetupStatusQuerySchema.parse(request.query ?? {});
+    return buildGitHubSetupStatus(app, {
+      workspaceId: query.workspaceId,
+      projectId: query.projectId,
+      repository: query.repository,
+      installationId: query.installationId
+    });
+  });
+
   app.post('/internal/workspaces', async (request, reply) => {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
     const payload = createWorkspaceSchema.parse(request.body);

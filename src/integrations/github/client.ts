@@ -265,29 +265,39 @@ export function createGitHubIntegration(
   const repository = repositorySettings.repository;
   const mode = overrides.mode ?? config.GITHUB_AUTH_MODE;
 
+  const disabledIntegration = (reason: string): GitHubIntegration => ({
+    mode,
+    enabled: false,
+    repository,
+    usingTestRepository: config.GITHUB_USE_TEST_REPO,
+    async resolveGitAuthToken() {
+      return undefined;
+    },
+    async createIssueDraft() {
+      throw new Error(reason);
+    },
+    async createPullRequest() {
+      throw new Error(reason);
+    },
+    async mergePullRequest() {
+      throw new Error(reason);
+    }
+  });
+
   if (!config.GITHUB_DRAFT_SYNC_ENABLED || overrides.enabled === false) {
-    return {
-      mode,
-      enabled: false,
-      repository,
-      usingTestRepository: config.GITHUB_USE_TEST_REPO,
-      async resolveGitAuthToken() {
-        return undefined;
-      },
-      async createIssueDraft() {
-        throw new Error('GitHub draft sync is disabled');
-      },
-      async createPullRequest() {
-        throw new Error('GitHub draft sync is disabled');
-      },
-      async mergePullRequest() {
-        throw new Error('GitHub draft sync is disabled');
-      }
-    };
+    return disabledIntegration('GitHub draft sync is disabled');
   }
 
   if (!repositorySettings.owner || !repositorySettings.repo) {
-    throw new Error('GITHUB_OWNER and GITHUB_REPO are required when GitHub draft sync is enabled');
+    return disabledIntegration('GITHUB_OWNER and GITHUB_REPO are required when GitHub draft sync is enabled');
+  }
+
+  if (mode === 'app' && (!config.GITHUB_APP_ID || !config.GITHUB_APP_PRIVATE_KEY)) {
+    return disabledIntegration('GitHub App credentials are required when GITHUB_AUTH_MODE=app');
+  }
+
+  if (mode === 'pat' && !overrides.token && !config.GITHUB_TOKEN) {
+    return disabledIntegration('GITHUB_TOKEN is required when GITHUB_AUTH_MODE=pat');
   }
 
   const owner = repositorySettings.owner;

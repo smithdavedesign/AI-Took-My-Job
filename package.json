@@ -23,6 +23,7 @@
     "e2e:customer-handoff": "tsx src/scripts/e2e/customer-handoff.ts",
     "e2e:config-guardrails": "tsx src/scripts/e2e/config-guardrails.ts",
     "e2e:developer-context": "tsx src/scripts/e2e/developer-context.ts",
+    "e2e:github-setup-wizard": "tsx src/scripts/e2e/github-setup-wizard.ts",
     "e2e:hosted-feedback-review": "tsx src/scripts/e2e/hosted-feedback-review.ts",
     "e2e:installation-transfer": "tsx src/scripts/e2e/installation-transfer.ts",
     "e2e:learn-behavior": "tsx src/scripts/e2e/learn-behavior.ts",
