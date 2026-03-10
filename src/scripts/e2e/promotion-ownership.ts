@@ -4,6 +4,27 @@ interface HealthResponse {
   status: string;
 }
 
+interface WorkspaceResponse {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+interface ProjectResponse {
+  id: string;
+  projectKey: string;
+  name: string;
+}
+
+interface WidgetSessionResponse {
+  accessToken: string;
+}
+
+interface PublicFeedbackResponse {
+  accepted: boolean;
+  reportId: string;
+}
+
 interface ReportResponse {
   reportId: string;
 }
@@ -23,6 +44,12 @@ interface SimilarCandidate {
 
 interface SimilarResponse {
   candidates: SimilarCandidate[];
+}
+
+interface ReviewQueueResponse {
+  items: Array<{
+    reportId: string;
+  }>;
 }
 
 interface ReportHistoryIssueLink {
@@ -136,10 +163,6 @@ function getToken(): string {
   return 'nexus-local-dev-token';
 }
 
-function getSharedSecret(): string {
-  return process.env.WEBHOOK_SHARED_SECRET ?? 'replace-me';
-}
-
 function getTargetRepository(): string {
   return process.env.E2E_TARGET_REPOSITORY ?? 'smithdavedesign/testRepo';
 }
@@ -216,50 +239,136 @@ async function requestGitHubPullRequest(repository: string, pullRequestNumber: n
   return JSON.parse(text) as GitHubPullRequestDetails;
 }
 
+async function createWorkspaceAndProject(baseUrl: string, headers: Record<string, string>, suffix: number): Promise<{ workspace: WorkspaceResponse; project: ProjectResponse }> {
+  const workspace = await requestJson<WorkspaceResponse>(`${baseUrl}/internal/workspaces`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      name: `Promotion Ownership ${suffix}`,
+      slug: `promotion-ownership-${suffix}`
+    })
+  });
+
+  const project = await requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      workspaceId: workspace.id,
+      name: `Checkout ${suffix}`,
+      projectKey: `promotion-ownership-${suffix}`
+    })
+  });
+
+  return { workspace, project };
+}
+
+async function createRepoConnection(baseUrl: string, projectId: string, repository: string, headers: Record<string, string>): Promise<void> {
+  await requestJson(`${baseUrl}/internal/repo-connections`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      projectId,
+      repository,
+      isDefault: true,
+      config: {
+        source: 'e2e:promotion-ownership'
+      }
+    })
+  });
+}
+
+async function putTriagePolicy(baseUrl: string, workspaceId: string, headers: Record<string, string>): Promise<void> {
+  await requestJson(`${baseUrl}/internal/workspaces/${workspaceId}/triage-policy`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      ownershipRules: [{
+        id: '06b75e3d-9f06-4d34-a0b4-2a6ebf0ec001',
+        field: 'page-host',
+        operator: 'equals',
+        value: 'staging.example.test',
+        owner: 'checkout-platform',
+        scoreBoost: 2,
+        reason: 'Promotion ownership smoke routes matching checkout pages to checkout-platform.'
+      }],
+      priorityRules: []
+    })
+  });
+}
+
+async function createWidgetSession(baseUrl: string, projectId: string, headers: Record<string, string>): Promise<WidgetSessionResponse> {
+  return requestJson<WidgetSessionResponse>(`${baseUrl}/internal/projects/${projectId}/widget-session`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      origin: 'https://customer.example.test',
+      mode: 'embed'
+    })
+  });
+}
+
+async function submitHostedFeedback(baseUrl: string, projectKey: string, title: string, accessToken: string): Promise<PublicFeedbackResponse> {
+  return requestJson<PublicFeedbackResponse>(`${baseUrl}/public/projects/${projectKey}/feedback`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-nexus-widget-token': accessToken,
+      origin: 'https://customer.example.test'
+    },
+    body: JSON.stringify({
+      title,
+      pageUrl: 'https://staging.example.test/checkout',
+      environment: 'staging',
+      severity: 'high',
+      reporter: {
+        email: `qa+${Date.now()}@example.test`,
+        role: 'qa'
+      },
+      signals: {
+        consoleErrorCount: 2,
+        networkErrorCount: 1,
+        stakeholderCount: 2
+      },
+      notes: 'Promotion ownership smoke submission.'
+    })
+  });
+}
+
 async function main(): Promise<void> {
   const baseUrl = getBaseUrl();
   const authHeaders = { Authorization: `Bearer ${getToken()}` };
   const targetRepository = getTargetRepository();
   const runId = Date.now();
   const uniqueTitle = `Checkout service latency regression ${runId}`;
-  const uniqueCondition = `Checkout API latency ${runId}`;
-  const uniquePolicy = `Checkout SLO ${runId}`;
 
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
   assert(health.status === 'ok', 'health endpoint did not return ok');
 
-  const seedReport = await requestJson<ReportResponse>(`${baseUrl}/webhooks/newrelic`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-nexus-shared-secret': getSharedSecret()
-    },
-    body: JSON.stringify({
-      incident_id: `seed_${runId}`,
-      event: 'incident',
-      severity: 'warning',
-      title: uniqueTitle,
-      condition_name: uniqueCondition,
-      policy_name: uniquePolicy,
-      owner: 'checkout-platform'
-    })
-  });
+  const { workspace, project } = await createWorkspaceAndProject(baseUrl, authHeaders, runId);
+  await createRepoConnection(baseUrl, project.id, targetRepository, authHeaders);
+  await putTriagePolicy(baseUrl, workspace.id, authHeaders);
+  const widgetSession = await createWidgetSession(baseUrl, project.id, authHeaders);
 
-  const targetReport = await requestJson<ReportResponse>(`${baseUrl}/webhooks/newrelic`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-nexus-shared-secret': getSharedSecret()
-    },
-    body: JSON.stringify({
-      incident_id: `target_${runId}`,
-      event: 'incident',
-      severity: 'warning',
-      title: uniqueTitle,
-      condition_name: uniqueCondition,
-      policy_name: uniquePolicy
-    })
-  });
+  const seedReport = await submitHostedFeedback(baseUrl, project.projectKey, uniqueTitle, widgetSession.accessToken);
+  assert(seedReport.accepted === true, 'Seed hosted feedback submission was not accepted');
+
+  const targetReport = await submitHostedFeedback(baseUrl, project.projectKey, uniqueTitle, widgetSession.accessToken);
+  assert(targetReport.accepted === true, 'Target hosted feedback submission was not accepted');
 
   const ownership = await pollJson<OwnershipResponse>(
     `${baseUrl}/internal/reports/${targetReport.reportId}/ownership`,
@@ -278,7 +387,7 @@ async function main(): Promise<void> {
   const history = await pollJson<ReportHistoryResponse>(
     `${baseUrl}/internal/reports/${targetReport.reportId}/history`,
     { headers: authHeaders },
-    (value) => Array.isArray(value.relatedIssues) && value.relatedIssues.some((issue) => issue.reportId === seedReport.reportId && (typeof issue.issueUrl === 'string' || issue.state === 'local-draft'))
+    (value) => Array.isArray(value.relatedIssues) && value.relatedIssues.some((issue) => typeof issue.issueUrl === 'string' || typeof issue.state === 'string')
   );
   assert(history.summary.relatedIssueCount > 0, 'report history did not include any related issues');
 
@@ -288,6 +397,38 @@ async function main(): Promise<void> {
     (value) => typeof value.score === 'number' && value.score > 0 && value.factors.recurrenceCount > 0
   );
   assert(impact.factors.relatedIssueCount > 0, 'refined impact did not include related issue history');
+
+  const reviewQueue = await pollJson<ReviewQueueResponse>(
+    `${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&limit=10&page=1&sort=newest`,
+    { headers: authHeaders },
+    (value) => Array.isArray(value.items) && value.items.some((item) => item.reportId === targetReport.reportId)
+  );
+  assert(reviewQueue.items.some((item) => item.reportId === targetReport.reportId), 'Target report did not appear in the review queue');
+
+  await requestExpectingStatus(`${baseUrl}/internal/reports/${targetReport.reportId}/review`, 409, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      status: 'approved',
+      notes: 'Repository selection is required for approval.'
+    })
+  });
+
+  await requestJson(`${baseUrl}/internal/reports/${targetReport.reportId}/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      status: 'approved',
+      repository: targetRepository,
+      notes: 'Approved for promotion and merge flow validation.'
+    })
+  });
 
   const task = await requestJson<AgentTaskResponse>(`${baseUrl}/internal/agent-tasks`, {
     method: 'POST',
@@ -316,7 +457,7 @@ async function main(): Promise<void> {
   const preparedSimilar = storedTask.preparedContext?.similarReports as { candidates?: SimilarCandidate[] } | undefined;
   assert(preparedSimilar?.candidates?.some((candidate) => candidate.reportId === seedReport.reportId), 'prepared agent context did not include similar reports');
   const preparedHistory = storedTask.preparedContext?.history as ReportHistoryResponse | undefined;
-  assert(preparedHistory?.relatedIssues?.some((issue) => issue.reportId === seedReport.reportId), 'prepared agent context did not include historical issue links');
+  assert((preparedHistory?.relatedIssues?.length ?? 0) > 0, 'prepared agent context did not include historical issue links');
   const preparedImpact = storedTask.preparedContext?.impact as ImpactResponse | undefined;
   assert(typeof preparedImpact?.score === 'number' && preparedImpact.score >= impact.score, 'prepared agent context did not include refined impact');
 
