@@ -20,6 +20,7 @@ import { createFeedbackRepository, type FeedbackRepository } from './repositorie
 import { createGitHubInstallationRepository, type GitHubInstallationRepository } from './repositories/github-installation-repository.js';
 import { createGitHubIssueLinkRepository, type GitHubIssueLinkRepository } from './repositories/github-issue-link-repository.js';
 import { createProjectRepository, type ProjectRepository } from './repositories/project-repository.js';
+import { createProjectRolloutChecklistRepository, type ProjectRolloutChecklistRepository } from './repositories/project-rollout-checklist-repository.js';
 import { createReplayRunRepository, type ReplayRunRepository } from './repositories/replay-run-repository.js';
 import { createReportReviewRepository, type ReportReviewRepository } from './repositories/report-review-repository.js';
 import { createRepoConnectionRepository, type RepoConnectionRepository } from './repositories/repo-connection-repository.js';
@@ -66,6 +67,7 @@ declare module 'fastify' {
     servicePrincipals: StoredServiceIdentity[];
     workspaces: WorkspaceRepository;
     projects: ProjectRepository;
+    projectRolloutChecklists: ProjectRolloutChecklistRepository;
     githubInstallations: GitHubInstallationRepository;
     repoConnections: RepoConnectionRepository;
     workspaceTriagePolicies: WorkspaceTriagePolicyRepository;
@@ -105,6 +107,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const feedbackRepository = createFeedbackRepository(database);
   const workspaceRepository = createWorkspaceRepository(database);
   const projectRepository = createProjectRepository(database);
+  const projectRolloutChecklistRepository = createProjectRolloutChecklistRepository(database);
   const githubInstallationRepository = createGitHubInstallationRepository(database);
   const repoConnectionRepository = createRepoConnectionRepository(database);
   const workspaceTriagePolicyRepository = createWorkspaceTriagePolicyRepository(database);
@@ -135,6 +138,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await serviceIdentityRepository.ensureSchema();
   await workspaceTriagePolicyRepository.ensureSchema();
   await customerPortalGrantRepository.ensureSchema();
+  await projectRolloutChecklistRepository.ensureSchema();
   await Promise.all(config.INTERNAL_SERVICE_TOKENS.map((principal) => serviceIdentityRepository.upsertBootstrapPrincipal({
     id: principal.id,
     token: principal.token,
@@ -151,6 +155,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('reports', feedbackRepository);
   app.decorate('workspaces', workspaceRepository);
   app.decorate('projects', projectRepository);
+  app.decorate('projectRolloutChecklists', projectRolloutChecklistRepository);
   app.decorate('githubInstallations', githubInstallationRepository);
   app.decorate('repoConnections', repoConnectionRepository);
   app.decorate('workspaceTriagePolicies', workspaceTriagePolicyRepository);

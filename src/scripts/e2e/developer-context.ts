@@ -134,10 +134,10 @@ async function main(): Promise<void> {
   await assertHtmlPage(baseUrl, '/learn');
   await assertHtmlPage(baseUrl, '/learn/prd');
   await assertHtmlContains(baseUrl, '/learn', [
-    'Operator Rollout Checklist',
-    'localStorage.getItem(storageKey)',
-    'localStorage.removeItem(storageKey)',
-    'resetChecklist'
+    'Shared Checklist',
+    'Load Shared Checklist',
+    '/rollout-checklist',
+    'Stored in Nexus for this project'
   ]);
   await assertHtmlContains(baseUrl, '/learn/onboarding', [
     'Readiness And Promotion Guardrails',

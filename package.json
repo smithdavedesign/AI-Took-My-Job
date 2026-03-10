@@ -25,6 +25,7 @@
     "e2e:developer-context": "tsx src/scripts/e2e/developer-context.ts",
     "e2e:hosted-feedback-review": "tsx src/scripts/e2e/hosted-feedback-review.ts",
     "e2e:installation-transfer": "tsx src/scripts/e2e/installation-transfer.ts",
+    "e2e:learn-behavior": "tsx src/scripts/e2e/learn-behavior.ts",
     "e2e:mcp-developer-context": "tsx src/scripts/e2e/mcp-developer-context.ts",
     "e2e:replay-browser-context": "tsx src/scripts/e2e/replay-browser-context.ts",
     "e2e:review-dashboard-regression": "tsx src/scripts/e2e/review-dashboard-regression.ts",

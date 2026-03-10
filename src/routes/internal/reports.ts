@@ -43,7 +43,7 @@ const reportReviewSchema = z.object({
 const reviewQueueActionSchema = z.object({
   action: z.enum(['assign', 'approve', 'reject']),
   reportIds: z.array(z.string().uuid()).min(1).max(50),
-  reviewerId: z.string().min(1).max(255).optional(),
+  reviewerId: z.string().trim().min(1).max(255).optional(),
   repository: z.string().trim().min(1).max(255).optional(),
   notes: z.string().trim().min(1).max(4000).optional()
 });
@@ -1163,6 +1163,11 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     const payload = reviewQueueActionSchema.parse(request.body);
 
     if (payload.action === 'assign') {
+      const assignmentNotes = payload.notes?.trim();
+      if (!assignmentNotes) {
+        throw app.httpErrors.conflict('review queue assignment requires explicit notes');
+      }
+
       const reviewerId = payload.reviewerId ?? principal.id;
       const results = await Promise.all(payload.reportIds.map(async (reportId) => {
         const report = await app.reports.findById(reportId);
@@ -1193,7 +1198,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
           payload: {
             reportId,
             reviewerId,
-            notes: payload.notes ?? null
+            notes: assignmentNotes
           }
         });
 

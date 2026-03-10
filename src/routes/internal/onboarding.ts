@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import {
@@ -140,7 +140,11 @@ const customerPortalGrantCreateSchema = z.object({
   customerEmail: z.email(),
   customerName: z.string().min(1).max(120).optional(),
   ttlDays: z.coerce.number().int().min(1).max(365).optional(),
-  notes: z.string().min(1).max(1000).optional()
+  notes: z.string().trim().min(1).max(1000)
+});
+
+const customerPortalGrantRevokeSchema = z.object({
+  notes: z.string().trim().min(1).max(1000)
 });
 
 function slugify(value: string): string {
@@ -161,9 +165,19 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function getBaseUrl(app: FastifyInstance, request: { protocol: string; hostname: string }): string {
-  return app.config.APP_BASE_URL?.replace(/\/$/, '')
-    ?? `${request.protocol}://${request.hostname}${app.config.PORT === 80 || app.config.PORT === 443 ? '' : `:${app.config.PORT}`}`;
+function getBaseUrl(app: FastifyInstance, request: FastifyRequest): string {
+  const configuredBaseUrl = app.config.APP_BASE_URL?.trim();
+  if (configuredBaseUrl) {
+    try {
+      return new URL(configuredBaseUrl).toString().replace(/\/$/, '');
+    } catch {
+      // Fall back to the request host when local env config is blank or malformed.
+    }
+  }
+
+  const requestHostHeader = Array.isArray(request.headers.host) ? request.headers.host[0] : request.headers.host;
+  const requestHost = requestHostHeader?.trim() || request.hostname;
+  return `${request.protocol}://${requestHost}`;
 }
 
 function buildProjectPublicUrls(baseUrl: string, projectKey: string): {
@@ -631,13 +645,19 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
   app.post('/internal/projects/:projectId/customer-portal-grants', async (request) => {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
     const { projectId } = projectIdParamsSchema.parse(request.params);
-    const payload = customerPortalGrantCreateSchema.parse(request.body ?? {});
+    const payloadResult = customerPortalGrantCreateSchema.safeParse(request.body ?? {});
+    if (!payloadResult.success) {
+      throw app.httpErrors.badRequest(payloadResult.error.message);
+    }
+
+    const payload = payloadResult.data;
     const project = await app.projects.findById(projectId);
     if (!project) {
       throw app.httpErrors.notFound('project not found');
     }
 
     const customerEmail = normalizeCustomerPortalEmail(payload.customerEmail);
+    const decisionNotes = payload.notes.trim();
     const baseUrl = getBaseUrl(app, request);
     const existingGrant = await app.customerPortalGrants.findActiveByProjectIdAndEmail(project.id, customerEmail);
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * (payload.ttlDays ?? 30)).toISOString();
@@ -649,7 +669,7 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       status: 'active',
       metadata: {
         createdBy: principal.id,
-        ...(payload.notes ? { notes: payload.notes } : {})
+        notes: decisionNotes
       },
       expiresAt
     });
@@ -674,7 +694,21 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
           projectId: project.id,
           customerPortalGrantId: grant.id,
           customerEmail: grant.customerEmail,
-          expiresAt: tokenExpiresAt
+          expiresAt: tokenExpiresAt,
+          notes: decisionNotes
+        }
+      });
+    } else {
+      await app.audit.write({
+        eventType: 'project.customer_portal_grant_reused',
+        actorType: 'service',
+        actorId: principal.id,
+        requestId: request.id,
+        payload: {
+          projectId: project.id,
+          customerPortalGrantId: grant.id,
+          customerEmail: grant.customerEmail,
+          notes: decisionNotes
         }
       });
     }
@@ -695,6 +729,12 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
 
   app.post('/internal/projects/:projectId/customer-portal-grants/:customerPortalGrantId/revoke', async (request) => {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const payloadResult = customerPortalGrantRevokeSchema.safeParse(request.body ?? {});
+    if (!payloadResult.success) {
+      throw app.httpErrors.badRequest(payloadResult.error.message);
+    }
+
+    const payload = payloadResult.data;
     const { projectId, customerPortalGrantId } = z.object({
       projectId: z.string().uuid(),
       customerPortalGrantId: z.string().uuid()
@@ -724,7 +764,8 @@ export function registerOnboardingInternalRoutes(app: FastifyInstance): void {
       payload: {
         projectId: project.id,
         customerPortalGrantId: revoked.id,
-        customerEmail: revoked.customerEmail
+        customerEmail: revoked.customerEmail,
+        notes: payload.notes
       }
     });
 

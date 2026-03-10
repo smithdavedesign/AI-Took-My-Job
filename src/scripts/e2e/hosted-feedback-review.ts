@@ -389,8 +389,8 @@ async function main(): Promise<void> {
   await assertHtmlPage(baseUrl, '/learn/onboarding');
   await assertHtmlPage(baseUrl, '/learn/support-ops');
   await assertHtmlPage(baseUrl, '/learn/review-queue');
-  await assertHtmlPageContains(baseUrl, '/learn/onboarding', ['Create Portal Grant', 'Load Portal Grants', 'Customer Portal Grants']);
-  await assertHtmlPageContains(baseUrl, '/learn/support-ops', ['Create Portal Grant', 'Load Portal Grants', 'Customer Portal Grants', 'Checklist']);
+  await assertHtmlPageContains(baseUrl, '/learn/onboarding', ['Create Portal Grant', 'Load Portal Grants', 'Customer Portal Notes']);
+  await assertHtmlPageContains(baseUrl, '/learn/support-ops', ['Create Portal Grant', 'Load Portal Grants', 'Operate Checklist', 'Customer Portal Notes']);
   const serviceIdentity = await requestJson<ServiceIdentitySelfResponse>(`${baseUrl}/internal/service-identity/self`, {
     headers: authHeaders
   });
@@ -519,6 +519,17 @@ async function main(): Promise<void> {
   }
 
   const portalCustomerEmail = `support-review-${suffix}@example.test`;
+  await requestExpectingStatus(`${baseUrl}/internal/projects/${project.id}/customer-portal-grants`, 400, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      customerEmail: portalCustomerEmail,
+      customerName: 'Hosted Feedback Review Smoke'
+    })
+  });
   const customerPortalGrant = await requestJson<CustomerPortalGrantResponse>(`${baseUrl}/internal/projects/${project.id}/customer-portal-grants`, {
     method: 'POST',
     headers: {
@@ -613,7 +624,20 @@ async function main(): Promise<void> {
   assert(rejectedItem.owner?.label === 'checkout-qa', 'Review queue item did not use the configured policy-backed owner');
   assert(rejectedItem.owner?.kind === 'policy-owner', 'Review queue item did not identify the policy-backed owner kind');
 
-  const assignedQueue = await requestJson<ReviewQueueResponse>(
+  await requestExpectingStatus(`${baseUrl}/internal/reports/review-queue/actions`, 409, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeaders
+    },
+    body: JSON.stringify({
+      action: 'assign',
+      reportIds: [rejectedReport.reportId],
+      reviewerId: 'queue-smoke-owner'
+    })
+  });
+
+  const assignedQueueWithNotes = await requestJson<ReviewQueueResponse>(
     `${baseUrl}/internal/reports/review-queue/actions`,
     {
       method: 'POST',
@@ -629,7 +653,7 @@ async function main(): Promise<void> {
       })
     }
   ) as unknown as ReviewQueueResponse;
-  assert(Boolean(assignedQueue), 'Bulk assignment did not return a response');
+  assert(Boolean(assignedQueueWithNotes), 'Bulk assignment did not return a response');
 
   const filteredAssignedQueue = await requestJson<ReviewQueueResponse>(
     `${baseUrl}/internal/reports/review-queue?projectId=${encodeURIComponent(project.id)}&assignedTo=${encodeURIComponent('queue-smoke-owner')}&limit=5&page=1&sort=impact`,

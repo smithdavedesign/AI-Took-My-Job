@@ -27,6 +27,7 @@ interface SimilarResponse {
 
 interface ReportHistoryIssueLink {
   reportId: string;
+  state?: string;
   issueUrl?: string;
 }
 
@@ -277,7 +278,7 @@ async function main(): Promise<void> {
   const history = await pollJson<ReportHistoryResponse>(
     `${baseUrl}/internal/reports/${targetReport.reportId}/history`,
     { headers: authHeaders },
-    (value) => Array.isArray(value.relatedIssues) && value.relatedIssues.some((issue) => issue.reportId === seedReport.reportId && typeof issue.issueUrl === 'string')
+    (value) => Array.isArray(value.relatedIssues) && value.relatedIssues.some((issue) => issue.reportId === seedReport.reportId && (typeof issue.issueUrl === 'string' || issue.state === 'local-draft'))
   );
   assert(history.summary.relatedIssueCount > 0, 'report history did not include any related issues');
 

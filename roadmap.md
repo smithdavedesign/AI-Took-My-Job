@@ -49,7 +49,7 @@ Status legend:
 - [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
 - [x] Add a session-scoped customer dashboard for hosted feedback status, ownership hints, and prioritization visibility.
 - [x] Publish a standalone Vercel-hosted operator onboarding site so rollout guidance can evolve separately from the runtime surfaces.
-- [-] Start Phase 11 self-serve adoption and operator ergonomics with a single five-step operator journey.
+- [-] Start Phase 11 self-serve adoption and operator ergonomics with a single five-step operator journey, shared checklist persistence, and behavior-backed learn coverage.
 
 ### Blocked
 

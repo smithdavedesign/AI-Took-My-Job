@@ -16,13 +16,18 @@ async function readLearnPage(fileName: string): Promise<string> {
   return readFile(path.resolve(process.cwd(), fileName), 'utf8');
 }
 
+function applyLearnPageHeaders(reply: { type: (value: string) => unknown; header: (name: string, value: string) => unknown }): void {
+  reply.type('text/html; charset=utf-8');
+  reply.header('content-security-policy', "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' http: https:; font-src 'self' data: https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
+}
+
 function logUnavailablePage(app: FastifyInstance, routePath: string, title: string, error: unknown): void {
   app.log.warn({ err: error, routePath, title }, 'learn page unavailable');
 }
 
 export function registerLearnRoutes(app: FastifyInstance): void {
   app.get('/learn', async (_request, reply) => {
-    reply.type('text/html; charset=utf-8');
+    applyLearnPageHeaders(reply);
     return buildLearnLandingPage();
   });
 
@@ -30,7 +35,7 @@ export function registerLearnRoutes(app: FastifyInstance): void {
     app.get(routePath, async (_request, reply) => {
       try {
         const html = await readLearnPage(page.fileName);
-        reply.type('text/html; charset=utf-8');
+        applyLearnPageHeaders(reply);
         return html;
       } catch (error) {
         logUnavailablePage(app, routePath, page.title, error);
@@ -40,17 +45,17 @@ export function registerLearnRoutes(app: FastifyInstance): void {
   }
 
   app.get('/learn/review-queue', async (_request, reply) => {
-    reply.type('text/html; charset=utf-8');
+    applyLearnPageHeaders(reply);
     return buildReviewQueuePage();
   });
 
   app.get('/learn/support-ops', async (_request, reply) => {
-    reply.type('text/html; charset=utf-8');
+    applyLearnPageHeaders(reply);
     return buildSupportOpsPage();
   });
 
   app.get('/learn/onboarding', async (_request, reply) => {
-    reply.type('text/html; charset=utf-8');
+    applyLearnPageHeaders(reply);
     return buildOnboardingConsolePage();
   });
 }

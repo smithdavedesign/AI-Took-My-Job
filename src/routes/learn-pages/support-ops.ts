@@ -83,7 +83,7 @@ export function buildSupportOpsPage(): string {
             <label style="flex:1 1 140px;">Grant TTL Days<input id="customerPortalTtlDays" value="30" placeholder="30" /></label>
             <label style="flex:1 1 220px;">Portal Grant Id<input id="customerPortalGrantId" value="" placeholder="customer portal grant UUID" /></label>
           </div>
-          <label>Customer Portal Notes<textarea id="customerPortalNotes" placeholder="Why this durable customer portal link is being issued."></textarea></label>
+          <label>Customer Portal Notes<textarea id="customerPortalNotes" placeholder="Why this durable customer portal access is being created, reused, or revoked."></textarea></label>
           <div class="row">
             <button id="lookupProject" class="secondary">Lookup Project</button>
             <button id="loadSupport" class="primary">Load Support Snapshot</button>
@@ -463,7 +463,10 @@ export function buildSupportOpsPage(): string {
       try {
         const result = await request('/internal/projects/' + projectId + '/customer-portal-grants/' + encodeURIComponent(grantId) + '/revoke', {
           method: 'POST',
-          headers: authHeaders()
+          headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({
+            notes: els.customerPortalNotes.value.trim() || undefined
+          })
         });
         els.customerPortalGrantResult.textContent = JSON.stringify(result, null, 2);
         if (result && result.grant) {

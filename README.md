@@ -30,7 +30,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 - Human approval and explicit PR promotion for agent executions, so GitHub PR creation is blocked until review is recorded.
 - A Phase 7 MCP stdio server now exposes active issue lookup, issue context, reproduction status, and observability context for IDE integrations.
 - The active-issue lookup now supports persisted report indexing for services and repository file paths, and the MCP issue-context tool can inline previews for logs, storage snapshots, HARs, and execution JSON artifacts.
-- Public learn-more pages are now hosted at `/learn` and `/learn/prd`, and `/learn` now keeps browser-persisted rollout checklist state plus operator notes across the five-step journey.
+- Public learn-more pages are now hosted at `/learn` and `/learn/prd`, and `/learn` now keeps project-scoped rollout checklist state plus operator notes inside Nexus across the five-step journey.
 - A standalone operator onboarding static site now lives under `onboarding-site/` for Vercel-hosted product education and rollout handoff.
 - Deterministic report embeddings persisted at ingestion time for later clustering and similarity workflows.
 - First-class PR audit records and approval-gated merge attempts for agent executions.
@@ -76,7 +76,7 @@ The repository now covers the full Phase 0 and Phase 1 baseline, the full Phase 
 
 The repository now includes a standalone static onboarding site in `onboarding-site/`.
 
-The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence, persists rollout checklist state and notes in-browser, and links into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, and `/learn/prd` with shared readiness and promotion guardrails.
+The primary in-app guided entry point is `/learn`, which now walks operators through the same five-step runtime sequence, persists rollout checklist state and notes per project inside Nexus, and links into `/learn/onboarding`, `/learn/review-queue`, `/learn/support-ops`, and `/learn/prd` with shared readiness and promotion guardrails.
 
 Use it when you want a lightweight public-facing walkthrough for operators, prospects, or internal rollout leads without exposing the Fastify app itself.
 
@@ -335,6 +335,16 @@ sequenceDiagram
 
 Copy [.env.example](.env.example) to `.env` and adjust the values.
 
+For the default local setup, keep the app on a simple development profile:
+
+- `NODE_ENV=development`
+- `APP_BASE_URL=http://127.0.0.1:4000`
+- `ARTIFACT_STORAGE_PROVIDER=local`
+- `ARTIFACT_STORAGE_PATH=./var/artifacts`
+- `INTERNAL_SERVICE_TOKENS` containing `nexus-local-dev-token` with `internal:read`, `artifacts:download-url`, and `github:draft`
+
+That profile matches the committed local smoke paths. Only switch to MinIO-backed S3 when you actually start the MinIO services.
+
 Important variables:
 
 - `DATABASE_URL`
@@ -578,6 +588,8 @@ docker compose up -d postgres redis
 
 Docker must be running locally for this step to work.
 
+The default `.env` should stay on local artifact storage. Do not point `ARTIFACT_STORAGE_PROVIDER=s3` at `http://127.0.0.1:9000` unless you also start MinIO, otherwise widget-session and agent-execution flows can fail during local validation.
+
 To run the full packaged stack, including MinIO bucket bootstrap and the dedicated worker container:
 
 ```bash
@@ -621,6 +633,22 @@ The committed smoke runner validates:
 - Sentry, Datadog, and New Relic ingestion through persisted drafts
 
 The dedicated replay execution-mode smoke runs separately as `npm run e2e:replay-browser-context`.
+
+### 7. Run the targeted Phase 11 operator validation
+
+For the learn, hosted-feedback, and promotion hardening path, run:
+
+```bash
+npm run e2e:developer-context
+npm run e2e:learn-behavior
+npm run e2e:hosted-feedback-review
+npm run e2e:promotion-ownership
+```
+
+Expected local behavior:
+
+- `e2e:developer-context`, `e2e:learn-behavior`, and `e2e:hosted-feedback-review` should pass on the default local profile above.
+- `e2e:promotion-ownership` needs either a promotable fixture command or a real agent command. Without `AGENT_EXECUTION_COMMAND`, the flow exits through its local skip path because no promotable code change is generated.
 
 If GitHub sync is enabled, the smoke runner refuses to hit the primary repository unless one of these is true:
 
