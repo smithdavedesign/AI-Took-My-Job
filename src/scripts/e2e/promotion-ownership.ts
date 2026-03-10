@@ -16,6 +16,16 @@ interface ProjectResponse {
   name: string;
 }
 
+interface InstallationLookupResponse {
+  installation: {
+    id: string;
+    installationId: number;
+    workspaceId: string;
+    accountLogin?: string;
+  };
+  workspace: WorkspaceResponse;
+}
+
 interface WidgetSessionResponse {
   accessToken: string;
 }
@@ -132,6 +142,21 @@ interface PullRequestResponse {
   mergeCommitSha?: string;
 }
 
+interface GitHubSetupStatusResponse {
+  repository?: {
+    strictProjectScopedEnabled?: boolean;
+    selected?: string | null;
+  };
+  installation?: {
+    selected?: {
+      installationId?: number;
+    } | null;
+  };
+  wizard?: {
+    nextAction?: string;
+  };
+}
+
 interface GitHubPullRequestDetails {
   body: string;
 }
@@ -165,6 +190,11 @@ function getToken(): string {
 
 function getTargetRepository(): string {
   return process.env.E2E_TARGET_REPOSITORY ?? 'smithdavedesign/testRepo';
+}
+
+function getConfiguredInstallationId(): number | null {
+  const installationId = Number(process.env.GITHUB_APP_INSTALLATION_ID ?? '');
+  return Number.isFinite(installationId) && installationId > 0 ? installationId : null;
 }
 
 async function sleep(milliseconds: number): Promise<void> {
@@ -268,6 +298,41 @@ async function createWorkspaceAndProject(baseUrl: string, headers: Record<string
   return { workspace, project };
 }
 
+async function createProjectInWorkspace(baseUrl: string, workspaceId: string, headers: Record<string, string>, suffix: number): Promise<ProjectResponse> {
+  return requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      workspaceId,
+      name: `Checkout ${suffix}`,
+      projectKey: `promotion-ownership-${suffix}`
+    })
+  });
+}
+
+async function resolveWorkspaceAndProject(baseUrl: string, headers: Record<string, string>, suffix: number): Promise<{ workspace: WorkspaceResponse; project: ProjectResponse }> {
+  const installationId = getConfiguredInstallationId();
+  if (!installationId) {
+    return createWorkspaceAndProject(baseUrl, headers, suffix);
+  }
+
+  try {
+    const lookup = await requestJson<InstallationLookupResponse>(`${baseUrl}/internal/github-app/installations/${installationId}`, {
+      headers
+    });
+    const project = await createProjectInWorkspace(baseUrl, lookup.workspace.id, headers, suffix);
+    return {
+      workspace: lookup.workspace,
+      project
+    };
+  } catch {
+    return createWorkspaceAndProject(baseUrl, headers, suffix);
+  }
+}
+
 async function createRepoConnection(baseUrl: string, projectId: string, repository: string, headers: Record<string, string>): Promise<void> {
   await requestJson(`${baseUrl}/internal/repo-connections`, {
     method: 'POST',
@@ -284,6 +349,56 @@ async function createRepoConnection(baseUrl: string, projectId: string, reposito
       }
     })
   });
+}
+
+async function reconcileGitHubInstallation(
+  baseUrl: string,
+  workspaceId: string,
+  projectId: string,
+  repository: string,
+  headers: Record<string, string>
+): Promise<void> {
+  const installationId = getConfiguredInstallationId();
+  if (!installationId) {
+    return;
+  }
+
+  await requestJson(`${baseUrl}/internal/workspaces/${workspaceId}/github-app/reconcile`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      installationId,
+      projectId,
+      repository,
+      isDefault: true
+    })
+  });
+}
+
+async function assertGitHubPromotionScopeReady(
+  baseUrl: string,
+  workspaceId: string,
+  projectId: string,
+  repository: string,
+  headers: Record<string, string>
+): Promise<void> {
+  const query = new URLSearchParams({
+    workspaceId,
+    projectId,
+    repository
+  });
+  const status = await requestJson<GitHubSetupStatusResponse>(
+    `${baseUrl}/internal/github-app/setup-status?${query.toString()}`,
+    { headers }
+  );
+
+  assert(
+    status.repository?.strictProjectScopedEnabled === true,
+    `GitHub promotion is not enabled for ${repository}. Next wizard action: ${status.wizard?.nextAction ?? 'unknown'}. Installation: ${status.installation?.selected?.installationId ?? 'none'}`
+  );
 }
 
 async function putTriagePolicy(baseUrl: string, workspaceId: string, headers: Record<string, string>): Promise<void> {
@@ -359,8 +474,10 @@ async function main(): Promise<void> {
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
   assert(health.status === 'ok', 'health endpoint did not return ok');
 
-  const { workspace, project } = await createWorkspaceAndProject(baseUrl, authHeaders, runId);
+  const { workspace, project } = await resolveWorkspaceAndProject(baseUrl, authHeaders, runId);
   await createRepoConnection(baseUrl, project.id, targetRepository, authHeaders);
+  await reconcileGitHubInstallation(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
+  await assertGitHubPromotionScopeReady(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
   await putTriagePolicy(baseUrl, workspace.id, authHeaders);
   const widgetSession = await createWidgetSession(baseUrl, project.id, authHeaders);
 
@@ -520,7 +637,11 @@ async function main(): Promise<void> {
   const closeoutReady = await pollJson<ExecutionCloseout>(
     `${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`,
     { headers: authHeaders },
-    (value) => value.promotable === true
+    (value) => value.promotable === true || value.gates.promotion?.status === 'not-applicable'
+  );
+  assert(
+    closeoutReady.gates.promotion?.status !== 'not-applicable',
+    `GitHub promotion stayed not-applicable for ${targetRepository}. Ensure the repository is linked through an installation-backed project connection.`
   );
   assert(closeoutReady.closeoutStatus === 'ready-for-promotion', `Unexpected closeout status after approval: ${closeoutReady.closeoutStatus}`);
 

@@ -302,9 +302,14 @@ export function createGitHubIntegration(
 
   const owner = repositorySettings.owner;
   const repo = repositorySettings.repo;
+  const appInstallationId = overrides.installationId ?? config.GITHUB_APP_INSTALLATION_ID;
+
+  if (mode === 'app' && !appInstallationId) {
+    return disabledIntegration('GITHUB_APP_INSTALLATION_ID or a project-scoped GitHub installation is required when GITHUB_AUTH_MODE=app');
+  }
 
   const octokit = mode === 'app'
-    ? createAppClient(config, overrides.installationId)
+    ? createAppClient(config, appInstallationId)
     : overrides.token
       ? new Octokit({ auth: overrides.token })
       : createPatClient(config);
@@ -316,12 +321,11 @@ export function createGitHubIntegration(
     usingTestRepository: config.GITHUB_USE_TEST_REPO,
     async resolveGitAuthToken() {
       if (mode === 'app') {
-        const installationId = overrides.installationId ?? config.GITHUB_APP_INSTALLATION_ID;
-        if (!installationId) {
+        if (!appInstallationId) {
           return undefined;
         }
 
-        return resolveAppInstallationToken(config, installationId);
+        return resolveAppInstallationToken(config, appInstallationId);
       }
 
       return overrides.token ?? config.GITHUB_TOKEN ?? undefined;

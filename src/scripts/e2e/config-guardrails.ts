@@ -21,7 +21,12 @@ const BASE_ENV: Record<string, string> = {
   REDIS_URL: 'redis://127.0.0.1:6379',
   GITHUB_DRAFT_SYNC_ENABLED: 'false',
   GITHUB_AUTH_MODE: 'pat',
-  GITHUB_USE_TEST_REPO: 'false'
+  GITHUB_USE_TEST_REPO: 'false',
+  GITHUB_TOKEN: '',
+  GITHUB_APP_ID: '',
+  GITHUB_APP_INSTALLATION_ID: '',
+  GITHUB_APP_PRIVATE_KEY: '',
+  GITHUB_APP_SLUG: ''
 };
 
 async function withEnv<T>(env: Record<string, string>, operation: () => Promise<T> | T): Promise<T> {

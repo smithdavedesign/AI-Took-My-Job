@@ -31,6 +31,7 @@
     "e2e:replay-browser-context": "tsx src/scripts/e2e/replay-browser-context.ts",
     "e2e:review-dashboard-regression": "tsx src/scripts/e2e/review-dashboard-regression.ts",
     "e2e:review-dashboard-promotion": "tsx src/scripts/e2e/review-dashboard-promotion.ts",
+    "e2e:widget-browser-submit": "tsx src/scripts/e2e/widget-browser-submit.ts",
     "e2e:policy-review": "tsx src/scripts/e2e/policy-review.ts",
     "e2e:shadow-suite": "tsx src/scripts/e2e/shadow-suite.ts",
     "e2e:promotion-ownership": "tsx src/scripts/e2e/promotion-ownership.ts"

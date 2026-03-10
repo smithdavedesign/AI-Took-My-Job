@@ -200,8 +200,14 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          target_repository="$E2E_GITHUB_TEST_OWNER/$E2E_GITHUB_TEST_REPO"
           echo "available=true" >> "$GITHUB_OUTPUT"
-          echo "target_repository=$E2E_GITHUB_TEST_OWNER/$E2E_GITHUB_TEST_REPO" >> "$GITHUB_OUTPUT"
+          echo "target_repository=$target_repository" >> "$GITHUB_OUTPUT"
+          if [[ "$target_repository" == "$GITHUB_REPOSITORY" ]]; then
+            echo "allow_primary_repo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "allow_primary_repo=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install dependencies
         if: steps.promotion-secrets.outputs.available == 'true'
@@ -240,11 +246,17 @@ jobs:
 
       - name: Run promotion ownership smoke
         if: steps.promotion-secrets.outputs.available == 'true'
-        run: E2E_TARGET_REPOSITORY="${{ steps.promotion-secrets.outputs.target_repository }}" npm run e2e:promotion-ownership
+        env:
+          E2E_TARGET_REPOSITORY: ${{ steps.promotion-secrets.outputs.target_repository }}
+          E2E_ALLOW_PRIMARY_GITHUB_REPO: ${{ steps.promotion-secrets.outputs.allow_primary_repo }}
+        run: npm run e2e:promotion-ownership
 
       - name: Run review dashboard promotion smoke
         if: steps.promotion-secrets.outputs.available == 'true'
-        run: E2E_TARGET_REPOSITORY="${{ steps.promotion-secrets.outputs.target_repository }}" npm run e2e:review-dashboard-promotion
+        env:
+          E2E_TARGET_REPOSITORY: ${{ steps.promotion-secrets.outputs.target_repository }}
+          E2E_ALLOW_PRIMARY_GITHUB_REPO: ${{ steps.promotion-secrets.outputs.allow_primary_repo }}
+        run: npm run e2e:review-dashboard-promotion
 
       - name: Report skipped promotion smoke
         if: steps.promotion-secrets.outputs.available != 'true'

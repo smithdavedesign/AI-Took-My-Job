@@ -68,6 +68,17 @@ function resolveReporterIdentifier(reporter: z.infer<typeof publicFeedbackSchema
   return reporter.email ?? reporter.id ?? reporter.name ?? 'anonymous';
 }
 
+function applyHostedFeedbackHtmlHeaders(
+  reply: { type: (value: string) => unknown; header: (name: string, value: string) => unknown },
+  options: { allowEmbedding: boolean }
+): void {
+  reply.type('text/html; charset=utf-8');
+  reply.header(
+    'content-security-policy',
+    `default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' http: https:; font-src 'self' data: https:; frame-ancestors ${options.allowEmbedding ? '*' : "'self'"}; base-uri 'self'; form-action 'self'`
+  );
+}
+
 export function registerProjectPublicRoutes(app: FastifyInstance): void {
   app.get('/public/projects/:projectKey/embed.js', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
@@ -105,7 +116,7 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       throw app.httpErrors.unauthorized('missing widget access token');
     }
 
-    reply.type('text/html; charset=utf-8');
+    applyHostedFeedbackHtmlHeaders(reply, { allowEmbedding: true });
     return buildHostedFeedbackWidgetPage(project, {
       embedded: query.embed === true,
       accessToken
@@ -149,7 +160,7 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       widgetSession
     });
 
-    reply.type('text/html; charset=utf-8');
+    applyHostedFeedbackHtmlHeaders(reply, { allowEmbedding: false });
     return buildHostedFeedbackDashboardPage(project, {
       accessToken,
       initialSummary,
@@ -212,7 +223,7 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       grant
     });
 
-    reply.type('text/html; charset=utf-8');
+    applyHostedFeedbackHtmlHeaders(reply, { allowEmbedding: false });
     return buildHostedFeedbackDashboardPage(project, {
       accessToken,
       initialSummary,

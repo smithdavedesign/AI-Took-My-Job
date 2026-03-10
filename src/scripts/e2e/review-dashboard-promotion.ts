@@ -22,6 +22,16 @@ interface ProjectResponse {
   name: string;
 }
 
+interface InstallationLookupResponse {
+  installation: {
+    id: string;
+    installationId: number;
+    workspaceId: string;
+    accountLogin?: string;
+  };
+  workspace: WorkspaceResponse;
+}
+
 interface WidgetSessionResponse {
   accessToken: string;
 }
@@ -55,6 +65,10 @@ interface ReviewQueueResponse {
     owner?: {
       label: string;
       kind: string;
+    } | null;
+    availableRepositories?: string[];
+    triagePolicy?: {
+      configured?: boolean;
     } | null;
   }>;
 }
@@ -100,6 +114,9 @@ interface ExecutionCloseout {
     review?: {
       status: string;
     };
+    promotion?: {
+      status: string;
+    };
     merge?: {
       status: string;
     };
@@ -111,6 +128,21 @@ interface PullRequestResponse {
   pullRequestNumber?: number;
   pullRequestUrl?: string;
   mergeCommitSha?: string;
+}
+
+interface GitHubSetupStatusResponse {
+  repository?: {
+    strictProjectScopedEnabled?: boolean;
+    selected?: string | null;
+  };
+  installation?: {
+    selected?: {
+      installationId?: number;
+    } | null;
+  };
+  wizard?: {
+    nextAction?: string;
+  };
 }
 
 interface ReportHistoryResponse {
@@ -136,6 +168,11 @@ function assert(condition: unknown, message: string): asserts condition {
 
 function getBaseUrl(): string {
   return process.env.E2E_BASE_URL ?? 'http://127.0.0.1:4000';
+}
+
+function getConfiguredInstallationId(): number | null {
+  const installationId = Number(process.env.GITHUB_APP_INSTALLATION_ID ?? '');
+  return Number.isFinite(installationId) && installationId > 0 ? installationId : null;
 }
 
 function parseServiceTokens(rawValue: string | undefined): ServiceToken[] {
@@ -235,6 +272,127 @@ async function poll<T>(operation: () => Promise<T>, predicate: (value: T) => boo
   throw lastError instanceof Error ? lastError : new Error('Polling failed');
 }
 
+async function createWorkspace(baseUrl: string, headers: Record<string, string>, suffix: string): Promise<WorkspaceResponse> {
+  return requestJson<WorkspaceResponse>(`${baseUrl}/internal/workspaces`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      name: `Review Dashboard Promotion ${suffix}`,
+      slug: `review-dashboard-promotion-${suffix}`
+    })
+  });
+}
+
+async function createProject(baseUrl: string, workspaceId: string, headers: Record<string, string>, suffix: string): Promise<ProjectResponse> {
+  return requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      workspaceId,
+      name: `Review Dashboard Promotion ${suffix}`,
+      projectKey: `review-dashboard-promotion-${suffix}`
+    })
+  });
+}
+
+async function resolveWorkspaceAndProject(baseUrl: string, headers: Record<string, string>, suffix: string): Promise<{ workspace: WorkspaceResponse; project: ProjectResponse }> {
+  const installationId = getConfiguredInstallationId();
+  if (!installationId) {
+    const workspace = await createWorkspace(baseUrl, headers, suffix);
+    const project = await createProject(baseUrl, workspace.id, headers, suffix);
+    return { workspace, project };
+  }
+
+  try {
+    const lookup = await requestJson<InstallationLookupResponse>(`${baseUrl}/internal/github-app/installations/${installationId}`, {
+      headers
+    });
+    const project = await createProject(baseUrl, lookup.workspace.id, headers, suffix);
+    return {
+      workspace: lookup.workspace,
+      project
+    };
+  } catch {
+    const workspace = await createWorkspace(baseUrl, headers, suffix);
+    const project = await createProject(baseUrl, workspace.id, headers, suffix);
+    return { workspace, project };
+  }
+}
+
+async function createRepoConnection(baseUrl: string, projectId: string, repository: string, headers: Record<string, string>): Promise<void> {
+  await requestJson(`${baseUrl}/internal/repo-connections`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      projectId,
+      repository,
+      isDefault: true,
+      config: {
+        source: 'e2e:review-dashboard-promotion'
+      }
+    })
+  });
+}
+
+async function reconcileGitHubInstallation(baseUrl: string, workspaceId: string, projectId: string, repository: string, headers: Record<string, string>): Promise<void> {
+  const installationId = getConfiguredInstallationId();
+  if (!installationId) {
+    return;
+  }
+
+  try {
+    await requestJson(`${baseUrl}/internal/workspaces/${workspaceId}/github-app/reconcile`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...headers
+      },
+      body: JSON.stringify({
+        installationId,
+        projectId,
+        repository,
+        isDefault: true
+      })
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes('already mapped to another workspace')) {
+      throw error;
+    }
+  }
+}
+
+async function assertGitHubPromotionScopeReady(
+  baseUrl: string,
+  workspaceId: string,
+  projectId: string,
+  repository: string,
+  headers: Record<string, string>
+): Promise<void> {
+  const query = new URLSearchParams({
+    workspaceId,
+    projectId,
+    repository
+  });
+  const status = await requestJson<GitHubSetupStatusResponse>(`${baseUrl}/internal/github-app/setup-status?${query.toString()}`, {
+    headers
+  });
+
+  assert(
+    status.repository?.strictProjectScopedEnabled === true,
+    `GitHub promotion is not enabled for ${repository}. Next wizard action: ${status.wizard?.nextAction ?? 'unknown'}. Installation: ${status.installation?.selected?.installationId ?? 'none'}`
+  );
+}
+
 async function main(): Promise<void> {
   const baseUrl = getBaseUrl();
   const token = chooseServiceToken(parseServiceTokens(process.env.INTERNAL_SERVICE_TOKENS));
@@ -246,46 +404,10 @@ async function main(): Promise<void> {
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
   assert(health.status === 'ok', 'Health endpoint did not return ok');
 
-  const workspace = await requestJson<WorkspaceResponse>(`${baseUrl}/internal/workspaces`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeaders
-    },
-    body: JSON.stringify({
-      name: `Review Dashboard Promotion ${suffix}`,
-      slug: `review-dashboard-promotion-${suffix}`
-    })
-  });
-
-  const project = await requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeaders
-    },
-    body: JSON.stringify({
-      workspaceId: workspace.id,
-      name: `Review Dashboard Promotion ${suffix}`,
-      projectKey: `review-dashboard-promotion-${suffix}`
-    })
-  });
-
-  await requestJson(`${baseUrl}/internal/repo-connections`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeaders
-    },
-    body: JSON.stringify({
-      projectId: project.id,
-      repository: targetRepository,
-      isDefault: true,
-      config: {
-        source: 'e2e:review-dashboard-promotion'
-      }
-    })
-  });
+  const { workspace, project } = await resolveWorkspaceAndProject(baseUrl, authHeaders, suffix);
+  await createRepoConnection(baseUrl, project.id, targetRepository, authHeaders);
+  await reconcileGitHubInstallation(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
+  await assertGitHubPromotionScopeReady(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
 
   await requestJson(`${baseUrl}/internal/workspaces/${workspace.id}/triage-policy`, {
     method: 'PUT',
@@ -388,7 +510,9 @@ async function main(): Promise<void> {
     (value) => value.items.some((item) => item.reportId === feedback.reportId)
   );
   const queuedItem = queued.items.find((item) => item.reportId === feedback.reportId);
-  assert(queuedItem?.owner?.label === 'customer-success', 'Review queue did not preserve the policy-backed owner before approval');
+  assert(queuedItem, 'Review queue did not include the submitted report before approval');
+  assert(queuedItem.triagePolicy?.configured === true, 'Review queue did not expose configured triage policy state before approval');
+  assert(queuedItem.availableRepositories?.includes(targetRepository) === true, 'Review queue did not expose the project repository scope before approval');
 
   const approvedReview = await requestJson<ReviewResponse>(`${baseUrl}/internal/reports/${feedback.reportId}/review`, {
     method: 'POST',
@@ -468,8 +592,9 @@ async function main(): Promise<void> {
 
   const closeoutReady = await poll(
     () => requestJson<ExecutionCloseout>(`${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/closeout`, { headers: authHeaders }),
-    (value) => value.promotable === true
+    (value) => value.promotable === true || value.gates.promotion?.status === 'not-applicable'
   );
+  assert(closeoutReady.gates.promotion?.status !== 'not-applicable', `GitHub promotion stayed not-applicable for ${targetRepository}. Ensure the repository is linked through an installation-backed project connection.`);
   assert(closeoutReady.closeoutStatus === 'ready-for-promotion', `Unexpected closeout status after approval: ${closeoutReady.closeoutStatus}`);
 
   const promoted = await requestJson<{ pullRequestNumber: number; pullRequestUrl: string }>(`${baseUrl}/internal/agent-task-executions/${createdExecution.executionId}/promote`, {
