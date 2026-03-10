@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build Nexus as a self-hostable internal engineering intelligence platform that ingests high-signal internal reports, normalizes context, and progressively automates issue creation, reproduction, and verified fixes.
+Build Nexus as a self-hostable control plane that helps a team connect a repo, collect feedback, and review or promote work without losing engineering context.
 
 ## Guiding Principles
 
@@ -49,7 +49,7 @@ Status legend:
 - [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
 - [x] Add a session-scoped customer dashboard for hosted feedback status, ownership hints, and prioritization visibility.
 - [x] Publish a standalone Vercel-hosted operator onboarding site so rollout guidance can evolve separately from the runtime surfaces.
-- [-] Start Phase 11 self-serve adoption and operator ergonomics with a single five-step operator journey, shared checklist persistence, and behavior-backed learn coverage.
+- [-] Start Phase 11 self-serve adoption and operator ergonomics with a simplified three-job front door, a clearer quick-start flow, and review surfaces that behave like decision tools.
 
 ### Blocked
 

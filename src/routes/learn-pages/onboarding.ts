@@ -54,6 +54,20 @@ export function buildOnboardingConsolePage(): string {
     .guardrail-fail { border-color: rgba(139,98,8,0.26); background: rgba(139,98,8,0.09); }
     .guardrail-fail strong { color: var(--warning); }
     .guardrail-neutral { border-color: var(--line); }
+    .control-section { border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,0.6); padding: 16px; display: grid; gap: 12px; }
+    .control-heading { margin: 0; font: 700 0.86rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .step-callout-grid { display: grid; gap: 12px; }
+    .step-callout { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
+    .step-callout strong { display: block; font-size: 0.98rem; }
+    .step-callout span { display: block; margin-top: 8px; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+    .quick-links { display: flex; flex-wrap: wrap; gap: 10px; }
+    .quick-links a { display: inline-flex; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.9); color: var(--ink); text-decoration: none; }
+    .workspace-primary { display: grid; gap: 14px; }
+    .workspace-secondary { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    details.advanced-disclosure summary { cursor: pointer; list-style: none; }
+    details.advanced-disclosure summary::-webkit-details-marker { display: none; }
+    details.advanced-disclosure summary::after { content: 'Show'; float: right; color: var(--accent); font-size: 0.8rem; }
+    details.advanced-disclosure[open] summary::after { content: 'Hide'; }
     .wizard-step-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .wizard-step { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.78); }
     .wizard-step strong { display: block; font-size: 0.95rem; }
@@ -66,111 +80,138 @@ export function buildOnboardingConsolePage(): string {
     .wizard-attention strong { color: var(--warning); }
     .wizard-blocked { border-color: rgba(146,47,47,0.2); background: rgba(146,47,47,0.08); }
     .wizard-blocked strong { color: #922f2f; }
-    @media (max-width: 1120px) { .shell, .split, .summary-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1120px) { .shell, .split, .summary-grid, .workspace-secondary { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <main>
     <section class="hero">
-      <span class="eyebrow">Pilot • Connect • Launch</span>
-      <h1>Pilot a project, connect the repo, and launch customer intake from one surface.</h1>
-      <p>This console is the front half of the five-step Nexus story: pilot the workspace and project, connect GitHub and repo scope, and launch customer intake with the widget, portal, and support-readiness checks before the team moves into daily operations and promotion.</p>
+      <span class="eyebrow">Advanced Setup</span>
+      <h1>Connect the repo, mint the widget, and handle the deeper setup work in one place.</h1>
+      <p>This is the advanced setup console behind the simpler Nexus quick-start path. Use it to resolve project and repository scope, run GitHub setup, mint widget handoff links, and reach the deeper operator controls when the default flow needs them.</p>
     </section>
     <section class="shell">
       <aside class="panel">
         <div class="controls">
-          <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>
-          <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
-          <div class="split">
-            <label>Workspace Id<input id="workspaceId" value="" placeholder="workspace UUID" /></label>
-            <label>Project Id<input id="projectId" value="" placeholder="project UUID" /></label>
-          </div>
-          <label>Project Key<input id="projectKey" value="" placeholder="checkout-prod" /></label>
-          <label>Repository<input id="repository" value="" placeholder="owner/repo" /></label>
-          <div class="split">
-            <label>Installation Id<input id="installationId" value="" placeholder="114991268" /></label>
-            <label>Installation Record Id<input id="githubInstallationRecordId" value="" placeholder="github_installations UUID" /></label>
-          </div>
-          <div class="split">
-            <label>Repo Connection Id<input id="repoConnectionId" value="" placeholder="repo_connections UUID" /></label>
-            <label>Repo Status<select id="repoConnectionStatus"><option value="">leave unchanged</option><option value="active">active</option><option value="inactive">inactive</option></select></label>
-          </div>
-          <div class="split">
-            <label>Default Behavior<select id="repoConnectionDefault"><option value="auto">leave unchanged</option><option value="true">set default</option><option value="false">clear default</option></select></label>
-            <label>Widget Mode<select id="mode"><option value="embed">embed</option><option value="widget">widget</option></select></label>
-          </div>
-          <label>Repo Connection Config (JSON)<textarea id="repoConnectionConfig" placeholder='{"supportOwner":"ops"}'></textarea></label>
-          <div class="split">
-            <label>Widget Origin<input id="origin" value="" placeholder="https://customer.example" /></label>
-            <label>Service Identity Id<input id="serviceIdentityId" value="" placeholder="service-operator" /></label>
-          </div>
-          <div class="split">
-            <label>Customer Email<input id="customerPortalEmail" value="" placeholder="customer@example.com" /></label>
-            <label>Customer Name<input id="customerPortalName" value="" placeholder="Checkout Team" /></label>
-          </div>
-          <div class="split">
-            <label>Grant TTL Days<input id="customerPortalTtlDays" value="30" placeholder="30" /></label>
-            <label>Portal Grant Id<input id="customerPortalGrantId" value="" placeholder="customer portal grant UUID" /></label>
-          </div>
-          <label>Customer Portal Notes<textarea id="customerPortalNotes" placeholder="Why this durable portal access link exists."></textarea></label>
-          <label>Service Identity Scopes<input id="serviceIdentityScopes" value="internal:read" placeholder="internal:read, github:draft" /></label>
-          <label>Workspace Triage Policy (JSON)<textarea id="triagePolicyJson" placeholder='{"ownershipRules":[{"id":"00000000-0000-0000-0000-000000000000","field":"page-host","operator":"equals","value":"checkout.example.com","owner":"checkout-team","scoreBoost":1.4}],"priorityRules":[{"id":"00000000-0000-0000-0000-000000000001","field":"severity","operator":"equals","value":"critical","scoreDelta":15}]}'></textarea></label>
-          <div class="row">
-            <button id="lookupProject" class="secondary">Lookup Project</button>
-            <button id="loadContext" class="secondary">Load Context</button>
-            <button id="loadOperations" class="secondary">Load Support Snapshot</button>
-          </div>
-          <div class="row">
-            <button id="loadTriagePolicy" class="secondary">Load Triage Policy</button>
-            <button id="saveTriagePolicy" class="primary">Save Triage Policy</button>
-            <button id="deleteTriagePolicy" class="secondary">Delete Triage Policy</button>
-          </div>
-          <div class="row">
-            <button id="createRepoConnection" class="primary">Create Repo Connection</button>
-            <button id="updateRepoConnection" class="secondary">Update Repo Connection</button>
-          </div>
-          <div class="row">
-            <button id="createInstallLink" class="primary">Create Install Link</button>
-            <button id="lookupInstall" class="secondary">Lookup Install</button>
-            <button id="reconcileInstall" class="primary">Reconcile Install</button>
-          </div>
-          <div class="section">
-            <h2 class="section-title">GitHub Setup Wizard</h2>
+          <section class="control-section">
+            <h2 class="control-heading">Quick Setup Path</h2>
+            <div class="step-callout-grid">
+              <article class="step-callout">
+                <strong>1. Find the project and repo</strong>
+                <span>Look up the project, load the workspace context, and confirm the repository Nexus should target.</span>
+              </article>
+              <article class="step-callout">
+                <strong>2. Check GitHub setup</strong>
+                <span>Use the wizard to see the next blocking step, create the install link, or reconcile the installation.</span>
+              </article>
+              <article class="step-callout">
+                <strong>3. Mint the widget and move to review</strong>
+                <span>Create a live widget session, submit a test report, and then open the review queue for the decision step.</span>
+              </article>
+            </div>
+            <div class="quick-links">
+              <a href="/learn">Back to quick start</a>
+              <a href="/learn/review-queue">Open review queue</a>
+              <a href="/learn/support-ops">Open support ops</a>
+            </div>
+          </section>
+          <section class="control-section">
+            <h2 class="control-heading">Quick Setup Inputs</h2>
+            <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>
+            <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
+            <div class="split">
+              <label>Workspace Id<input id="workspaceId" value="" placeholder="workspace UUID" /></label>
+              <label>Project Id<input id="projectId" value="" placeholder="project UUID" /></label>
+            </div>
+            <label>Project Key<input id="projectKey" value="" placeholder="checkout-prod" /></label>
+            <label>Repository<input id="repository" value="" placeholder="owner/repo" /></label>
+            <div class="split">
+              <label>Widget Origin<input id="origin" value="" placeholder="https://customer.example" /></label>
+              <label>Widget Mode<select id="mode"><option value="embed">embed</option><option value="widget">widget</option></select></label>
+            </div>
+            <div class="row">
+              <button id="lookupProject" class="secondary">Lookup Project</button>
+              <button id="loadContext" class="secondary">Load Context</button>
+              <button id="loadOperations" class="secondary">Load Support Snapshot</button>
+            </div>
+          </section>
+          <section class="control-section">
+            <h2 class="control-heading">GitHub And Widget Actions</h2>
             <div id="wizardInlineSummary" class="helper">No GitHub setup status loaded yet.</div>
             <div class="row">
               <button id="loadGitHubSetup" class="secondary">Check GitHub Setup</button>
               <button id="runGitHubWizard" class="primary">Run Next GitHub Step</button>
             </div>
-          </div>
-          <div class="row">
-            <button id="transferInstall" class="primary">Transfer Install</button>
-            <button id="mintWidget" class="secondary">Mint Widget Session</button>
-          </div>
-          <div class="row">
-            <button id="loadCustomerPortalGrants" class="secondary">Load Portal Grants</button>
-            <button id="createCustomerPortalGrant" class="primary">Create Portal Grant</button>
-            <button id="revokeCustomerPortalGrant" class="secondary">Revoke Portal Grant</button>
-          </div>
-          <div class="row">
-            <button id="listServiceIdentities" class="secondary">List Service Identities</button>
-            <button id="createServiceIdentity" class="primary">Create Identity</button>
-          </div>
-          <div class="row">
-            <button id="rotateServiceIdentity" class="secondary">Rotate Identity</button>
-            <button id="revokeServiceIdentity" class="secondary">Revoke Identity</button>
-          </div>
+            <div class="row">
+              <button id="createInstallLink" class="primary">Create Install Link</button>
+              <button id="reconcileInstall" class="primary">Reconcile Install</button>
+              <button id="mintWidget" class="secondary">Mint Widget Session</button>
+            </div>
+            <div class="row">
+              <button id="createRepoConnection" class="primary">Create Repo Connection</button>
+              <button id="updateRepoConnection" class="secondary">Update Repo Connection</button>
+            </div>
+          </section>
+          <details class="control-section advanced-disclosure">
+            <summary class="control-heading">Advanced Controls</summary>
+            <div class="helper">Use these controls for manual install transfer, repo record editing, policy tuning, service identities, or durable customer access.</div>
+            <div class="split">
+              <label>Installation Id<input id="installationId" value="" placeholder="114991268" /></label>
+              <label>Installation Record Id<input id="githubInstallationRecordId" value="" placeholder="github_installations UUID" /></label>
+            </div>
+            <div class="split">
+              <label>Repo Connection Id<input id="repoConnectionId" value="" placeholder="repo_connections UUID" /></label>
+              <label>Repo Status<select id="repoConnectionStatus"><option value="">leave unchanged</option><option value="active">active</option><option value="inactive">inactive</option></select></label>
+            </div>
+            <div class="split">
+              <label>Default Behavior<select id="repoConnectionDefault"><option value="auto">leave unchanged</option><option value="true">set default</option><option value="false">clear default</option></select></label>
+              <label>Service Identity Id<input id="serviceIdentityId" value="" placeholder="service-operator" /></label>
+            </div>
+            <label>Repo Connection Config (JSON)<textarea id="repoConnectionConfig" placeholder='{"supportOwner":"ops"}'></textarea></label>
+            <div class="split">
+              <label>Customer Email<input id="customerPortalEmail" value="" placeholder="customer@example.com" /></label>
+              <label>Customer Name<input id="customerPortalName" value="" placeholder="Checkout Team" /></label>
+            </div>
+            <div class="split">
+              <label>Grant TTL Days<input id="customerPortalTtlDays" value="30" placeholder="30" /></label>
+              <label>Portal Grant Id<input id="customerPortalGrantId" value="" placeholder="customer portal grant UUID" /></label>
+            </div>
+            <label>Customer Portal Notes<textarea id="customerPortalNotes" placeholder="Why this durable portal access link exists."></textarea></label>
+            <label>Service Identity Scopes<input id="serviceIdentityScopes" value="internal:read" placeholder="internal:read, github:draft" /></label>
+            <label>Workspace Triage Policy (JSON)<textarea id="triagePolicyJson" placeholder='{"ownershipRules":[{"id":"00000000-0000-0000-0000-000000000000","field":"page-host","operator":"equals","value":"checkout.example.com","owner":"checkout-team","scoreBoost":1.4}],"priorityRules":[{"id":"00000000-0000-0000-0000-000000000001","field":"severity","operator":"equals","value":"critical","scoreDelta":15}]}'></textarea></label>
+            <div class="row">
+              <button id="lookupInstall" class="secondary">Lookup Install</button>
+              <button id="transferInstall" class="primary">Transfer Install</button>
+            </div>
+            <div class="row">
+              <button id="loadTriagePolicy" class="secondary">Load Triage Policy</button>
+              <button id="saveTriagePolicy" class="primary">Save Triage Policy</button>
+              <button id="deleteTriagePolicy" class="secondary">Delete Triage Policy</button>
+            </div>
+            <div class="row">
+              <button id="loadCustomerPortalGrants" class="secondary">Load Portal Grants</button>
+              <button id="createCustomerPortalGrant" class="primary">Create Portal Grant</button>
+              <button id="revokeCustomerPortalGrant" class="secondary">Revoke Portal Grant</button>
+            </div>
+            <div class="row">
+              <button id="listServiceIdentities" class="secondary">List Service Identities</button>
+              <button id="createServiceIdentity" class="primary">Create Identity</button>
+              <button id="rotateServiceIdentity" class="secondary">Rotate Identity</button>
+              <button id="revokeServiceIdentity" class="secondary">Revoke Identity</button>
+            </div>
+          </details>
         </div>
         <div id="status" class="status">Waiting for operator input.</div>
       </aside>
       <section class="panel workspace">
         <div class="summary-grid">
-          <article class="card"><span class="helper">Connect</span><strong id="installationCount">0</strong><span class="helper">GitHub App installs mapped to this workspace.</span></article>
-          <article class="card"><span class="helper">Pilot</span><strong id="projectCount">0</strong><span class="helper">Projects currently loaded for the workspace.</span></article>
-          <article class="card"><span class="helper">Launch</span><strong id="connectionCount">0</strong><span class="helper">Repo connections loaded for the selected project.</span></article>
-          <article class="card"><span class="helper">Promote Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a support snapshot to score project readiness.</span></article>
+          <article class="card"><span class="helper">GitHub</span><strong id="installationCount">0</strong><span class="helper">GitHub App installs mapped to this workspace.</span></article>
+          <article class="card"><span class="helper">Projects</span><strong id="projectCount">0</strong><span class="helper">Projects currently loaded for the workspace.</span></article>
+          <article class="card"><span class="helper">Repos</span><strong id="connectionCount">0</strong><span class="helper">Repo connections loaded for the selected project.</span></article>
+          <article class="card"><span class="helper">Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a support snapshot to score project readiness.</span></article>
         </div>
         <div class="section">
-          <h2 class="section-title">Readiness And Promotion Guardrails</h2>
+          <h2 class="section-title">Setup Checklist</h2>
           <div class="guardrail-grid">
             <article id="guardrailBoundary" class="guardrail-card guardrail-neutral"><strong>Project boundary unresolved</strong><span>Load a workspace, project, and repo connection before rollout moves forward.</span></article>
             <article id="guardrailReadiness" class="guardrail-card guardrail-neutral"><strong>Launch readiness unknown</strong><span>Support readiness has not been loaded yet.</span></article>
@@ -179,58 +220,17 @@ export function buildOnboardingConsolePage(): string {
           </div>
         </div>
         <div class="section">
-          <h2 class="section-title">Pilot Snapshot</h2>
+          <h2 class="section-title">Current Project</h2>
           <div id="bindings" class="pill-list"></div>
           <div id="bindingNotes" class="helper">Load a workspace and project to inspect their current install and repository bindings.</div>
         </div>
         <div class="section">
-          <h2 class="section-title">Connect Repositories</h2>
+          <h2 class="section-title">Repository Connections</h2>
           <div id="repoConnectionList" class="button-list"></div>
           <div id="repoConnectionSummary" class="helper">Select a repo connection to preload the editor, or create one from the controls panel.</div>
           <pre id="repoConnectionResult">// repo-connection responses appear here</pre>
         </div>
-        <div class="result">
-          <section class="section">
-            <h2 class="section-title">Launch Readiness</h2>
-            <div id="supportSummary" class="helper">No support snapshot loaded yet.</div>
-            <pre id="supportResult">// support readiness appears here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Operate Snapshot</h2>
-            <div id="operationsSummary" class="helper">No project operations loaded yet.</div>
-            <pre id="operationsResult">// project operations summary appears here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Operate Policy</h2>
-            <div id="triagePolicySummary" class="helper">No triage policy loaded yet.</div>
-            <pre id="triagePolicyResult">// workspace triage policy appears here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Promote Customer Access</h2>
-            <div id="customerPortalGrantSummary" class="helper">No customer portal grant action run yet.</div>
-            <div id="customerPortalGrantList" class="button-list"></div>
-            <pre id="customerPortalGrantResult">// customer portal grant responses appear here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Service Identities</h2>
-            <div id="serviceIdentitySummary" class="helper">No service identity action run yet.</div>
-            <pre id="serviceIdentityResult">// service identity responses appear here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Install Link</h2>
-            <div id="installLinkSummary" class="helper">No install link generated yet.</div>
-            <pre id="installLinkResult">// install-link response appears here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Installation Lookup</h2>
-            <div id="lookupSummary" class="helper">No installation lookup run yet.</div>
-            <pre id="lookupResult">// installation lookup appears here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Reconciliation</h2>
-            <div id="reconcileSummary" class="helper">No manual reconciliation run yet.</div>
-            <pre id="reconcileResult">// reconcile response appears here</pre>
-          </section>
+        <div class="workspace-primary">
           <section class="section">
             <h2 class="section-title">GitHub Setup Wizard</h2>
             <div id="wizardSummary" class="helper">Check GitHub setup to see the next blocking step for project-scoped GitHub promotion.</div>
@@ -238,15 +238,58 @@ export function buildOnboardingConsolePage(): string {
             <pre id="wizardResult">// github setup status appears here</pre>
           </section>
           <section class="section">
-            <h2 class="section-title">Transfer</h2>
-            <div id="transferSummary" class="helper">No installation transfer run yet.</div>
-            <pre id="transferResult">// transfer response appears here</pre>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Launch Widget Handoff</h2>
+            <h2 class="section-title">Widget Handoff</h2>
             <div id="widgetSummary" class="helper">No widget session minted yet.</div>
             <pre id="widgetResult">// widget-session response appears here</pre>
           </section>
+          <section class="section">
+            <h2 class="section-title">Launch Readiness</h2>
+            <div id="supportSummary" class="helper">No support snapshot loaded yet.</div>
+            <pre id="supportResult">// support readiness appears here</pre>
+          </section>
+        </div>
+        <div class="workspace-secondary">
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Operations Snapshot</summary>
+            <div id="operationsSummary" class="helper">No project operations loaded yet.</div>
+            <pre id="operationsResult">// project operations summary appears here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Triage Policy</summary>
+            <div id="triagePolicySummary" class="helper">No triage policy loaded yet.</div>
+            <pre id="triagePolicyResult">// workspace triage policy appears here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Customer Access</summary>
+            <div id="customerPortalGrantSummary" class="helper">No customer portal grant action run yet.</div>
+            <div id="customerPortalGrantList" class="button-list"></div>
+            <pre id="customerPortalGrantResult">// customer portal grant responses appear here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Service Identities</summary>
+            <div id="serviceIdentitySummary" class="helper">No service identity action run yet.</div>
+            <pre id="serviceIdentityResult">// service identity responses appear here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Install Link</summary>
+            <div id="installLinkSummary" class="helper">No install link generated yet.</div>
+            <pre id="installLinkResult">// install-link response appears here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Installation Lookup</summary>
+            <div id="lookupSummary" class="helper">No installation lookup run yet.</div>
+            <pre id="lookupResult">// installation lookup appears here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Reconciliation</summary>
+            <div id="reconcileSummary" class="helper">No manual reconciliation run yet.</div>
+            <pre id="reconcileResult">// reconcile response appears here</pre>
+          </details>
+          <details class="section advanced-disclosure">
+            <summary class="section-title">Transfer</summary>
+            <div id="transferSummary" class="helper">No installation transfer run yet.</div>
+            <pre id="transferResult">// transfer response appears here</pre>
+          </details>
         </div>
       </section>
     </section>
@@ -1135,12 +1178,13 @@ export function buildOnboardingConsolePage(): string {
         writeJson(els.widgetResult, result);
         const links = [];
         if (result.widgetUrl) {
-          links.push('widget ' + result.widgetUrl);
+          links.push('<a class="inline-link" href="' + result.widgetUrl + '" target="_blank" rel="noreferrer">Open widget</a>');
         }
         if (result.embedScriptUrl) {
-          links.push('embed ' + result.embedScriptUrl);
+          links.push('<a class="inline-link" href="' + result.embedScriptUrl + '" target="_blank" rel="noreferrer">Open embed script</a>');
         }
-        els.widgetSummary.textContent = links.join(' | ') || 'Widget session minted.';
+        links.push('<a class="inline-link" href="/learn/review-queue">Open review queue</a>');
+        els.widgetSummary.innerHTML = links.join(' | ') || 'Widget session minted.';
         setStatus('Widget session minted for ' + projectId + '.');
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Failed to mint widget session.');
