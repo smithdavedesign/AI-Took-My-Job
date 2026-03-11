@@ -31,6 +31,7 @@ import { createTriageJobRepository, type TriageJobRepository } from './repositor
 import { createWorkspaceRepository, type WorkspaceRepository } from './repositories/workspace-repository.js';
 import { createWorkspaceTriagePolicyRepository, type WorkspaceTriagePolicyRepository } from './repositories/workspace-triage-policy-repository.js';
 import { loadConfig, type AppConfig } from './support/config.js';
+import { ensureInitialDatabaseSchema } from './support/database-bootstrap.js';
 import { createDatabaseClient, type DatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -137,6 +138,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     trustProxy: config.TRUST_PROXY
   });
 
+  await ensureInitialDatabaseSchema(database);
   await serviceIdentityRepository.ensureSchema();
   await workspaceTriagePolicyRepository.ensureSchema();
   await customerPortalGrantRepository.ensureSchema();

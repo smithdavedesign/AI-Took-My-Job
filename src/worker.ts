@@ -13,6 +13,7 @@ import { createAgentTaskValidationPolicyRepository } from './repositories/agent-
 import { createArtifactBundleRepository } from './repositories/artifact-bundle-repository.js';
 import { createGitHubInstallationRepository } from './repositories/github-installation-repository.js';
 import { loadConfig } from './support/config.js';
+import { ensureInitialDatabaseSchema } from './support/database-bootstrap.js';
 import { createDatabaseClient } from './support/database.js';
 import { createBullConnectionOptions, createRedisConnection } from './support/redis.js';
 import { createReplayRunRepository } from './repositories/replay-run-repository.js';
@@ -183,6 +184,7 @@ async function main(): Promise<void> {
     connection: bullConnection
   });
 
+  await ensureInitialDatabaseSchema(database);
   await workspaceTriagePolicyRepository.ensureSchema();
 
   const worker = new Worker(
