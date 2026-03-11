@@ -47,6 +47,24 @@ import { createAgentTaskRepository } from './repositories/agent-task-repository.
 import type { StoredAgentTaskExecution } from './types/agent-tasks.js';
 import { resolveWorkspaceTriagePolicyForReport } from './services/reports/triage-policy.js';
 
+function logWorker(level: 'info' | 'error', message: string, payload: Record<string, unknown> = {}): void {
+  const entry = {
+    service: 'nexus-worker',
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+    ...payload
+  };
+
+  const serialized = JSON.stringify(entry);
+  if (level === 'error') {
+    console.error(serialized);
+    return;
+  }
+
+  console.log(serialized);
+}
+
 async function runCommand(command: string, args: string[], options: {
   cwd: string;
   env?: NodeJS.ProcessEnv;
@@ -237,14 +255,13 @@ async function main(): Promise<void> {
 
           await triageJobRepository.updateStatus(job.id, 'completed');
 
-          console.log(JSON.stringify({
-            message: 'replay job completed',
+          logWorker('info', 'replay job completed', {
             jobId: job.id,
             reportId: report.id,
             replayRunId,
             requestCount: replayPlan.requestCount,
             executionStatus: execution.status
-          }));
+          });
 
           return;
         } catch (error) {
@@ -392,15 +409,14 @@ async function main(): Promise<void> {
           });
           await triageJobRepository.updateStatus(job.id, 'completed');
 
-          console.log(JSON.stringify({
-            message: 'agent task prepared',
+          logWorker('info', 'agent task prepared', {
             jobId: job.id,
             agentTaskId,
             reportId: report.id,
             hasDraft: Boolean(draft),
             hasReplay: Boolean(replay),
             artifactCount: artifacts.length
-          }));
+          });
 
           return;
         } catch (error) {
@@ -542,8 +558,7 @@ async function main(): Promise<void> {
           });
           await triageJobRepository.updateStatus(job.id, 'completed');
 
-          console.log(JSON.stringify({
-            message: 'shadow suite run completed',
+          logWorker('info', 'shadow suite run completed', {
             jobId: job.id,
             shadowSuiteId,
             shadowSuiteRunId,
@@ -552,7 +567,7 @@ async function main(): Promise<void> {
             actualOutcome: execution.status,
             passed,
             targetOrigin: effectiveTargetOrigin
-          }));
+          });
 
           return;
         } catch (error) {
@@ -1010,8 +1025,7 @@ async function main(): Promise<void> {
           });
           await triageJobRepository.updateStatus(job.id, 'completed');
 
-          console.log(JSON.stringify({
-            message: 'agent execution completed',
+          logWorker('info', 'agent execution completed', {
             jobId: job.id,
             agentTaskId: task.id,
             executionId,
@@ -1019,7 +1033,7 @@ async function main(): Promise<void> {
             worktreePath: workspace.worktreePath,
             status: finalStatus,
             pullRequestUrl
-          }));
+          });
 
           return;
         } catch (error) {
@@ -1133,7 +1147,9 @@ async function main(): Promise<void> {
           state = 'synced';
         } catch (error) {
           state = 'sync-failed';
-          console.error('failed to sync GitHub draft', error);
+          logWorker('error', 'failed to sync GitHub draft', {
+            error: error instanceof Error ? error.message : String(error)
+          });
         }
       }
 
@@ -1152,8 +1168,7 @@ async function main(): Promise<void> {
       await feedbackRepository.updateStatus(report.id, state === 'awaiting-review' ? 'awaiting-review' : 'drafted');
       await triageJobRepository.updateStatus(job.id, 'completed');
 
-      console.log(JSON.stringify({
-        message: 'triage job completed',
+      logWorker('info', 'triage job completed', {
         jobId: job.id,
         reportId: report.id,
         source: report.source,
@@ -1162,7 +1177,7 @@ async function main(): Promise<void> {
         issueState: state,
         issueNumber,
         issueUrl
-      }));
+      });
     },
     {
       connection: bullConnection
@@ -1173,10 +1188,14 @@ async function main(): Promise<void> {
     if (job?.id) {
       await triageJobRepository.updateStatus(job.id, 'failed');
     }
-    console.error('triage worker job failed', error);
+    logWorker('error', 'triage worker job failed', {
+      jobId: job?.id ?? null,
+      error: error instanceof Error ? error.message : String(error)
+    });
   });
 
   const shutdown = async () => {
+    logWorker('info', 'worker shutdown requested');
     await worker.close();
     await queue.close();
     await redis.quit();
@@ -1184,6 +1203,7 @@ async function main(): Promise<void> {
     process.exit(0);
   };
 
+  logWorker('info', 'worker started');
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
 }

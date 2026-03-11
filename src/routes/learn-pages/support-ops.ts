@@ -72,7 +72,7 @@ export function buildSupportOpsPage(): string {
       <aside class="panel">
         <div class="controls">
           <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>
-          <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
+          <label>Bearer Token (optional)<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
           <label>Project Key<input id="projectKey" value="" placeholder="checkout-prod" /></label>
           <label>Project Id<input id="projectId" value="" placeholder="project UUID optional" /></label>
           <div class="row">

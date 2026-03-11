@@ -25,6 +25,7 @@ import {
   requirePublicCustomerPortalToken
 } from '../../support/public-customer-portal-access.js';
 import { requirePublicWidgetSession } from '../../support/public-widget-access.js';
+import { enforceRequestRateLimit } from '../../support/request-rate-limit.js';
 
 const projectKeyParamsSchema = z.object({
   projectKey: z.string().min(3).max(80)
@@ -73,15 +74,30 @@ function applyHostedFeedbackHtmlHeaders(
   options: { allowEmbedding: boolean }
 ): void {
   reply.type('text/html; charset=utf-8');
+  reply.header('cache-control', 'private, no-store');
+  reply.header('x-robots-tag', 'noindex, nofollow');
+  reply.header('referrer-policy', 'no-referrer');
   reply.header(
     'content-security-policy',
     `default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' http: https:; font-src 'self' data: https:; frame-ancestors ${options.allowEmbedding ? '*' : "'self'"}; base-uri 'self'; form-action 'self'`
   );
 }
 
+function applyPublicResponseHeaders(reply: { header: (name: string, value: string) => unknown }): void {
+  reply.header('cache-control', 'private, no-store');
+  reply.header('x-robots-tag', 'noindex, nofollow');
+  reply.header('referrer-policy', 'no-referrer');
+}
+
 export function registerProjectPublicRoutes(app: FastifyInstance): void {
   app.get('/public/projects/:projectKey/embed.js', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-embed',
+      max: app.config.PUBLIC_ROUTE_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const query = widgetQuerySchema.parse(request.query);
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
@@ -97,11 +113,18 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
     }
 
     reply.type('application/javascript; charset=utf-8');
+    applyPublicResponseHeaders(reply);
     return buildHostedFeedbackEmbedScript(project, accessToken);
   });
 
   app.get('/public/projects/:projectKey/widget', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-widget',
+      max: app.config.PUBLIC_ROUTE_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const query = widgetQuerySchema.parse(request.query);
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
@@ -125,12 +148,19 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
 
   app.get('/public/projects/:projectKey/dashboard/summary', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-dashboard-summary',
+      max: app.config.PUBLIC_ROUTE_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
       throw app.httpErrors.notFound('project not found');
     }
 
     const widgetSession = requirePublicWidgetSession(app, request, reply, project);
+    applyPublicResponseHeaders(reply);
     return buildPublicDashboardSummary({
       app,
       project,
@@ -140,6 +170,12 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
 
   app.get('/public/projects/:projectKey/dashboard', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-dashboard',
+      max: app.config.PUBLIC_ROUTE_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const query = widgetQuerySchema.parse(request.query);
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
@@ -170,6 +206,12 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
 
   app.get('/public/projects/:projectKey/customer-portal/summary', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-customer-portal-summary',
+      max: app.config.PUBLIC_ROUTE_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
       throw app.httpErrors.notFound('project not found');
@@ -189,6 +231,7 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
       throw app.httpErrors.forbidden('customer portal grant expired');
     }
 
+    applyPublicResponseHeaders(reply);
     return buildCustomerPortalSummary({
       app,
       project,
@@ -198,6 +241,12 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
 
   app.get('/public/projects/:projectKey/customer-portal', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-customer-portal',
+      max: app.config.PUBLIC_ROUTE_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const query = widgetQuerySchema.parse(request.query);
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
@@ -233,12 +282,19 @@ export function registerProjectPublicRoutes(app: FastifyInstance): void {
 
   app.post('/public/projects/:projectKey/feedback', async (request, reply) => {
     const { projectKey } = projectKeyParamsSchema.parse(request.params);
+    await enforceRequestRateLimit(app, request, reply, {
+      bucket: 'public-feedback',
+      max: app.config.PUBLIC_FEEDBACK_RATE_LIMIT_MAX,
+      windowSeconds: app.config.PUBLIC_FEEDBACK_RATE_LIMIT_WINDOW_SECONDS,
+      keyParts: [request.ip, projectKey]
+    });
     const project = await app.projects.findByKey(projectKey);
     if (!project || project.status !== 'active') {
       throw app.httpErrors.notFound('project not found');
     }
 
     const widgetSession = requirePublicWidgetSession(app, request, reply, project);
+    applyPublicResponseHeaders(reply);
 
     const payload = publicFeedbackSchema.parse(request.body);
     const sessionId = payload.sessionId ?? widgetSession.sessionId ?? `public-feedback-${randomUUID()}`;

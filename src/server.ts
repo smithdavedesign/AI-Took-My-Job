@@ -37,6 +37,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerArtifactRoutes } from './routes/artifacts.js';
 import { registerInternalRoutes } from './routes/internal/index.js';
 import { registerLearnRoutes } from './routes/learn.js';
+import { registerOperatorRoutes } from './routes/operator.js';
 import { registerPublicRoutes } from './routes/public/index.js';
 import { registerWebhookRoutes } from './routes/webhooks/index.js';
 import { createAuditLogger, type AuditLogger } from './support/audit-log.js';
@@ -132,7 +133,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: buildLoggerOptions(config),
     bodyLimit: 5 * 1024 * 1024,
-    requestIdHeader: 'x-request-id'
+    requestIdHeader: 'x-request-id',
+    trustProxy: config.TRUST_PROXY
   });
 
   await serviceIdentityRepository.ensureSchema();
@@ -207,6 +209,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   registerHealthRoutes(app);
+  registerOperatorRoutes(app);
   registerLearnRoutes(app);
   registerArtifactRoutes(app);
   registerInternalRoutes(app);

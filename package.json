@@ -14,6 +14,8 @@
     "start": "node dist/index.js",
     "backfill:report-index": "tsx src/scripts/backfill-report-index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
+    "ops:postgres-backup": "sh scripts/postgres-backup.sh",
+    "ops:release-check": "sh scripts/release-check.sh",
     "mcp:dev": "tsx src/mcp/server.ts",
     "mcp:start": "node dist/mcp/server.js",
     "shadow-suite:tick": "tsx src/scripts/shadow-suite-tick.ts",

@@ -45,7 +45,16 @@ Tradeoffs:
 
 ## Recommendation
 
-Use PAT mode for initial development and internal demos. Keep GitHub App mode available for productionization and customer-facing self-hosted deployments.
+Use PAT mode for local development only. For any hosted deployment, including Render staging and production, use GitHub App mode so installation scope, callback verification, and auditability stay tied to the app instead of a long-lived user token.
+
+Hosted GitHub App checklist:
+
+- Set `APP_BASE_URL` to the public Render web URL, for example `https://nexus-staging.onrender.com`.
+- Register the GitHub App callback URL as `${APP_BASE_URL}/github/app/install/callback`.
+- Set `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, and `GITHUB_APP_STATE_SECRET` in Render.
+- Keep install-link generation inside Nexus so the signed `state` survives the round-trip and the callback can auto-link the installation back to the workspace and project.
+
+For this repo, the install callback handler lives on [src/routes/internal/onboarding.ts](src/routes/internal/onboarding.ts#L1632).
 
 ## Test Endpoint
 

@@ -38,6 +38,14 @@ const booleanFromEnv = (defaultValue: boolean) => z.preprocess((value) => {
   return value;
 }, z.boolean().default(defaultValue));
 
+const optionalNonEmptyString = z.preprocess((value) => {
+  if (value === '' || value === undefined) {
+    return undefined;
+  }
+
+  return value;
+}, z.string().min(1).optional());
+
 const internalServiceTokenSchema = z.object({
   id: z.string().min(1),
   token: z.string().min(12),
@@ -73,6 +81,7 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_BASE_URL: optionalString,
+  TRUST_PROXY: booleanFromEnv(false),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   ARTIFACT_STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
   ARTIFACT_STORAGE_PATH: z.string().default('./var/artifacts'),
@@ -106,6 +115,14 @@ const configSchema = z.object({
   GITHUB_APP_STATE_SECRET: z.string().min(16).default('local-github-app-state-secret'),
   PUBLIC_WIDGET_SIGNING_SECRET: z.string().min(16).default('local-public-widget-signing-secret'),
   PUBLIC_WIDGET_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
+  OPERATOR_UI_USERNAME: optionalNonEmptyString,
+  OPERATOR_UI_PASSWORD: optionalNonEmptyString,
+  OPERATOR_SESSION_SECRET: z.string().min(16).default('local-operator-session-secret'),
+  OPERATOR_SESSION_TTL_SECONDS: z.coerce.number().int().min(900).max(7 * 24 * 60 * 60).default(12 * 60 * 60),
+  PUBLIC_ROUTE_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
+  PUBLIC_ROUTE_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(5000).default(120),
+  PUBLIC_FEEDBACK_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
+  PUBLIC_FEEDBACK_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000).default(20),
   AGENT_EXECUTION_COMMAND: optionalString,
   AGENT_EXECUTION_ARGS: optionalStringArraySchema,
   AGENT_EXECUTION_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(3600).default(600),
@@ -163,6 +180,22 @@ const configSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['GITHUB_APP_STATE_SECRET'],
       message: 'GITHUB_APP_STATE_SECRET must be set explicitly in production'
+    });
+  }
+
+  if (Boolean(config.OPERATOR_UI_USERNAME) !== Boolean(config.OPERATOR_UI_PASSWORD)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPERATOR_UI_USERNAME'],
+      message: 'OPERATOR_UI_USERNAME and OPERATOR_UI_PASSWORD must either both be set or both be empty'
+    });
+  }
+
+  if (config.NODE_ENV === 'production' && config.OPERATOR_UI_USERNAME && config.OPERATOR_SESSION_SECRET === 'local-operator-session-secret') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPERATOR_SESSION_SECRET'],
+      message: 'OPERATOR_SESSION_SECRET must be set explicitly in production when operator auth is enabled'
     });
   }
 });

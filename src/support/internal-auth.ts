@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { hashServiceToken } from '../repositories/service-identity-repository.js';
+import { getOperatorSessionPrincipal } from './operator-session.js';
 
 export interface AuthenticatedServicePrincipal {
   id: string;
@@ -26,7 +27,26 @@ export function requireInternalServiceAuth(
   const token = parseBearerToken(request.headers.authorization);
 
   if (!token) {
-    throw app.httpErrors.unauthorized('missing bearer token');
+    const operatorPrincipal = getOperatorSessionPrincipal(request, app.config);
+    if (!operatorPrincipal) {
+      throw app.httpErrors.unauthorized('missing bearer token');
+    }
+
+    for (const scope of requiredScopes) {
+      if (!operatorPrincipal.scopes.includes(scope)) {
+        throw app.httpErrors.forbidden(`missing required scope: ${scope}`);
+      }
+    }
+
+    return {
+      id: operatorPrincipal.id,
+      scopes: operatorPrincipal.scopes,
+      source: 'manual',
+      metadata: {
+        authType: 'operator-session',
+        username: operatorPrincipal.username
+      }
+    };
   }
 
   const tokenHash = hashServiceToken(token);

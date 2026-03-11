@@ -118,7 +118,7 @@ export function buildOnboardingConsolePage(): string {
           <section class="control-section">
             <h2 class="control-heading">Quick Setup Inputs</h2>
             <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>
-            <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
+            <label>Bearer Token (optional)<input id="token" value="" placeholder="nexus-local-dev-token" /></label>
             <div class="split">
               <label>Workspace Id<input id="workspaceId" value="" placeholder="workspace UUID" /></label>
               <label>Project Id<input id="projectId" value="" placeholder="project UUID" /></label>

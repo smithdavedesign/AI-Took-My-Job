@@ -98,7 +98,7 @@ export function buildReviewQueuePage(): string {
     '      <aside class="panel">',
     '        <div class="controls">',
     '          <label>Base URL<input id="baseUrl" value="" placeholder="http://127.0.0.1:4000" /></label>',
-    '          <label>Bearer Token<input id="token" value="" placeholder="nexus-local-dev-token" /></label>',
+    '          <label>Bearer Token (optional)<input id="token" value="" placeholder="nexus-local-dev-token" /></label>',
     '          <label>Project Id Filter<input id="projectId" value="" placeholder="Optional project UUID" /></label>',
     '          <label>Assigned To<input id="assignedTo" value="" placeholder="Filter by reviewer or operator id" /></label>',
     '          <label>Search Reports<input id="search" value="" placeholder="Project, repo, title, reporter" /></label>',
