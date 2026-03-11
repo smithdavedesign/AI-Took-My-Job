@@ -5,7 +5,7 @@ services:
     plan: starter
     region: oregon
     autoDeploy: false
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run start
     healthCheckPath: /health
     envVars:
@@ -67,7 +67,7 @@ services:
     plan: starter
     region: oregon
     autoDeploy: false
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: node dist/worker.js
     envVars:
       - key: NODE_VERSION
