@@ -1,5 +1,7 @@
 # Agent Task Flow
 
+This document now describes both the backend route shape and the first operator-facing runtime path exposed in `/learn/review-queue`.
+
 ## What Exists Today
 
 Nexus now supports a Phase 6 execution scaffold: an operator can submit an internal agent task against an existing Nexus report, let the worker prepare the task context, and then start an execution attempt that provisions an isolated git branch and worktree for downstream agent work.
@@ -27,6 +29,43 @@ Current flow:
 9. If the agent modifies files, Nexus persists a git diff artifact, can run the agent-provided validation command, can optionally rerun the stored HAR against a target base URL, and stops at a reviewable execution state before any PR is opened.
 10. After approval, an operator can explicitly promote the execution into a PR record.
 11. Merge attempts are separately gated and persisted as part of the execution audit trail.
+
+## Runtime Operator Path
+
+The runtime learn surface now exposes the first slice of this flow directly in `/learn/review-queue`:
+
+1. Select an approved hosted-feedback report.
+2. Inspect the reviewed-history entry, operator summary, and linked GitHub draft state.
+3. Use the Agent Handoff panel to define the task objective, execution mode, acceptance criteria, and optional context notes.
+4. Start the agent task from the review queue.
+5. Refresh task state until preparation completes.
+6. Launch the isolated branch execution from the same panel.
+
+What this surface does today:
+
+- keeps approved items inspectable after they leave the pending queue
+- shows a compact handoff before raw JSON
+- allows task creation and isolated-branch launch without raw API calls
+
+What it does not do yet:
+
+- show a dedicated execution-detail closeout view
+- expose human review controls for the execution
+- promote the execution into a draft PR from the runtime UI
+
+## Current Runtime Handoff Diagram
+
+```mermaid
+flowchart LR
+  Report[Approved Hosted Report] --> Queue[/learn/review-queue/]
+  Queue --> Summary[Operator Summary + Reviewed History]
+  Summary --> Task[Agent Handoff Form]
+  Task --> Create[POST /internal/agent-tasks]
+  Create --> Ready[Prepared Agent Task]
+  Ready --> Execute[POST /internal/agent-tasks/:taskId/execute]
+  Execute --> Branch[Isolated Branch + Worktree]
+  Branch --> Closeout[Execution Review + PR Promotion]
+```
 
 ## Current API Shape
 
@@ -238,6 +277,7 @@ Not implemented yet:
 - code modification by a downstream coding agent
 - repeated fail-before and pass-after replay verification against a patched build
 - merge-time policy beyond the current approval-before-promotion gate
+- a first-class runtime operator UI for execution closeout, review, and PR promotion after the branch is launched
 
 Current execution scaffolding notes:
 

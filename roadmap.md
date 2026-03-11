@@ -49,7 +49,7 @@ Status legend:
 - [x] Keep signed-session hosted-feedback access as the v1 customer access model and defer broader customer auth.
 - [x] Add a session-scoped customer dashboard for hosted feedback status, ownership hints, and prioritization visibility.
 - [x] Publish a standalone Vercel-hosted operator onboarding site so rollout guidance can evolve separately from the runtime surfaces.
-- [-] Start Phase 11 self-serve adoption and operator ergonomics with a simplified three-job front door, a clearer quick-start flow, and review surfaces that behave like decision tools.
+- [-] Start the next operator-closeout slice so approved reports can move from review queue handoff to execution review and PR promotion without raw API use.
 
 ### Blocked
 
@@ -225,6 +225,7 @@ Recent Phase 9 progress:
 - Signed project-scoped widget sessions now gate both `/public/projects/:projectKey/widget` and `/public/projects/:projectKey/embed.js`, and the public feedback submission path now requires the same short-lived token.
 - Internal onboarding can now mint GitHub App install links via `POST /internal/workspaces/:workspaceId/github-app/install-link`, and `/github/app/install/callback` persists installation metadata plus project repo bindings when repository access matches.
 - The operator review queue now exposes assignment health, queue aging metrics, and per-report review activity pulled from persisted audit events.
+- The review queue now keeps reviewed history visible after approval, shows a condensed operator summary before raw JSON, and gives approved reports an Agent Handoff panel for task creation plus isolated-branch launch.
 - Project repo routing now supports multiple active connections, explicit default reassignment, project-operations summaries, and strict customer-review repository scoping before GitHub issue creation or agent-task execution.
 - Service identities are now durable lifecycle-managed principals with list, create, rotate, and revoke routes, and the onboarding console exposes those flows directly for operators.
 - A dedicated replay browser-context smoke now validates execution-mode selection when Playwright browser binaries are installed while preserving request-context fallback behavior elsewhere.
@@ -254,7 +255,12 @@ flowchart LR
 	Reports --> Queue[BullMQ]
 	Queue --> Worker[Nexus Worker]
 	Worker --> Review[Project Review Queue]
-	Review --> GitHub[GitHub Issues + PRs]
+	Review --> Draft[Synced GitHub Draft Issue]
+	Review --> AgentTask[Agent Task Handoff]
+	AgentTask --> Execution[Isolated Branch Execution]
+	Execution --> Promotion[Execution Review + PR Promotion]
+	Draft --> GitHub[GitHub Issues + PRs]
+	Promotion --> GitHub
 ```
 
 Exit criteria:
@@ -293,12 +299,31 @@ Deliverables:
 - [x] Add a step-aware learn landing page that makes the runtime surfaces feel like one guided workflow.
 - [x] Add self-serve checklist state so operators can see rollout progress without maintaining an external runbook.
 - [x] Add operator-facing readiness and promotion guardrails that are consistent across onboarding, review, and support surfaces.
+- [x] Add reviewed-history and post-approval handoff cues so the review queue behaves like a decision surface instead of a disappearing inbox.
+- [x] Add a first-slice operator Agent Handoff in `/learn/review-queue` for task setup and isolated-branch launch.
 
 Exit criteria:
 
 - [x] A new operator can understand where to start and what comes next without external explanation.
 - [x] Runtime learn pages, static onboarding, and repo docs all describe the same workflow in the same order.
 - [x] The most common rollout actions can be completed without switching to an external checklist or tribal knowledge.
+
+### [-] Phase 12: Execution Closeout And Promotion UX
+
+Objective: finish the operator path after isolated-branch launch so execution inspection, approval, and PR promotion are as legible as the review queue.
+
+Deliverables:
+
+- [ ] Add an operator-facing execution detail surface that shows findings, changed files, validation evidence, branch metadata, and closeout blockers.
+- [ ] Add explicit human review controls for agent executions without requiring raw internal route calls.
+- [ ] Add promote-to-draft-PR and merge-state visibility in the runtime learn surfaces.
+- [ ] Keep execution closeout language aligned with the review queue so operators understand what is blocked and why.
+
+Exit criteria:
+
+- [ ] An operator can move from approved report to reviewed execution and draft PR without leaving the product surfaces.
+- [ ] Closeout blockers are visible without inspecting raw execution JSON.
+- [ ] Agent-task execution review and PR promotion stay explicitly human-gated.
 
 ## Current Sprint
 
@@ -318,6 +343,7 @@ Current execution emphasis:
 4. [x] Add a guided runtime learn landing page that ties onboarding, review, and support into one sequence.
 5. [x] Add step-aware rollout state and readiness guidance for operators.
 6. [x] Keep customer visibility, policy, and promotion guardrails aligned with the new self-serve story.
+7. [-] Finish the execution closeout slice so the new review-queue agent handoff has a complete operator continuation after branch launch.
 
 ## Open Questions
 
@@ -347,6 +373,7 @@ These do not block initial scaffolding, but they do affect later architecture:
 - [x] Customer feedback submission completed in under 60 seconds through the hosted intake surface, with `npm run e2e:customer-handoff` currently enforcing a stricter 30-second total budget plus stage SLOs.
 - [x] Customers can now inspect session-scoped hosted-feedback status through `/public/projects/:projectKey/dashboard`, including current review state, refined impact, and ownership hints.
 - [x] Runtime learn pages, static onboarding, and repo docs now share the same five-step narrative for operator rollout.
+- [x] Approved reports now stay inspectable in reviewed history and can hand off directly into agent-task setup from `/learn/review-queue`.
 
 ## Tech Debt Reduction Plan
 

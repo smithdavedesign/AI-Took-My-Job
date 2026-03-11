@@ -38,6 +38,7 @@ The default operator path is intentionally small.
 
 - Review the queued report with its evidence.
 - Approve or reject the downstream action.
+- For approved hosted feedback, optionally start an agent task and launch an isolated branch execution.
 - Promote only reviewed work into GitHub.
 
 ## What Exists Today
@@ -48,6 +49,7 @@ The default operator path is intentionally small.
 - Project-scoped GitHub App resolution and repository connections.
 - Hosted feedback widget, embed bootstrap, dashboard, and customer portal surfaces.
 - Review-gated issue and PR promotion flows.
+- Review-queue history, post-approval handoff, and first-slice agent-task kickoff from the operator UI.
 - Replay and agent-execution foundations for richer internal workflows.
 - MCP developer context and self-hostable packaging.
 
@@ -55,9 +57,21 @@ The default operator path is intentionally small.
 
 - `/learn`: simplified front door for the product story and quick-start flow.
 - `/learn/onboarding`: advanced setup console for workspace, project, repo, widget, and access configuration.
-- `/learn/review-queue`: operator review surface for approvals and routing decisions.
+- `/learn/review-queue`: operator review surface for approvals, reviewed-history inspection, and agent handoff into isolated branch execution.
 - `/learn/support-ops`: readiness and support-oriented follow-up surface.
 - `/learn/prd`: product reference.
+
+## Current Operator Flow
+
+The default hosted path now looks like this:
+
+1. Connect a project repository through the GitHub App.
+2. Mint a signed widget session and collect hosted feedback.
+3. Review the report in `/learn/review-queue` with the operator summary and raw evidence.
+4. Approve or reject the report.
+5. If approved, either stop at the synced GitHub draft issue or start an agent task and launch an isolated branch execution.
+
+The product still requires explicit human review before GitHub promotion. The new agent handoff is a bridge from approved report to prepared execution, not autonomous PR publication.
 
 ## Local Development
 
@@ -97,6 +111,8 @@ The current repository still contains advanced capabilities that matter for oper
 - agent execution and PR promotion diagnostics
 
 Those capabilities remain in the product, but they should live behind explicit operator or advanced setup affordances. The default experience should stay centered on the three core jobs.
+
+The largest remaining operator UX gap is after execution starts: Nexus can prepare the task and launch the isolated branch from the review queue, but the human review, closeout, and PR-promotion steps still need a clearer first-class operator surface.
 
 ## Reference Docs
 
