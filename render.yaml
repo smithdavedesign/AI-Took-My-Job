@@ -113,6 +113,14 @@ services:
         sync: false
       - key: PUBLIC_WIDGET_SIGNING_SECRET
         sync: false
+      - key: AGENT_EXECUTION_COMMAND
+        sync: false
+      - key: AGENT_EXECUTION_ARGS
+        sync: false
+      - key: AGENT_EXECUTION_TIMEOUT_SECONDS
+        sync: false
+      - key: AGENT_EXECUTION_AUTO_CREATE_PR
+        sync: false
 
   - type: keyvalue
     name: ai-devops-nexus-redis

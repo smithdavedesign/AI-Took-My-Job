@@ -88,6 +88,12 @@ Worker process:
 - worker lifecycle and job completion/failure paths now emit structured JSON log entries
 - this makes Render log search usable for replay, agent, triage, and shadow-suite jobs without mixed plain-text error output
 
+Agent execution runtime:
+
+- `AGENT_EXECUTION_COMMAND` is required on the worker if you want production agent executions to do real code-changing work.
+- without `AGENT_EXECUTION_COMMAND`, Nexus only prepares the isolated worktree and handoff bundle, then stops in handoff-only mode
+- optional companion settings are `AGENT_EXECUTION_ARGS`, `AGENT_EXECUTION_TIMEOUT_SECONDS`, and `AGENT_EXECUTION_AUTO_CREATE_PR`
+
 Recommended Render alerts:
 
 - web service restart alert
