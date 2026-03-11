@@ -36,6 +36,10 @@ services:
         sync: false
       - key: INTERNAL_SERVICE_TOKENS
         sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: WEBHOOK_SHARED_SECRET
+        sync: false
       - key: GITHUB_AUTH_MODE
         value: app
       - key: GITHUB_APP_ID
@@ -86,6 +90,10 @@ services:
           name: ai-devops-nexus-redis
           property: connectionString
       - key: INTERNAL_SERVICE_TOKENS
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: WEBHOOK_SHARED_SECRET
         sync: false
       - key: GITHUB_AUTH_MODE
         value: app
