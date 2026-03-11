@@ -127,6 +127,9 @@ const configSchema = z.object({
   AGENT_EXECUTION_ARGS: optionalStringArraySchema,
   AGENT_EXECUTION_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(3600).default(600),
   AGENT_EXECUTION_AUTO_CREATE_PR: booleanFromEnv(false),
+  OPENAI_API_KEY: optionalString,
+  OPENAI_BASE_URL: optionalString,
+  OPENAI_MODEL: optionalString,
   EXTENSION_MAX_INLINE_ARTIFACT_BYTES: z.coerce.number().int().min(1024).max(25 * 1024 * 1024).default(1024 * 1024),
   EXTENSION_MAX_TOTAL_INLINE_ARTIFACT_BYTES: z.coerce.number().int().min(1024).max(50 * 1024 * 1024).default(5 * 1024 * 1024)
 }).superRefine((config, context) => {

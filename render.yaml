@@ -121,6 +121,12 @@ services:
         sync: false
       - key: AGENT_EXECUTION_AUTO_CREATE_PR
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
 
   - type: keyvalue
     name: ai-devops-nexus-redis

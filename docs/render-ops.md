@@ -94,6 +94,33 @@ Agent execution runtime:
 - without `AGENT_EXECUTION_COMMAND`, Nexus only prepares the isolated worktree and handoff bundle, then stops in handoff-only mode
 - optional companion settings are `AGENT_EXECUTION_ARGS`, `AGENT_EXECUTION_TIMEOUT_SECONDS`, and `AGENT_EXECUTION_AUTO_CREATE_PR`
 
+Recommended wrapper-script values for Render worker:
+
+- `AGENT_EXECUTION_COMMAND=sh`
+- `AGENT_EXECUTION_ARGS=["/opt/render/project/src/scripts/run-agent.sh"]`
+- `AGENT_EXECUTION_TIMEOUT_SECONDS=900`
+- `AGENT_EXECUTION_AUTO_CREATE_PR=false`
+
+API-backed agent settings:
+
+- `OPENAI_API_KEY` = required worker secret for the API-backed coding adapter
+- `OPENAI_MODEL` = optional model name; defaults to `gpt-5.4`
+- `OPENAI_BASE_URL` = optional base URL; defaults to `https://api.openai.com/v1`
+
+Example worker configuration using the wrapper:
+
+```text
+AGENT_EXECUTION_COMMAND=sh
+AGENT_EXECUTION_ARGS=["/opt/render/project/src/scripts/run-agent.sh"]
+AGENT_EXECUTION_TIMEOUT_SECONDS=900
+AGENT_EXECUTION_AUTO_CREATE_PR=false
+OPENAI_API_KEY=<your-openai-api-key>
+OPENAI_MODEL=gpt-5.4
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+The wrapper script lives at [scripts/run-agent.sh](scripts/run-agent.sh) and dispatches to [src/scripts/agents/render-coding-agent.ts](src/scripts/agents/render-coding-agent.ts).
+
 Recommended Render alerts:
 
 - web service restart alert
