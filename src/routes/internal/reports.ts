@@ -426,7 +426,7 @@ export function registerReportInternalRoutes(app: FastifyInstance): void {
     const sort = query.sort ?? 'newest';
     const recentReports = await app.reports.listRecent(Math.min(Math.max(page * limit * 8, 80), 400));
     const pendingCandidates = recentReports.filter((report) => {
-      if (report.source !== 'hosted-feedback') {
+      if (report.source !== 'hosted-feedback' && report.source !== 'extension') {
         return false;
       }
 

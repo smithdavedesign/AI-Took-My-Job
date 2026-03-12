@@ -1141,7 +1141,7 @@ async function main(): Promise<void> {
         issueNumber = duplicateIssue.issueNumber;
         issueUrl = duplicateIssue.issueUrl;
         state = 'synced';
-      } else if (report.source === 'hosted-feedback') {
+      } else if (report.source === 'hosted-feedback' || report.source === 'extension') {
         state = 'awaiting-review';
         await reportReviewRepository.upsert({
           id: randomUUID(),
