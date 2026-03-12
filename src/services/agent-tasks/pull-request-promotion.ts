@@ -1,7 +1,4 @@
-import { spawn } from 'node:child_process';
-
 import type { GitHubIntegration } from '../../integrations/github/client.js';
-import { createRepositoryCommandContext } from './repository-workspace.js';
 import type { AppConfig } from '../../support/config.js';
 import type { StoredAgentTask, StoredAgentTaskExecution } from '../../types/agent-tasks.js';
 
@@ -31,44 +28,6 @@ export interface PromoteExecutionPullRequestResult {
   pullRequestUrl: string;
 }
 
-function runCommand(command: string, args: string[], options: {
-  cwd: string;
-  env?: NodeJS.ProcessEnv;
-}): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: {
-        ...process.env,
-        ...options.env,
-        PATH: `/usr/bin:/usr/local/bin:${process.env.PATH ?? ''}`
-      },
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-
-    child.stdout.on('data', (chunk) => stdoutChunks.push(Buffer.from(chunk)));
-    child.stderr.on('data', (chunk) => stderrChunks.push(Buffer.from(chunk)));
-    child.on('error', reject);
-    child.on('close', (code) => {
-      const stdout = Buffer.concat(stdoutChunks).toString('utf8').trim();
-      const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-
-      if (code !== 0) {
-        reject(new Error(`${command} ${args.join(' ')} failed with code ${code}: ${stderr || stdout}`));
-        return;
-      }
-
-      resolve({
-        code: code ?? 0,
-        stdout,
-        stderr
-      });
-    });
-  });
-}
 
 export function isGitHubRepository(value: string): boolean {
   return value.split('/').filter(Boolean).length === 2 && !value.startsWith('/') && !value.startsWith('.');
@@ -155,41 +114,30 @@ export function buildPullRequestBody(input: {
 }
 
 export async function promoteExecutionPullRequest(input: PromoteExecutionPullRequestInput): Promise<PromoteExecutionPullRequestResult> {
-  if (!input.execution.worktreePath || !input.execution.branchName || !input.execution.baseBranch) {
-    throw new Error('execution is missing worktree, branch, or base branch metadata');
+  if (!input.execution.branchName || !input.execution.baseBranch) {
+    throw new Error('execution is missing branch or base branch metadata');
   }
 
-  const commandContext = await createRepositoryCommandContext(input.config, input.task.targetRepository, input.github);
+  const pullRequest = await input.github.createPullRequest({
+    repository: input.task.targetRepository,
+    title: `Nexus fix: ${input.task.title}`,
+    body: buildPullRequestBody({
+      config: input.config,
+      task: input.task,
+      execution: input.execution,
+      taskTitle: input.task.title,
+      taskObjective: input.task.objective,
+      findings: input.execution.findings,
+      validationEvidence: input.execution.validationEvidence,
+      ...(input.fallbackBody ? { fallbackBody: input.fallbackBody } : {})
+    }),
+    head: input.execution.branchName,
+    base: input.execution.baseBranch,
+    draft: input.draft ?? true
+  });
 
-  try {
-    await runCommand('git', ['-C', input.execution.worktreePath, 'push', '-u', 'origin', input.execution.branchName], {
-      cwd: input.execution.worktreePath,
-      ...(commandContext.env ? { env: commandContext.env } : {})
-    });
-
-    const pullRequest = await input.github.createPullRequest({
-      repository: input.task.targetRepository,
-      title: `Nexus fix: ${input.task.title}`,
-      body: buildPullRequestBody({
-        config: input.config,
-        task: input.task,
-        execution: input.execution,
-        taskTitle: input.task.title,
-        taskObjective: input.task.objective,
-        findings: input.execution.findings,
-        validationEvidence: input.execution.validationEvidence,
-        ...(input.fallbackBody ? { fallbackBody: input.fallbackBody } : {})
-      }),
-      head: input.execution.branchName,
-      base: input.execution.baseBranch,
-      draft: input.draft ?? true
-    });
-
-    return {
-      pullRequestNumber: pullRequest.number,
-      pullRequestUrl: pullRequest.url
-    };
-  } finally {
-    await commandContext.cleanup();
-  }
+  return {
+    pullRequestNumber: pullRequest.number,
+    pullRequestUrl: pullRequest.url
+  };
 }

@@ -40,7 +40,7 @@ import { buildReportIndex } from './services/reports/report-index.js';
 import { resolveOwnershipCandidates } from './services/reports/ownership-candidates.js';
 import { resolveSimilarReports } from './services/reports/similar-reports.js';
 import { runReplayValidation } from './services/agent-tasks/replay-validation.js';
-import { prepareRepositoryWorkspace } from './services/agent-tasks/repository-workspace.js';
+import { prepareRepositoryWorkspace, createRepositoryCommandContext } from './services/agent-tasks/repository-workspace.js';
 import { buildReplayArtifacts, summarizeReplayPlan } from './services/replay/har-replay-plan.js';
 import { executeReplayPlan } from './services/replay/playwright-replay-executor.js';
 import { createIssueDraft } from './services/triage/issue-draft.js';
@@ -942,6 +942,13 @@ async function main(): Promise<void> {
             });
             commitSha = headResult.stdout;
             validationEvidence.commitSha = commitSha;
+
+            const pushContext = await createRepositoryCommandContext(config, task.targetRepository, github);
+            try {
+              await runGit(workspace.worktreePath, ['push', '-u', 'origin', workspace.branchName], pushContext.env);
+            } finally {
+              await pushContext.cleanup();
+            }
 
             finalStatus = aggregateValidationStatus === 'passed' && contractStatus === 'passed' ? 'validated' : 'changes-generated';
 
