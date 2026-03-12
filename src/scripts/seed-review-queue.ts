@@ -30,7 +30,7 @@ const REPORT_TEMPLATES = [
     environment: 'production',
     severity: 'high',
     notes: 'Users can save a trip with a return date before the departure date. No client-side or server-side validation catches this.',
-    reporter: { email: 'qa-team@example.test', role: 'internal' }
+    reporter: { email: 'qa-team@example.test', role: 'qa' }
   },
   {
     title: 'Expense list shows NaN for USD amounts',
@@ -46,7 +46,7 @@ const REPORT_TEMPLATES = [
     environment: 'production',
     severity: 'medium',
     notes: 'Browser tab shows the app name but not the trip name. The <title> tag is not being set dynamically on the trip detail route.',
-    reporter: { email: 'seo-team@example.test', role: 'internal' }
+    reporter: { email: 'seo-team@example.test', role: 'developer' }
   },
   {
     title: 'Sign out button not visible on small screens',
@@ -70,7 +70,7 @@ const REPORT_TEMPLATES = [
     environment: 'production',
     severity: 'low',
     notes: 'In dark mode, secondary text on trip cards uses #999 on a #1a1a1a background — contrast ratio is ~2.8:1, below WCAG AA minimum of 4.5:1.',
-    reporter: { email: 'accessibility@example.test', role: 'internal' }
+    reporter: { email: 'accessibility@example.test', role: 'developer' }
   },
   {
     title: 'Search results do not update on back navigation',
