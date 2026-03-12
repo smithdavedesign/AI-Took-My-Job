@@ -20,6 +20,7 @@
     "mcp:start": "node dist/mcp/server.js",
     "shadow-suite:tick": "tsx src/scripts/shadow-suite-tick.ts",
     "agent:creative-readme": "tsx src/scripts/agents/creative-readme-agent.ts",
+    "seed:review-queue": "tsx src/scripts/seed-review-queue.ts",
     "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts",
     "e2e:agent-routes": "tsx src/scripts/e2e/agent-execution-routes.ts",
     "e2e:customer-handoff": "tsx src/scripts/e2e/customer-handoff.ts",

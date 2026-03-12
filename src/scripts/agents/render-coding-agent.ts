@@ -173,7 +173,7 @@ function agentTool(): Anthropic.Tool {
           }
         }
       },
-      required: ['summary', 'findings', 'outcome', 'changedFiles', 'validationCommand', 'fileChanges']
+      required: ['summary', 'findings', 'outcome', 'changedFiles', 'fileChanges']
     }
   };
 }
@@ -200,6 +200,8 @@ async function requestClaudeAgentResult(input: { prompt: string; context: string
       'When you change or create a file, include the full replacement content in fileChanges.',
       'Only propose repository-relative text file paths.',
       'Prefer targeted, minimal changes over large rewrites unless the task demands it.',
+      'Do NOT include a validationCommand — the worktree does not have node_modules and npm/build commands will fail.',
+      'Leave validationCommand empty.',
     ].join(' '),
     messages: [
       {
