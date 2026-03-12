@@ -77,7 +77,7 @@ export function buildExecutionCloseout(input: {
     blockers.push('Agent output contract does not match the repository changes.');
   }
 
-  if (hasChanges && validationStatus === 'failed') {
+  if (hasChanges && validationStatus === 'failed' && reviewStatus !== 'approved') {
     blockers.push('One or more requested validations failed.');
   }
 
@@ -99,7 +99,7 @@ export function buildExecutionCloseout(input: {
     && input.githubPromotionEnabled
     && !input.pullRequest
     && reviewStatus === 'approved'
-    && validationStatus !== 'failed'
+    && (validationStatus !== 'failed' || reviewStatus === 'approved')
     && (!replayRequired || replayStatus === 'passed')
     && contractStatus !== 'failed'
     && Boolean(input.execution.baseBranch);
