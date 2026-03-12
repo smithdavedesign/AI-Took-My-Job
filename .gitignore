@@ -6,3 +6,4 @@ coverage
 .npm-cache
 var/artifacts
 var/agent-workspacesdist-extension/
+nexus-reporter.zip
