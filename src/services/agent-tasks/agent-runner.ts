@@ -63,6 +63,17 @@ function buildPrompt(task: StoredAgentTask, executionId: string): string {
     '- Include a validation command in the output when you can verify the fix locally.',
     '- Include replayValidation in the output when you want Nexus to rerun the stored HAR against a target base URL.',
     '- If you prepare a PR, include title and body in the output payload.',
+    ...(task.executionMode === 'fix' ? [
+      '',
+      '## Fix Mode Requirements',
+      '- You MUST produce at least one file change. Reporting findings without writing code is not acceptable in fix mode.',
+      '- If you cannot implement a complete fix, implement the most impactful partial change and document what remains.',
+      '- Do not set outcome to no-changes unless the issue is already resolved in the current code.',
+    ] : [
+      '',
+      '## Investigate Mode',
+      '- Focus on findings and diagnosis. Code changes are optional but encouraged if a clear improvement is obvious.',
+    ]),
     '',
     '## Output Contract',
     '```json',

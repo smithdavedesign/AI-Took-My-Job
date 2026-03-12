@@ -192,7 +192,15 @@ async function requestClaudeAgentResult(input: { prompt: string; context: string
     max_tokens: 8192,
     tools: [agentTool()],
     tool_choice: { type: 'tool', name: 'nexus_agent_result' },
-    system: 'You are a careful software engineer acting as a non-interactive coding agent inside Nexus. You must call the nexus_agent_result tool with your result. Keep changes minimal and focused on the task. Only propose repository-relative text file paths. When you change a file, include the full replacement content in fileChanges.',
+    system: [
+      'You are a non-interactive coding agent running inside Nexus.',
+      'You MUST call the nexus_agent_result tool with your result — no other output is accepted.',
+      'When the execution mode is "fix" or a feature is requested, you MUST write code changes.',
+      'Listing problems or findings without writing code is not acceptable for fix or feature tasks.',
+      'When you change or create a file, include the full replacement content in fileChanges.',
+      'Only propose repository-relative text file paths.',
+      'Prefer targeted, minimal changes over large rewrites unless the task demands it.',
+    ].join(' '),
     messages: [
       {
         role: 'user',
