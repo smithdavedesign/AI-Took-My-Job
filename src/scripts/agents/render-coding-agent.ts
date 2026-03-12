@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -11,6 +12,7 @@ const TEXT_FILE_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.yml', '.yaml', '.css', '.scss', '.html', '.sql', '.sh', '.txt'
 ]);
 const SKIPPED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'var', '.nexus']);
+const RESERVED_OUTPUT_DIRECTORIES = ['.git', '.nexus'];
 
 interface FileSnapshot {
   path: string;
@@ -58,6 +60,14 @@ function parseOptionalJsonArray(name: string): string[] {
 function envOrDefault(name: string, defaultValue: string): string {
   const value = process.env[name];
   return value && value.trim().length > 0 ? value : defaultValue;
+}
+
+function normalizeRelativePath(filePath: string): string {
+  return filePath.replaceAll('\\', '/').replace(/^\//, '');
+}
+
+function isReservedOutputPath(filePath: string): boolean {
+  return RESERVED_OUTPUT_DIRECTORIES.some((directory) => filePath === directory || filePath.startsWith(`${directory}/`));
 }
 
 function isCandidateTextFile(filePath: string): boolean {
@@ -234,7 +244,7 @@ async function requestOpenAiAgentResult(input: { prompt: string; context: string
 }
 
 function resolveSafeTargetPath(rootPath: string, proposedPath: string): string {
-  const normalized = proposedPath.replaceAll('\\', '/').replace(/^\//, '');
+  const normalized = normalizeRelativePath(proposedPath);
   const resolved = path.resolve(rootPath, normalized);
   const relative = path.relative(rootPath, resolved);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
@@ -243,9 +253,55 @@ function resolveSafeTargetPath(rootPath: string, proposedPath: string): string {
   return resolved;
 }
 
+async function runGitCommand(rootPath: string, args: string[]): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn('git', ['-C', rootPath, ...args], {
+      cwd: rootPath,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    child.stdout.on('data', (chunk) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.stderr.on('data', (chunk) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdoutChunks).toString('utf8'));
+        return;
+      }
+
+      reject(new Error(`git ${args.join(' ')} failed with code ${code}: ${Buffer.concat(stderrChunks).toString('utf8').trim()}`));
+    });
+  });
+}
+
+async function listRepositoryVisibleChanges(rootPath: string): Promise<string[]> {
+  const pathspec = ['--', '.', ':(exclude).nexus', ':(exclude).nexus/**'];
+  const [modifiedOutput, untrackedOutput] = await Promise.all([
+    runGitCommand(rootPath, ['diff', '--name-only', '--no-ext-diff', ...pathspec]),
+    runGitCommand(rootPath, ['ls-files', '--others', '--exclude-standard', ...pathspec])
+  ]);
+
+  return Array.from(new Set([
+    ...modifiedOutput.split('\n').map((entry) => entry.trim()).filter(Boolean),
+    ...untrackedOutput.split('\n').map((entry) => entry.trim()).filter(Boolean)
+  ])).sort();
+}
+
 async function applyFileChanges(rootPath: string, fileChanges: ProposedFileChange[]): Promise<string[]> {
   const changedPaths: string[] = [];
   for (const fileChange of fileChanges) {
+    const normalizedPath = normalizeRelativePath(fileChange.path);
+    if (isReservedOutputPath(normalizedPath)) {
+      continue;
+    }
+
     const targetPath = resolveSafeTargetPath(rootPath, fileChange.path);
     await mkdir(path.dirname(targetPath), { recursive: true });
 
@@ -261,7 +317,7 @@ async function applyFileChanges(rootPath: string, fileChanges: ProposedFileChang
     }
 
     await writeFile(targetPath, fileChange.content, 'utf8');
-    changedPaths.push(fileChange.path.replaceAll(path.sep, '/'));
+    changedPaths.push(normalizedPath.replaceAll(path.sep, '/'));
   }
 
   return changedPaths;
@@ -308,14 +364,15 @@ async function main(): Promise<void> {
     worktreePath
   });
 
-  const actualChangedFiles = await applyFileChanges(worktreePath, modelResult.fileChanges);
-  const finalOutcome: 'changes-made' | 'no-changes' | 'blocked' = actualChangedFiles.length > 0
+  await applyFileChanges(worktreePath, modelResult.fileChanges);
+  const repositoryChangedFiles = await listRepositoryVisibleChanges(worktreePath);
+  const finalOutcome: 'changes-made' | 'no-changes' | 'blocked' = repositoryChangedFiles.length > 0
     ? 'changes-made'
     : modelResult.outcome === 'blocked'
       ? 'blocked'
       : 'no-changes';
 
-  const reportedChangedFiles = actualChangedFiles.length > 0 ? actualChangedFiles : modelResult.changedFiles;
+  const reportedChangedFiles = repositoryChangedFiles.length > 0 ? repositoryChangedFiles : [];
   await writeFile(outputPath, JSON.stringify({
     contractVersion: CONTRACT_VERSION,
     summary: modelResult.summary,

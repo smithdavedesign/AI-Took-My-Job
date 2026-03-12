@@ -1,10 +1,10 @@
 # Agent Task Flow
 
-This document now describes both the backend route shape and the first operator-facing runtime path exposed in `/learn/review-queue`.
+This document now describes both the backend route shape and the current operator-facing runtime path exposed in `/learn/review-queue`.
 
 ## What Exists Today
 
-Nexus now supports a Phase 6 execution scaffold: an operator can submit an internal agent task against an existing Nexus report, let the worker prepare the task context, and then start an execution attempt that provisions an isolated git branch and worktree for downstream agent work.
+Nexus now supports a full review-to-closeout operator path: an operator can submit an internal agent task against an existing Nexus report, let the worker prepare the task context, start an execution attempt that provisions an isolated git branch and worktree, and then inspect closeout or promotion state from the same learn surface.
 
 Current flow:
 
@@ -26,46 +26,65 @@ Current flow:
 6. An internal operator or automation starts an execution attempt for that task.
 7. Nexus queues an `agent-execution` job, prepares an isolated branch and worktree, and stores execution findings plus validation evidence.
 8. If `AGENT_EXECUTION_COMMAND` is configured, Nexus invokes that command inside the prepared worktree with `.nexus/task.md`, `.nexus/context.json`, and `.nexus/output.json` as the contract surface.
-9. If the agent modifies files, Nexus persists a git diff artifact, can run the agent-provided validation command, can optionally rerun the stored HAR against a target base URL, and stops at a reviewable execution state before any PR is opened.
-10. After approval, an operator can explicitly promote the execution into a PR record.
-11. Merge attempts are separately gated and persisted as part of the execution audit trail.
+9. The recommended Render path is `sh /opt/render/project/src/scripts/run-agent.sh`, which dispatches to the API-backed adapter in `src/scripts/agents/render-coding-agent.ts`.
+10. If the agent modifies files, Nexus persists a git diff artifact, can run the agent-provided validation command, can optionally rerun the stored HAR against a target base URL, and stops at a reviewable execution state before any PR is opened.
+11. After approval, an operator can explicitly promote the execution into a PR record.
+12. Merge attempts are separately gated and persisted as part of the execution audit trail.
 
 ## Runtime Operator Path
 
-The runtime learn surface now exposes the first slice of this flow directly in `/learn/review-queue`:
+The runtime learn surface now exposes this flow directly in `/learn/review-queue`:
 
 1. Select an approved hosted-feedback report.
 2. Inspect the reviewed-history entry, operator summary, and linked GitHub draft state.
-3. Use the Agent Handoff panel to define the task objective, execution mode, acceptance criteria, and optional context notes.
+3. Use the Agent Pipeline panel to define the task objective, execution mode, acceptance criteria, and optional context notes.
 4. Start the agent task from the review queue.
 5. Refresh task state until preparation completes.
 6. Launch the isolated branch execution from the same panel.
+7. Inspect findings, changed files, validation gates, and promotion blockers.
+8. Submit human review and explicitly promote approved executions into draft PRs.
 
 What this surface does today:
 
 - keeps approved items inspectable after they leave the pending queue
-- shows a compact handoff before raw JSON
-- allows task creation and isolated-branch launch without raw API calls
+- shows a compact operator summary before raw JSON
+- allows task creation, isolated-branch launch, execution closeout inspection, and promotion review without raw API calls
+- makes handoff-only versus worker-backed execution state explicit to the operator
 
 What it does not do yet:
 
-- show a dedicated execution-detail closeout view
-- expose human review controls for the execution
-- promote the execution into a draft PR from the runtime UI
+- assign a GitHub issue to a named external agent identity
+- bypass explicit human review before PR promotion
+- guarantee code-changing production runs unless the worker runtime is configured and deployed correctly
 
-## Current Runtime Handoff Diagram
+## Current Runtime Architecture
 
 ```mermaid
 flowchart LR
   Report[Approved Hosted Report] --> Queue[/learn/review-queue/]
   Queue --> Summary[Operator Summary + Reviewed History]
-  Summary --> Task[Agent Handoff Form]
+  Summary --> Task[Agent Pipeline Form]
   Task --> Create[POST /internal/agent-tasks]
   Create --> Ready[Prepared Agent Task]
   Ready --> Execute[POST /internal/agent-tasks/:taskId/execute]
   Execute --> Branch[Isolated Branch + Worktree]
-  Branch --> Closeout[Execution Review + PR Promotion]
+  Branch --> Contract[.nexus task/context/output contract]
+  Contract --> Adapter[Render worker wrapper + API adapter]
+  Adapter --> Closeout[Execution Closeout + Human Review]
+  Closeout --> Promotion[Draft PR Promotion]
 ```
+
+## Render Worker Execution Path
+
+When production is configured for real agent execution, the worker path is:
+
+1. Nexus worker prepares the execution worktree and `.nexus` contract files.
+2. `AGENT_EXECUTION_COMMAND=sh` invokes `scripts/run-agent.sh`.
+3. The wrapper launches `dist/scripts/agents/render-coding-agent.js` inside the prepared repository.
+4. The adapter snapshots a bounded subset of repository text files, sends the Nexus task plus context to the configured OpenAI-compatible API, applies full-file replacements, and writes `.nexus/output.json`.
+5. Nexus persists findings, diffs, validation state, and promotion blockers for human review.
+
+If the worker command is missing, Nexus still produces a prepared handoff bundle. If the command is configured but `OPENAI_API_KEY` is missing, the adapter writes a blocked contract instead of silently failing.
 
 ## Current API Shape
 

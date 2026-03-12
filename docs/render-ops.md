@@ -94,6 +94,22 @@ Agent execution runtime:
 - without `AGENT_EXECUTION_COMMAND`, Nexus only prepares the isolated worktree and handoff bundle, then stops in handoff-only mode
 - optional companion settings are `AGENT_EXECUTION_ARGS`, `AGENT_EXECUTION_TIMEOUT_SECONDS`, and `AGENT_EXECUTION_AUTO_CREATE_PR`
 
+Recommended production architecture:
+
+```mermaid
+flowchart LR
+	Queue[BullMQ agent-execution job] --> Worker[Nexus worker]
+	Worker --> Contract[Write .nexus task/context files]
+	Contract --> Shell[AGENT_EXECUTION_COMMAND=sh]
+	Shell --> Wrapper[scripts/run-agent.sh]
+	Wrapper --> Adapter[render-coding-agent adapter]
+	Adapter --> API[OpenAI-compatible API]
+	API --> Adapter
+	Adapter --> Output[Write .nexus/output.json]
+	Output --> Worker
+	Worker --> Closeout[Persist diff, validation, closeout state]
+```
+
 Recommended wrapper-script values for Render worker:
 
 - `AGENT_EXECUTION_COMMAND=sh`
@@ -106,6 +122,7 @@ API-backed agent settings:
 - `OPENAI_API_KEY` = required worker secret for the API-backed coding adapter
 - `OPENAI_MODEL` = optional model name; defaults to `gpt-5.4`
 - `OPENAI_BASE_URL` = optional base URL; defaults to `https://api.openai.com/v1`
+- if `OPENAI_API_KEY` is missing while the wrapper is configured, the adapter writes a blocked execution result instead of producing code changes
 
 Example worker configuration using the wrapper:
 
@@ -120,6 +137,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
 The wrapper script lives at [scripts/run-agent.sh](scripts/run-agent.sh) and dispatches to [src/scripts/agents/render-coding-agent.ts](src/scripts/agents/render-coding-agent.ts).
+
+Keep these values on the worker service only. The web service does not need the execution command or OpenAI runtime secrets unless you intentionally reuse them elsewhere.
 
 Recommended Render alerts:
 
@@ -157,6 +176,7 @@ Use this order for staging and production:
 3. Trigger a manual Render deploy for the web and worker from the same commit.
 4. Verify `/health` and one operator login on the hosted site.
 5. Run a hosted smoke against the widget or onboarding path.
+6. Run one review-queue execution smoke so the worker path is confirmed beyond handoff-only mode.
 
 You can also pass a deployed base URL to the release check script:
 

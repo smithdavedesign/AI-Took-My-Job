@@ -49,15 +49,15 @@ The default operator path is intentionally small.
 - Project-scoped GitHub App resolution and repository connections.
 - Hosted feedback widget, embed bootstrap, dashboard, and customer portal surfaces.
 - Review-gated issue and PR promotion flows.
-- Review-queue history, post-approval handoff, and first-slice agent-task kickoff from the operator UI.
-- Replay and agent-execution foundations for richer internal workflows.
+- Review-queue history, agent-pipeline kickoff, execution closeout, and promotion review from the operator UI.
+- Replay and agent-execution foundations, including a worker-backed API adapter for production coding runs.
 - MCP developer context and self-hostable packaging.
 
 ## Runtime Surfaces
 
 - `/learn`: simplified front door for the product story and quick-start flow.
 - `/learn/onboarding`: advanced setup console for workspace, project, repo, widget, and access configuration.
-- `/learn/review-queue`: operator review surface for approvals, reviewed-history inspection, and agent handoff into isolated branch execution.
+- `/learn/review-queue`: operator review surface for approvals, reviewed-history inspection, agent pipeline launch, execution closeout, and PR promotion.
 - `/learn/support-ops`: readiness and support-oriented follow-up surface.
 - `/learn/prd`: product reference.
 
@@ -69,9 +69,10 @@ The default hosted path now looks like this:
 2. Mint a signed widget session and collect hosted feedback.
 3. Review the report in `/learn/review-queue` with the operator summary and raw evidence.
 4. Approve or reject the report.
-5. If approved, either stop at the synced GitHub draft issue or start an agent task and launch an isolated branch execution.
+5. If approved, either stop at the synced GitHub draft issue or send the report into the internal agent pipeline.
+6. Launch isolated execution, inspect closeout state, submit human review, and explicitly promote approved work into GitHub.
 
-The product still requires explicit human review before GitHub promotion. The new agent handoff is a bridge from approved report to prepared execution, not autonomous PR publication.
+The product still requires explicit human review before GitHub promotion. The new agent pipeline can now move from approved report to worker-backed execution, but it is still intentionally review-gated and not autonomous PR publication.
 
 ## Local Development
 
@@ -112,7 +113,7 @@ The current repository still contains advanced capabilities that matter for oper
 
 Those capabilities remain in the product, but they should live behind explicit operator or advanced setup affordances. The default experience should stay centered on the three core jobs.
 
-The largest remaining operator UX gap is after execution starts: Nexus can prepare the task and launch the isolated branch from the review queue, but the human review, closeout, and PR-promotion steps still need a clearer first-class operator surface.
+The largest remaining gap is now runtime hardening rather than basic operator UX. Nexus can move from approved report through execution closeout and promotion review inside the product, but production still needs post-deploy validation and iteration on real code-changing worker runs.
 
 ## Reference Docs
 
