@@ -34,8 +34,25 @@ const extensionReportSchema = z.object({
   notes: z.string().max(5000).optional()
 });
 
+function addExtensionCorsHeaders(request: { headers: Record<string, string | string[] | undefined> }, reply: any): void {
+  const origin = request.headers['origin'];
+  // Allow any Chrome extension origin — auth is enforced via shared secret header
+  if (typeof origin === 'string' && origin.startsWith('chrome-extension://')) {
+    reply.header('Access-Control-Allow-Origin', origin);
+    reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    reply.header('Access-Control-Allow-Headers', 'Content-Type, x-nexus-shared-secret');
+  }
+}
+
 export function registerExtensionWebhookRoute(app: FastifyInstance): void {
+  // Handle CORS preflight from the Chrome extension
+  app.options('/webhooks/extension/report', async (request, reply) => {
+    addExtensionCorsHeaders(request, reply);
+    return reply.code(204).send();
+  });
+
   app.post('/webhooks/extension/report', async (request, reply) => {
+    addExtensionCorsHeaders(request, reply);
     const sharedSecret = request.headers['x-nexus-shared-secret'];
 
     if (typeof sharedSecret !== 'string' || !safeEqual(sharedSecret, app.config.WEBHOOK_SHARED_SECRET)) {
