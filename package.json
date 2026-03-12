@@ -21,6 +21,8 @@
     "shadow-suite:tick": "tsx src/scripts/shadow-suite-tick.ts",
     "agent:creative-readme": "tsx src/scripts/agents/creative-readme-agent.ts",
     "seed:review-queue": "tsx src/scripts/seed-review-queue.ts",
+    "extension:build": "node scripts/generate-extension-icons.mjs && node scripts/build-extension.mjs",
+    "extension:watch": "node scripts/generate-extension-icons.mjs && node scripts/build-extension.mjs --watch",
     "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts",
     "e2e:agent-routes": "tsx src/scripts/e2e/agent-execution-routes.ts",
     "e2e:customer-handoff": "tsx src/scripts/e2e/customer-handoff.ts",
@@ -57,8 +59,10 @@
     "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.321",
     "@types/node": "^24.3.0",
     "@types/pg": "^8.18.0",
+    "esbuild": "^0.25.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }

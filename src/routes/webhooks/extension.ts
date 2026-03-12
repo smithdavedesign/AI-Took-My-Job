@@ -16,6 +16,7 @@ import { safeEqual } from '../../support/http.js';
 
 const extensionReportSchema = z.object({
   sessionId: z.string().min(1),
+  projectId: z.string().min(1),
   title: z.string().min(1),
   pageUrl: z.url(),
   environment: z.enum(['local', 'development', 'staging', 'production']).default('staging'),
@@ -79,6 +80,7 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
     };
     const ingested = await ingestFeedbackReport(app, {
       source: 'extension',
+      projectId: payload.projectId,
       externalId: payload.sessionId,
       title: payload.title,
       severity: payload.severity,

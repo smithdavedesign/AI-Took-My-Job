@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus Reporter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      background: #fff;
+      color: #111827;
+      width: 340px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .header-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .header-subtitle {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+
+    .settings-link {
+      font-size: 11px;
+      color: #9ca3af;
+      cursor: pointer;
+      text-decoration: none;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+
+    .settings-link:hover { color: #6366f1; }
+
+    .body {
+      padding: 14px 16px 16px;
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+
+    input[type="text"], textarea, select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #111827;
+      background: #fff;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus, textarea:focus, select:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+
+    .url-display {
+      font-size: 11px;
+      color: #6b7280;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 6px 9px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 72px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .submit-area {
+      margin-top: 14px;
+    }
+
+    button.submit {
+      width: 100%;
+      padding: 9px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    button.submit:hover { background: #4f46e5; }
+    button.submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status-bar {
+      font-size: 12px;
+      text-align: center;
+      padding: 8px 16px;
+      border-top: 1px solid #f3f4f6;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status-bar.success { color: #16a34a; background: #f0fdf4; }
+    .status-bar.error { color: #dc2626; background: #fef2f2; }
+    .status-bar.sending { color: #6b7280; }
+
+    .not-configured {
+      padding: 20px 16px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    .not-configured p { margin-bottom: 12px; font-size: 13px; }
+
+    .not-configured button {
+      padding: 8px 16px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="notConfigured" style="display:none">
+    <div class="not-configured">
+      <p>Nexus Reporter isn't configured yet.</p>
+      <button id="openOptions">Open Settings</button>
+    </div>
+  </div>
+
+  <div id="reportForm" style="display:none">
+    <div class="header">
+      <div>
+        <div class="header-title">Report a bug</div>
+        <div class="header-subtitle" id="projectLabel">Nexus</div>
+      </div>
+      <button class="settings-link" id="settingsBtn" title="Open settings">⚙</button>
+    </div>
+
+    <div class="body">
+      <div class="field">
+        <label>Page</label>
+        <div class="url-display" id="pageUrl"></div>
+      </div>
+
+      <div class="field">
+        <label for="title">Title <span style="color:#ef4444">*</span></label>
+        <input type="text" id="title" placeholder="Briefly describe the bug…" />
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="severity">Severity</label>
+          <select id="severity">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="environment">Environment</label>
+          <select id="environment">
+            <option value="local">Local</option>
+            <option value="development">Development</option>
+            <option value="staging" selected>Staging</option>
+            <option value="production">Production</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="notes">Notes</label>
+        <textarea id="notes" placeholder="Steps to reproduce, expected vs actual behaviour…"></textarea>
+      </div>
+
+      <div class="submit-area">
+        <button class="submit" id="submitBtn">Send report</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar" id="statusBar" style="display:none"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

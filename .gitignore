@@ -5,4 +5,4 @@ dist
 coverage
 .npm-cache
 var/artifacts
-var/agent-workspaces
+var/agent-workspacesdist-extension/
