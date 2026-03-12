@@ -24,6 +24,7 @@
     "extension:build": "node scripts/generate-extension-icons.mjs && node scripts/build-extension.mjs",
     "extension:watch": "node scripts/generate-extension-icons.mjs && node scripts/build-extension.mjs --watch",
     "extension:pack": "npm run extension:build && node scripts/pack-extension.mjs",
+    "extension:release": "npm run extension:pack && node scripts/release-extension.mjs",
     "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts",
     "e2e:agent-routes": "tsx src/scripts/e2e/agent-execution-routes.ts",
     "e2e:customer-handoff": "tsx src/scripts/e2e/customer-handoff.ts",
