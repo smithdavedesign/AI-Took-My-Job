@@ -1,10 +1,12 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const CONTRACT_VERSION = 'nexus-agent-output-v1';
+const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-6';
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
+const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 const MAX_FILE_COUNT = 40;
 const MAX_FILE_BYTES = 12_000;
 const MAX_TOTAL_BYTES = 160_000;
@@ -41,20 +43,6 @@ function requireEnv(name: string): string {
   }
 
   return value;
-}
-
-function parseOptionalJsonArray(name: string): string[] {
-  const raw = process.env[name];
-  if (!raw) {
-    return [];
-  }
-
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
-    throw new Error(`${name} must be a JSON array of strings`);
-  }
-
-  return parsed;
 }
 
 function envOrDefault(name: string, defaultValue: string): string {
@@ -147,11 +135,11 @@ function buildAgentPrompt(input: { prompt: string; context: string; repositoryFi
   ].join('\n');
 }
 
-function responseSchema(): Record<string, unknown> {
+function agentTool(): Anthropic.Tool {
   return {
     name: 'nexus_agent_result',
-    strict: true,
-    schema: {
+    description: 'Report the result of the coding agent task.',
+    input_schema: {
       type: 'object',
       additionalProperties: false,
       properties: {
@@ -190,6 +178,43 @@ function responseSchema(): Record<string, unknown> {
   };
 }
 
+async function requestClaudeAgentResult(input: { prompt: string; context: string; worktreePath: string }): Promise<ModelAgentResponse> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is required');
+  }
+
+  const client = new Anthropic({ apiKey });
+  const repositoryFiles = await collectRepositorySnapshot(input.worktreePath);
+
+  const response = await client.messages.create({
+    model: envOrDefault('ANTHROPIC_MODEL', DEFAULT_ANTHROPIC_MODEL),
+    max_tokens: 8192,
+    tools: [agentTool()],
+    tool_choice: { type: 'tool', name: 'nexus_agent_result' },
+    system: 'You are a careful software engineer acting as a non-interactive coding agent inside Nexus. You must call the nexus_agent_result tool with your result. Keep changes minimal and focused on the task. Only propose repository-relative text file paths. When you change a file, include the full replacement content in fileChanges.',
+    messages: [
+      {
+        role: 'user',
+        content: buildAgentPrompt({
+          prompt: input.prompt,
+          context: input.context,
+          repositoryFiles
+        })
+      }
+    ]
+  });
+
+  const toolUseBlock = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use' && block.name === 'nexus_agent_result'
+  );
+  if (!toolUseBlock) {
+    throw new Error('Claude response did not include nexus_agent_result tool call');
+  }
+
+  return toolUseBlock.input as ModelAgentResponse;
+}
+
 async function requestOpenAiAgentResult(input: { prompt: string; context: string; worktreePath: string }): Promise<ModelAgentResponse> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -208,20 +233,20 @@ async function requestOpenAiAgentResult(input: { prompt: string; context: string
       temperature: 0.1,
       response_format: {
         type: 'json_schema',
-        json_schema: responseSchema()
+        json_schema: {
+          name: 'nexus_agent_result',
+          strict: true,
+          schema: agentTool().input_schema
+        }
       },
       messages: [
         {
           role: 'system',
-          content: 'You are GPT-5.4 acting as a careful software engineer. Produce valid JSON that follows the provided schema exactly.'
+          content: 'You are a careful software engineer acting as a non-interactive coding agent inside Nexus. Return JSON only. Do not use markdown fences. When you change a file, include the full replacement content for that file in fileChanges. Only propose repository-relative text file paths. Keep changes minimal and focused on the task.'
         },
         {
           role: 'user',
-          content: buildAgentPrompt({
-            prompt: input.prompt,
-            context: input.context,
-            repositoryFiles
-          })
+          content: buildAgentPrompt({ prompt: input.prompt, context: input.context, repositoryFiles })
         }
       ]
     })
@@ -232,9 +257,7 @@ async function requestOpenAiAgentResult(input: { prompt: string; context: string
     throw new Error(`OpenAI request failed: ${response.status} ${responseText}`);
   }
 
-  const parsed = JSON.parse(responseText) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
+  const parsed = JSON.parse(responseText) as { choices?: Array<{ message?: { content?: string } }> };
   const messageContent = parsed.choices?.[0]?.message?.content;
   if (!messageContent) {
     throw new Error('OpenAI response did not include message content');
@@ -339,13 +362,12 @@ async function main(): Promise<void> {
   const contextPath = requireEnv('NEXUS_AGENT_CONTEXT_FILE');
   const worktreePath = process.env.NEXUS_AGENT_WORKTREE_PATH ?? process.cwd();
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
     await writeBlockedOutput(
       outputPath,
-      'Render API agent wrapper is configured, but OPENAI_API_KEY has not been set on the worker.',
+      'Render API agent wrapper is configured, but no API key has been set on the worker.',
       [
-        'Set OPENAI_API_KEY on the worker service to enable API-backed agent execution.',
-        `Optionally set OPENAI_MODEL (default ${DEFAULT_OPENAI_MODEL}) and OPENAI_BASE_URL.`
+        `Set ANTHROPIC_API_KEY (preferred, model default: ${DEFAULT_ANTHROPIC_MODEL}) or OPENAI_API_KEY (fallback, model default: ${DEFAULT_OPENAI_MODEL}) on the worker service.`
       ]
     );
     return;
@@ -353,16 +375,10 @@ async function main(): Promise<void> {
 
   const prompt = await readFile(promptPath, 'utf8');
   const context = await readFile(contextPath, 'utf8');
-  const requestedArgs = parseOptionalJsonArray('OPENAI_MODEL_REQUEST_ARGS');
-  if (requestedArgs.length > 0) {
-    process.env.OPENAI_MODEL_REQUEST_ARGS = JSON.stringify(requestedArgs);
-  }
 
-  const modelResult = await requestOpenAiAgentResult({
-    prompt,
-    context,
-    worktreePath
-  });
+  const modelResult = await (process.env.ANTHROPIC_API_KEY
+    ? requestClaudeAgentResult({ prompt, context, worktreePath })
+    : requestOpenAiAgentResult({ prompt, context, worktreePath }));
 
   await applyFileChanges(worktreePath, modelResult.fileChanges);
   const repositoryChangedFiles = await listRepositoryVisibleChanges(worktreePath);
