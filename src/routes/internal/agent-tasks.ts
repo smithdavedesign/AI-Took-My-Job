@@ -22,7 +22,7 @@ const createAgentTaskSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   objective: z.string().min(1).max(5000),
   executionMode: z.enum(['investigate', 'fix']).default('fix'),
-  acceptanceCriteria: z.array(z.string().min(1).max(500)).max(20).default([]),
+  acceptanceCriteria: z.array(z.string().min(1).max(500)).max(50).default([]),
   contextNotes: z.string().min(1).max(5000).optional()
 });
 

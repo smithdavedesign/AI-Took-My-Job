@@ -380,7 +380,7 @@ async function main(): Promise<void> {
     ? requestClaudeAgentResult({ prompt, context, worktreePath })
     : requestOpenAiAgentResult({ prompt, context, worktreePath }));
 
-  await applyFileChanges(worktreePath, modelResult.fileChanges);
+  await applyFileChanges(worktreePath, Array.isArray(modelResult.fileChanges) ? modelResult.fileChanges : []);
   const repositoryChangedFiles = await listRepositoryVisibleChanges(worktreePath);
   const finalOutcome: 'changes-made' | 'no-changes' | 'blocked' = repositoryChangedFiles.length > 0
     ? 'changes-made'
