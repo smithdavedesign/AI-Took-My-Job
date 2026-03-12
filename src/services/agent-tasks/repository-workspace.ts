@@ -39,9 +39,9 @@ async function runCommand(command: string, args: string[], options: {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: {
-        PATH: `/usr/bin:/usr/local/bin:${process.env.PATH ?? ''}`,
         ...process.env,
-        ...options.env
+        ...options.env,
+        PATH: `/usr/bin:/usr/local/bin:${process.env.PATH ?? ''}`
       },
       stdio: ['ignore', 'pipe', 'pipe']
     });
