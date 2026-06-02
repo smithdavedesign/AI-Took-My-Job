@@ -455,14 +455,14 @@ async function main(): Promise<void> {
               jobType: 'agent-execution',
               status: 'queued',
               priority: 60,
-              payload: { agentTaskId, agentTaskExecutionId: execId }
+              payload: { agentTaskId, executionId: execId }
             });
 
             await queue.add('agent-execution', {
               type: 'agent-execution',
               reportId: report.id,
               source: report.source,
-              payload: { agentTaskId, agentTaskExecutionId: execId }
+              payload: { agentTaskId, executionId: execId }
             }, { jobId: execJobId, priority: 60, removeOnComplete: 100, removeOnFail: 100 });
           }
 
