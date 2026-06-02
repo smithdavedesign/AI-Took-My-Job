@@ -1165,9 +1165,16 @@ async function main(): Promise<void> {
                 });
               }
             } catch (promoErr) {
+              const promoErrMsg = promoErr instanceof Error ? promoErr.message : String(promoErr);
               logWorker('error', 'auto-promote: failed (non-fatal)', {
                 agentTaskId: task.id,
-                error: promoErr instanceof Error ? promoErr.message : String(promoErr)
+                error: promoErrMsg
+              });
+              // Notify RepoHQ so the button can show error state instead of spinning forever
+              void notifyRepoHQ(config, {
+                eventType: 'agent_execution_failed',
+                taskId: task.id,
+                summary: `Auto-promote failed: ${promoErrMsg.slice(0, 200)}`,
               });
             }
           }
@@ -1175,6 +1182,17 @@ async function main(): Promise<void> {
           return;
         } catch (error) {
           const failureReason = error instanceof Error ? error.message : 'unknown agent execution failure';
+          // Notify RepoHQ of execution failure so the Run Agent button shows error state
+          try {
+            const failNotes = typeof task.contextNotes === 'string' ? JSON.parse(task.contextNotes) as Record<string, unknown> : {};
+            if (failNotes.autoExecute === true) {
+              void notifyRepoHQ(config, {
+                eventType: 'agent_execution_failed',
+                taskId: task.id,
+                summary: `Execution failed: ${failureReason.slice(0, 200)}`,
+              });
+            }
+          } catch { /* non-fatal */ }
           await agentTaskExecutionRepository.update({
             ...execution,
             status: 'failed',
