@@ -434,7 +434,9 @@ async function main(): Promise<void> {
 
           if (autoExecute && config.AGENT_EXECUTION_COMMAND) {
             logWorker('info', 'auto-execute: enqueuing agent execution', { agentTaskId });
-            const execId = randomUUID();
+            const execId    = randomUUID();
+            const execJobId = randomUUID(); // UUID job ID — prevents invalid uuid crash in triageJobRepository
+
             await agentTaskExecutionRepository.create({
               id: execId,
               agentTaskId,
@@ -445,12 +447,23 @@ async function main(): Promise<void> {
               resultSummary: {},
               validationEvidence: {}
             });
+
+            // Create triage_jobs record with UUID ID (mirrors job-publisher.ts pattern)
+            await triageJobRepository.create({
+              id: execJobId,
+              reportId: report.id,
+              jobType: 'agent-execution',
+              status: 'queued',
+              priority: 60,
+              payload: { agentTaskId, agentTaskExecutionId: execId }
+            });
+
             await queue.add('agent-execution', {
               type: 'agent-execution',
               reportId: report.id,
               source: report.source,
               payload: { agentTaskId, agentTaskExecutionId: execId }
-            }, { priority: 60 });
+            }, { jobId: execJobId, priority: 60, removeOnComplete: 100, removeOnFail: 100 });
           }
 
           return;
