@@ -45,7 +45,6 @@ export async function fetchRepoHQBrief(
         r.estimated_effort,
         r.mrr,
         r.abandonment_reason,
-        r.llm_api_key,
         m.health_score,
         m.activity_score,
         m.security_score,
