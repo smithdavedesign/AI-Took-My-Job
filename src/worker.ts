@@ -124,10 +124,14 @@ async function runCommand(command: string, args: string[], options: {
 }
 
 async function runGit(worktreePath: string, args: string[], env?: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
-  return runCommand('git', ['-C', worktreePath, ...args], {
+  const result = await runCommand('git', ['-C', worktreePath, ...args], {
     cwd: worktreePath,
     ...(env ? { env } : {})
   });
+  if (result.code !== 0) {
+    throw new Error(`git ${args[0]} failed (exit ${result.code}): ${result.stderr || result.stdout}`);
+  }
+  return result;
 }
 
 function repositoryChangePathspec(): string[] {
