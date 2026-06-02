@@ -167,5 +167,8 @@ export function createIssueDraft(report: StoredFeedbackReport): IssueDraft {
     case 'datadog':
     case 'newrelic':
       return buildObservabilityDraft(report);
+    case 'portfolio-score':
+    default:
+      return buildExtensionDraft(report);
   }
 }

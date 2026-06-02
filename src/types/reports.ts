@@ -1,4 +1,4 @@
-export type FeedbackSource = 'slack' | 'extension' | 'hosted-feedback' | 'sentry' | 'datadog' | 'newrelic';
+export type FeedbackSource = 'slack' | 'extension' | 'hosted-feedback' | 'sentry' | 'datadog' | 'newrelic' | 'portfolio-score';
 
 export interface StoredFeedbackReport {
   id: string;

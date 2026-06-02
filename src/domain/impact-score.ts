@@ -1,5 +1,5 @@
 export interface ImpactSignal {
-  source: 'slack' | 'extension' | 'hosted-feedback' | 'sentry' | 'datadog' | 'newrelic';
+  source: 'slack' | 'extension' | 'hosted-feedback' | 'sentry' | 'datadog' | 'newrelic' | 'portfolio-score';
   severity?: 'low' | 'medium' | 'high' | 'critical';
   breadth?: number;
   frequency?: number;
@@ -11,7 +11,8 @@ const sourceWeights: Record<ImpactSignal['source'], number> = {
   'hosted-feedback': 28,
   sentry: 35,
   datadog: 35,
-  newrelic: 35
+  newrelic: 35,
+  'portfolio-score': 50
 };
 
 const severityWeights: Record<NonNullable<ImpactSignal['severity']>, number> = {

@@ -155,18 +155,32 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
       await app.agentTasks.updateProcessingJobId(taskId, queueResult.jobId);
     } else {
-      // Portfolio-score task: no feedback report, direct creation
+      // Portfolio-score task: create a synthetic report to satisfy the NOT NULL FK
       if (!payload.targetRepository) {
         throw app.httpErrors.badRequest('targetRepository is required when no reportId is provided');
       }
 
+      const syntheticReportId = randomUUID();
+      await app.reports.create({
+        id: syntheticReportId,
+        source: 'portfolio-score',
+        status: 'triaged',
+        severity: 'medium',
+        payload: {
+          source: 'repohq-advisor',
+          targetRepository: payload.targetRepository,
+          objective: payload.objective,
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
       finalTaskId = randomUUID();
-      const taskId = finalTaskId;
       const title = payload.title ?? `Portfolio task: ${payload.objective.slice(0, 80)}`;
 
       await app.agentTasks.create({
-        id: taskId,
-        feedbackReportId: null as unknown as string, // no linked report
+        id: finalTaskId,
+        feedbackReportId: syntheticReportId,
         requestedBy: principal.id,
         targetRepository: payload.targetRepository,
         title,
@@ -180,11 +194,11 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
 
       const queueResult = await app.jobs.enqueue({
         type: 'agent-task',
-        reportId: taskId, // use taskId as jobId key for portfolio tasks
+        reportId: syntheticReportId,
         source: 'portfolio-score',
         priority: 60,
         payload: {
-          agentTaskId: taskId,
+          agentTaskId: finalTaskId,
           objective: payload.objective,
           executionMode: payload.executionMode,
           acceptanceCriteria: payload.acceptanceCriteria,
@@ -193,7 +207,7 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       });
 
       finalJobId = queueResult.jobId;
-      await app.agentTasks.updateProcessingJobId(taskId, queueResult.jobId);
+      await app.agentTasks.updateProcessingJobId(finalTaskId, queueResult.jobId);
     } // end else (portfolio-score task)
 
     // Common audit + response for both paths
