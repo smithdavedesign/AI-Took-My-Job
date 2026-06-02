@@ -7,3 +7,6 @@ coverage
 var/artifacts
 var/agent-workspacesdist-extension/
 nexus-reporter.zip
+
+# Agent workspace clones (created by Nexus during execution)
+var/agent-workspaces/

@@ -127,6 +127,11 @@ const configSchema = z.object({
   AGENT_EXECUTION_ARGS: optionalStringArraySchema,
   AGENT_EXECUTION_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(3600).default(600),
   AGENT_EXECUTION_AUTO_CREATE_PR: booleanFromEnv(false),
+  // RepoHQ integration (Phase 46)
+  REPOHQ_WEBHOOK_URL: optionalString,      // https://repohq.vercel.app/api/webhooks/agent-events
+  REPOHQ_WEBHOOK_SECRET: optionalString,   // shared secret for webhook auth
+  REPOHQ_MCP_DATABASE_URL: optionalString, // Neon DB URL for direct RepoHQ MCP queries
+  REPOHQ_MCP_USER_ID: optionalString,      // RepoHQ user UUID for MCP context fetching
   OPENAI_API_KEY: optionalString,
   OPENAI_BASE_URL: optionalString,
   OPENAI_MODEL: optionalString,

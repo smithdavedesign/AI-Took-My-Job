@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import type { AppConfig } from '../../support/config.js';
 import type { StoredAgentTask } from '../../types/agent-tasks.js';
+import { fetchRepoHQBrief } from '../repohq/brief-fetcher.js';
 
 export const AGENT_OUTPUT_CONTRACT_VERSION = 'nexus-agent-output-v1';
 
@@ -168,7 +169,13 @@ export async function runConfiguredAgent(input: {
 
   await mkdir(nexusDir, { recursive: true });
   await writeFile(promptPath, buildPrompt(input.task, input.executionId), 'utf8');
-  await writeFile(contextPath, JSON.stringify(input.task.preparedContext, null, 2), 'utf8');
+  // Phase 46B: enrich context with RepoHQ portfolio brief if configured
+  const repoName = input.task.targetRepository?.split("/")[1] ?? input.task.title;
+  const repoHQBrief = await fetchRepoHQBrief(input.config, repoName);
+  const enrichedContext = repoHQBrief
+    ? { ...input.task.preparedContext, repoHQ: { brief: repoHQBrief.raw, health: repoHQBrief.health, lifecycle: repoHQBrief.lifecycle, focused: repoHQBrief.focused, recentSessions: repoHQBrief.recentSessions, securityAlerts: repoHQBrief.securityAlerts, goal: repoHQBrief.goal } }
+    : input.task.preparedContext;
+  await writeFile(contextPath, JSON.stringify(enrichedContext, null, 2), 'utf8');
 
   if (!input.config.AGENT_EXECUTION_COMMAND) {
     const output: AgentCommandOutput = {

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { buildExecutionCloseout } from '../../services/agent-tasks/execution-closeout.js';
 import { isGitHubRepository, promoteExecutionPullRequest } from '../../services/agent-tasks/pull-request-promotion.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
+import { notifyRepoHQ } from '../../services/repohq/brief-fetcher.js';
 import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
 
 const promoteExecutionSchema = z.object({
@@ -602,6 +603,16 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
         }
       });
 
+      // Phase 46C: notify RepoHQ that a PR was created
+      const taskContextNotes = typeof task.contextNotes === 'string' ? JSON.parse(task.contextNotes || '{}') : (task.contextNotes ?? {});
+      void notifyRepoHQ(app.config, {
+        eventType: 'agent_pr_created',
+        taskId: task.id,
+        ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
+        prUrl: promoted.pullRequestUrl,
+        summary: `PR #${promoted.pullRequestNumber} created by Nexus agent`,
+      });
+
       return {
         promoted: true,
         executionId,
@@ -755,6 +766,16 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
           mergeCommitSha: merged.mergeCommitSha,
           mergeMethod: payload.mergeMethod ?? 'merge'
         }
+      });
+
+      // Phase 46C: notify RepoHQ that the PR was merged (triggers health resync + accuracy tracking)
+      const mergeTaskContextNotes = typeof task.contextNotes === 'string' ? JSON.parse(task.contextNotes || '{}') : (task.contextNotes ?? {});
+      void notifyRepoHQ(app.config, {
+        eventType: 'agent_pr_merged',
+        taskId: task.id,
+        ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
+        ...(pullRequest.pullRequestUrl ? { prUrl: pullRequest.pullRequestUrl } : {}),
+        summary: `PR #${pullRequest.pullRequestNumber} merged`,
       });
 
       return {
