@@ -1100,7 +1100,7 @@ async function main(): Promise<void> {
             } catch { return false; }
           })();
 
-          if (autoExec && (finalStatus === 'changes-generated' || finalStatus === 'validated') && config.GITHUB_DRAFT_SYNC_ENABLED) {
+          if (autoExec && (finalStatus === 'changes-generated' || finalStatus === 'validated')) {
             logWorker('info', 'auto-promote: creating review + PR', { agentTaskId: task.id, executionId });
             try {
               // Auto-approve the execution review
