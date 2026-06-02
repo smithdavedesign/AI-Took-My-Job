@@ -30,6 +30,7 @@ import { createWorkspaceRepository } from './repositories/workspace-repository.j
 import { createWorkspaceTriagePolicyRepository } from './repositories/workspace-triage-policy-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
+import { notifyRepoHQ } from './services/repohq/brief-fetcher.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
 import { classifyReport } from './services/reports/report-classification.js';
@@ -419,6 +420,38 @@ async function main(): Promise<void> {
             hasReplay: Boolean(replay),
             artifactCount: artifacts.length
           });
+
+          // Phase 46: auto-execute when flagged (RepoHQ fully-automated flow)
+          const preparedTask = await agentTaskRepository.findById(agentTaskId);
+          const autoExecute = (() => {
+            try {
+              const notes = typeof preparedTask?.contextNotes === 'string'
+                ? JSON.parse(preparedTask.contextNotes) as Record<string, unknown>
+                : {};
+              return notes.autoExecute === true;
+            } catch { return false; }
+          })();
+
+          if (autoExecute && config.AGENT_EXECUTION_COMMAND) {
+            logWorker('info', 'auto-execute: enqueuing agent execution', { agentTaskId });
+            const execId = randomUUID();
+            await agentTaskExecutionRepository.create({
+              id: execId,
+              agentTaskId,
+              status: 'queued',
+              branchName: `nexus/auto-${execId.slice(0, 8)}`,
+              baseBranch: 'main',
+              findings: [],
+              resultSummary: {},
+              validationEvidence: {}
+            });
+            await queue.add('agent-execution', {
+              type: 'agent-execution',
+              reportId: report.id,
+              source: report.source,
+              payload: { agentTaskId, agentTaskExecutionId: execId }
+            }, { priority: 60 });
+          }
 
           return;
         } catch (error) {
@@ -1043,6 +1076,84 @@ async function main(): Promise<void> {
             status: finalStatus,
             pullRequestUrl
           });
+
+          // Phase 46: auto-approve + auto-promote PR when autoExecute flag set
+          const autoExec = (() => {
+            try {
+              const notes = typeof task.contextNotes === 'string'
+                ? JSON.parse(task.contextNotes) as Record<string, unknown>
+                : (task.contextNotes as unknown as Record<string, unknown> ?? {});
+              return notes.autoExecute === true;
+            } catch { return false; }
+          })();
+
+          if (autoExec && (finalStatus === 'changes-generated' || finalStatus === 'validated') && config.GITHUB_DRAFT_SYNC_ENABLED) {
+            logWorker('info', 'auto-promote: creating review + PR', { agentTaskId: task.id, executionId });
+            try {
+              // Auto-approve the execution review
+              await agentTaskExecutionReviewRepository.upsert({
+                id: randomUUID(),
+                agentTaskExecutionId: executionId,
+                status: 'approved',
+                notes: 'Auto-approved by RepoHQ portfolio automation',
+                reviewedAt: new Date().toISOString(),
+                reviewerId: 'repohq-automation'
+              });
+
+              // Auto-promote to PR
+              const github = await githubResolver.resolve({
+                repository: task.targetRepository,
+                strictProjectScoped: false
+              });
+              if (github.enabled && workspace.branchName && workspace.baseBranch) {
+                const { promoteExecutionPullRequest } = await import('./services/agent-tasks/pull-request-promotion.js');
+                const promoted = await promoteExecutionPullRequest({
+                  config,
+                  github,
+                  task,
+                  execution: { ...execution, status: finalStatus, branchName: workspace.branchName, baseBranch: workspace.baseBranch },
+                  draft: false
+                });
+                await agentTaskExecutionPullRequestRepository.upsert({
+                  id: randomUUID(),
+                  agentTaskExecutionId: executionId,
+                  repository: task.targetRepository,
+                  headBranch: workspace.branchName,
+                  baseBranch: workspace.baseBranch,
+                  pullRequestNumber: promoted.pullRequestNumber,
+                  pullRequestUrl: promoted.pullRequestUrl,
+                  draft: false,
+                  status: 'opened',
+                  promotedBy: 'repohq-automation',
+                  promotedAt: new Date().toISOString(),
+                  metadata: {}
+                });
+                await agentTaskExecutionRepository.update({
+                  ...execution,
+                  status: 'pr-opened' as const,
+                  resultSummary: execution.resultSummary,
+                  findings: execution.findings,
+                  validationEvidence: execution.validationEvidence,
+                });
+                await notifyRepoHQ(config, {
+                  eventType: 'agent_pr_created',
+                  taskId: task.id,
+                  ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
+                  prUrl: promoted.pullRequestUrl,
+                  summary: `Auto-promoted PR #${promoted.pullRequestNumber}`,
+                });
+                logWorker('info', 'auto-promote: PR created', {
+                  agentTaskId: task.id,
+                  pullRequestUrl: promoted.pullRequestUrl
+                });
+              }
+            } catch (promoErr) {
+              logWorker('error', 'auto-promote: failed (non-fatal)', {
+                agentTaskId: task.id,
+                error: promoErr instanceof Error ? promoErr.message : String(promoErr)
+              });
+            }
+          }
 
           return;
         } catch (error) {
