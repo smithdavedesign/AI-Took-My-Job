@@ -18,7 +18,7 @@ const mergeExecutionSchema = z.object({
 });
 
 const createAgentTaskSchema = z.object({
-  reportId: z.string().uuid(),
+  reportId: z.string().uuid().optional(),
   targetRepository: z.string().min(1).max(255).optional(),
   title: z.string().min(1).max(200).optional(),
   objective: z.string().min(1).max(5000),
@@ -65,104 +65,155 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
     const payload = createAgentTaskSchema.parse(request.body);
 
-    const report = await app.reports.findById(payload.reportId);
-    if (!report) {
-      throw app.httpErrors.notFound('report not found');
-    }
+    // RepoHQ portfolio-score tasks arrive without a feedback report (source: 'portfolio-score')
+    // For these we skip report lookup and create the task directly.
+    const isPortfolioScoreTask = !payload.reportId;
 
-    const projectScope = report.projectId
-      ? await resolveProjectRepositoryScope({
+    // Hoist so both branches can set and the common section can read
+    let finalTaskId: string = '';
+    let finalJobId: string = '';
+
+    let report: Awaited<ReturnType<typeof app.reports.findById>> | null = null;
+    if (!isPortfolioScoreTask) {
+      report = await app.reports.findById(payload.reportId!);
+      if (!report) {
+        throw app.httpErrors.notFound('report not found');
+      }
+
+      const projectScope = report.projectId
+        ? await resolveProjectRepositoryScope({
+          projectId: report.projectId,
+          repository: payload.targetRepository,
+          projects: app.projects,
+          repoConnections: app.repoConnections
+        })
+        : null;
+
+      let approvedHostedFeedbackRepository: string | undefined;
+      if (report.source === 'hosted-feedback') {
+        const review = await app.reportReviews.findByReportId(report.id);
+        if (!review || review.status !== 'approved') {
+          throw app.httpErrors.conflict('hosted feedback reports require an approved review before agent tasks can be created');
+        }
+
+        if (!review.repository) {
+          throw app.httpErrors.conflict('hosted feedback reports must be approved against a concrete project repository before agent tasks can be created');
+        }
+
+        approvedHostedFeedbackRepository = review.repository;
+        if (payload.targetRepository && payload.targetRepository !== review.repository) {
+          throw app.httpErrors.conflict('hosted feedback agent tasks must target the repository approved during review');
+        }
+      }
+
+      const existingDraft = await app.githubIssueLinks.findByReportId(report.id);
+      const defaultRepository = await app.github.resolveRepository({
         projectId: report.projectId,
-        repository: payload.targetRepository,
-        projects: app.projects,
-        repoConnections: app.repoConnections
-      })
-      : null;
+        strictProjectScoped: Boolean(report.projectId)
+      });
+      const targetRepositoryForReport = payload.targetRepository
+        ?? approvedHostedFeedbackRepository
+        ?? existingDraft?.repository
+        ?? defaultRepository
+        ?? 'local-only';
 
-    let approvedHostedFeedbackRepository: string | undefined;
-    if (report.source === 'hosted-feedback') {
-      const review = await app.reportReviews.findByReportId(report.id);
-      if (!review || review.status !== 'approved') {
-        throw app.httpErrors.conflict('hosted feedback reports require an approved review before agent tasks can be created');
+      if (projectScope && isGitHubRepository(targetRepositoryForReport) && !projectScope.availableRepositories.includes(targetRepositoryForReport)) {
+        throw app.httpErrors.conflict('agent task target repository is not an active connection for this project');
       }
 
-      if (!review.repository) {
-        throw app.httpErrors.conflict('hosted feedback reports must be approved against a concrete project repository before agent tasks can be created');
-      }
+      const title = payload.title ?? report.title ?? `Agent task for report ${report.id}`;
+      const taskId = randomUUID();
 
-      approvedHostedFeedbackRepository = review.repository;
-      if (payload.targetRepository && payload.targetRepository !== review.repository) {
-        throw app.httpErrors.conflict('hosted feedback agent tasks must target the repository approved during review');
-      }
-    }
-
-    const existingDraft = await app.githubIssueLinks.findByReportId(report.id);
-    const defaultRepository = await app.github.resolveRepository({
-      projectId: report.projectId,
-      strictProjectScoped: Boolean(report.projectId)
-    });
-    const taskId = randomUUID();
-    const targetRepository = payload.targetRepository
-      ?? approvedHostedFeedbackRepository
-      ?? existingDraft?.repository
-      ?? defaultRepository
-      ?? 'local-only';
-
-    if (projectScope && isGitHubRepository(targetRepository) && !projectScope.availableRepositories.includes(targetRepository)) {
-      throw app.httpErrors.conflict('agent task target repository is not an active connection for this project');
-    }
-
-    const title = payload.title ?? report.title ?? `Agent task for report ${report.id}`;
-
-    await app.agentTasks.create({
-      id: taskId,
-      feedbackReportId: report.id,
-      ...(report.projectId ? { projectId: report.projectId } : {}),
-      requestedBy: principal.id,
-      targetRepository,
-      title,
-      objective: payload.objective,
-      executionMode: payload.executionMode,
-      acceptanceCriteria: payload.acceptanceCriteria,
-      status: 'queued',
-      preparedContext: {},
-      ...(payload.contextNotes ? { contextNotes: payload.contextNotes } : {})
-    });
-
-    const queueResult = await app.jobs.enqueue({
-      type: 'agent-task',
-      reportId: report.id,
-      source: report.source,
-      priority: mapSeverityToPriority(report.severity),
-      payload: {
-        agentTaskId: taskId,
+      await app.agentTasks.create({
+        id: taskId,
+        feedbackReportId: report.id,
+        ...(report.projectId ? { projectId: report.projectId } : {}),
+        requestedBy: principal.id,
+        targetRepository: targetRepositoryForReport,
+        title,
         objective: payload.objective,
         executionMode: payload.executionMode,
         acceptanceCriteria: payload.acceptanceCriteria,
+        status: 'queued',
+        preparedContext: {},
         ...(payload.contextNotes ? { contextNotes: payload.contextNotes } : {})
+      });
+
+      const queueResult = await app.jobs.enqueue({
+        type: 'agent-task',
+        reportId: report.id,
+        source: report.source,
+        priority: mapSeverityToPriority(report.severity),
+        payload: {
+          agentTaskId: taskId,
+          objective: payload.objective,
+          executionMode: payload.executionMode,
+          acceptanceCriteria: payload.acceptanceCriteria,
+          ...(payload.contextNotes ? { contextNotes: payload.contextNotes } : {})
+        }
+      });
+
+      await app.agentTasks.updateProcessingJobId(taskId, queueResult.jobId);
+    } else {
+      // Portfolio-score task: no feedback report, direct creation
+      if (!payload.targetRepository) {
+        throw app.httpErrors.badRequest('targetRepository is required when no reportId is provided');
       }
-    });
 
-    await app.agentTasks.updateProcessingJobId(taskId, queueResult.jobId);
+      finalTaskId = randomUUID();
+      const taskId = finalTaskId;
+      const title = payload.title ?? `Portfolio task: ${payload.objective.slice(0, 80)}`;
 
+      await app.agentTasks.create({
+        id: taskId,
+        feedbackReportId: null as unknown as string, // no linked report
+        requestedBy: principal.id,
+        targetRepository: payload.targetRepository,
+        title,
+        objective: payload.objective,
+        executionMode: payload.executionMode,
+        acceptanceCriteria: payload.acceptanceCriteria,
+        status: 'queued',
+        preparedContext: {},
+        ...(payload.contextNotes ? { contextNotes: payload.contextNotes } : {})
+      });
+
+      const queueResult = await app.jobs.enqueue({
+        type: 'agent-task',
+        reportId: taskId, // use taskId as jobId key for portfolio tasks
+        source: 'portfolio-score',
+        priority: 60,
+        payload: {
+          agentTaskId: taskId,
+          objective: payload.objective,
+          executionMode: payload.executionMode,
+          acceptanceCriteria: payload.acceptanceCriteria,
+          ...(payload.contextNotes ? { contextNotes: payload.contextNotes } : {})
+        }
+      });
+
+      finalJobId = queueResult.jobId;
+      await app.agentTasks.updateProcessingJobId(taskId, queueResult.jobId);
+    } // end else (portfolio-score task)
+
+    // Common audit + response for both paths
     await app.audit.write({
       eventType: 'agent_task.requested',
       actorType: 'service',
       actorId: principal.id,
       requestId: request.id,
       payload: {
-        agentTaskId: taskId,
-        reportId: report.id,
-        processingJobId: queueResult.jobId,
-        targetRepository,
+        agentTaskId: finalTaskId,
+        ...(report ? { reportId: report.id } : { source: 'portfolio-score' }),
+        processingJobId: finalJobId,
         executionMode: payload.executionMode
       }
     });
 
     return reply.code(202).send({
       accepted: true,
-      agentTaskId: taskId,
-      processingJobId: queueResult.jobId,
+      agentTaskId: finalTaskId,
+      processingJobId: finalJobId,
       status: 'queued'
     });
   });
