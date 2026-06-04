@@ -10,6 +10,54 @@ import { fetchRepoHQBrief } from '../repohq/brief-fetcher.js';
 
 export const AGENT_OUTPUT_CONTRACT_VERSION = 'nexus-agent-output-v1';
 
+/**
+ * G6: Resolves which execution script to use based on the task's skillName.
+ *
+ * The skill router reads GSTACK_SCRIPTS_DIR (default: dirname of AGENT_EXECUTION_COMMAND)
+ * and picks the matching gstack-{skill}.sh script. Falls back to AGENT_EXECUTION_COMMAND
+ * when no skill is specified, preserving full backwards compatibility.
+ *
+ * Skill → script mapping:
+ *   investigate → gstack-investigate.sh  (security, debugging, root cause)
+ *   ship        → gstack-ship.sh         (implement changes, create PR)
+ *   health      → gstack-health.sh       (code quality report, read-only)
+ *   (default)   → AGENT_EXECUTION_COMMAND (env var, any custom command)
+ */
+function resolveSkillCommand(skillName: string | undefined, fallback: string): string {
+  if (!skillName) return fallback;
+
+  // Allow override via env var (e.g. GSTACK_SCRIPTS_DIR=/custom/path)
+  const scriptsDir = process.env.GSTACK_SCRIPTS_DIR
+    ?? path.dirname(fallback);
+
+  // Full lifecycle skill routing — G7
+  const SKILL_SCRIPTS: Record<string, string> = {
+    // Understand
+    investigate:       path.join(scriptsDir, 'gstack-investigate.sh'),
+    review:            path.join(scriptsDir, 'gstack-review.sh'),
+    // Build Quality
+    'qa-only':         path.join(scriptsDir, 'gstack-qa-only.sh'),
+    qa:                path.join(scriptsDir, 'gstack-qa.sh'),
+    // Ship
+    ship:              path.join(scriptsDir, 'gstack-ship.sh'),
+    'document-release': path.join(scriptsDir, 'gstack-document-release.sh'),
+    // Monitor
+    health:            path.join(scriptsDir, 'gstack-health.sh'),
+    canary:            path.join(scriptsDir, 'gstack-canary.sh'),
+    // Reflect
+    retro:             path.join(scriptsDir, 'gstack-retro.sh'),
+  };
+
+  const resolved = SKILL_SCRIPTS[skillName];
+  if (resolved) {
+    console.log(`[agent-runner] Routing skillName="${skillName}" → ${resolved}`);
+    return resolved;
+  }
+
+  console.warn(`[agent-runner] Unknown skillName="${skillName}", falling back to AGENT_EXECUTION_COMMAND`);
+  return fallback;
+}
+
 const replayValidationSchema = z.object({
   enabled: z.boolean().default(true),
   baseUrl: z.string().url().optional(),
@@ -207,8 +255,21 @@ export async function runConfiguredAgent(input: {
     NEXUS_AGENT_OUTPUT_FILE: outputPath
   };
 
+  // G6: Dynamic skill routing — read skillName from contextNotes to select the right script.
+  // Falls back to AGENT_EXECUTION_COMMAND if no skillName is present (backwards compatible).
+  const contextNotes = (() => {
+    try {
+      return typeof input.task.contextNotes === 'string'
+        ? JSON.parse(input.task.contextNotes) as Record<string, unknown>
+        : {};
+    } catch { return {}; }
+  })();
+
+  const skillName = contextNotes.skillName as string | undefined;
+  const resolvedCommand = resolveSkillCommand(skillName, input.config.AGENT_EXECUTION_COMMAND);
+
   const { stdout, stderr } = await runCommand(
-    input.config.AGENT_EXECUTION_COMMAND,
+    resolvedCommand,
     input.config.AGENT_EXECUTION_ARGS ?? [],
     {
       cwd: input.worktreePath,

@@ -2,6 +2,11 @@
 # Nexus AGENT_EXECUTION_COMMAND wrapper — gstack /ship skill
 # Tier 2 risk: dependency updates, CI fixes, straightforward improvements
 #
+# G1: Invokes real gstack /ship (not bare claude --print)
+# G3: Injects repo-specific learnings before the skill runs
+# G4: Enables checkpoint mode so progress survives crashes
+# G5: Writes RepoHQ brief to CLAUDE.md in the worktree so gstack reads it natively
+#
 # Expected env vars (set by Nexus worker):
 #   NEXUS_AGENT_TASK_ID, NEXUS_AGENT_EXECUTION_ID
 #   NEXUS_AGENT_WORKTREE_PATH, NEXUS_AGENT_CONTEXT_FILE
@@ -13,46 +18,73 @@ WORKTREE="${NEXUS_AGENT_WORKTREE_PATH:-$(pwd)}"
 CONTEXT_FILE="${NEXUS_AGENT_CONTEXT_FILE:-$WORKTREE/.nexus/context.json}"
 OUTPUT_FILE="${NEXUS_AGENT_OUTPUT_FILE:-$WORKTREE/.nexus/output.json}"
 PROMPT_FILE="${NEXUS_AGENT_PROMPT_FILE:-$WORKTREE/.nexus/task.md}"
+GSTACK_BIN="${HOME}/.claude/skills/gstack/bin"
 
-echo "[gstack-ship] Starting ship skill for execution $NEXUS_AGENT_EXECUTION_ID"
+echo "[gstack-ship] Starting /ship for execution ${NEXUS_AGENT_EXECUTION_ID:-local}"
 echo "[gstack-ship] Worktree: $WORKTREE"
 
 cd "$WORKTREE"
 
-# Build a consolidated prompt for Claude Code that includes:
-# - The Nexus task brief
-# - The RepoHQ coding context (if present in context.json)
-# - Instruction to write .nexus/output.json on completion
-
-TASK_OBJECTIVE=$(node -e "
+# ── G5: Write RepoHQ brief to CLAUDE.md so gstack reads it as native context ──
+node -e "
   const fs = require('fs');
-  const ctx = JSON.parse(fs.readFileSync('$CONTEXT_FILE', 'utf8'));
-  const brief = ctx.repoHQ?.brief ?? '';
-  const taskFile = fs.readFileSync('$PROMPT_FILE', 'utf8');
-  console.log(taskFile + (brief ? '\n\n---\n\n## RepoHQ Portfolio Context\n\n' + brief : ''));
-" 2>/dev/null || cat "$PROMPT_FILE")
+  try {
+    const ctx = JSON.parse(fs.readFileSync('$CONTEXT_FILE', 'utf8'));
+    const brief = ctx.repoHQ?.brief ?? '';
+    if (!brief) process.exit(0);
 
-# Run Claude Code with the /ship skill context
-# Claude Code reads the prompt from stdin and operates on the current worktree
-echo "$TASK_OBJECTIVE" | npx --yes claude --dangerously-skip-permissions \
-  --print \
-  "You are an expert software engineer. Read the task above carefully.
-
-IMPORTANT: After completing your changes, write a JSON file to $OUTPUT_FILE with this exact structure:
-{
-  \"contractVersion\": \"nexus-agent-output-v1\",
-  \"summary\": \"<one sentence describing what you did>\",
-  \"findings\": [\"<key finding 1>\", \"<key finding 2>\"],
-  \"outcome\": \"changes-made\",
-  \"changedFiles\": [\"<relative path 1>\", \"<relative path 2>\"],
-  \"validationCommand\": \"npm test\",
-  \"pullRequest\": {
-    \"title\": \"<concise PR title>\",
-    \"body\": \"<PR body describing the change>\",
-    \"draft\": true
+    const claudeMd = '$WORKTREE/CLAUDE.md';
+    const existing = fs.existsSync(claudeMd) ? fs.readFileSync(claudeMd, 'utf8') : '';
+    const stripped = existing.replace(/<!-- repohq-brief-start -->[\s\S]*?<!-- repohq-brief-end -->\n?/g, '');
+    const injected = stripped.trimEnd() +
+      '\n\n<!-- repohq-brief-start -->\n## RepoHQ Portfolio Context\n\n' + brief +
+      '\n<!-- repohq-brief-end -->\n';
+    fs.writeFileSync(claudeMd, injected);
+    console.log('[gstack-ship] RepoHQ brief injected into CLAUDE.md');
+  } catch (e) {
+    console.warn('[gstack-ship] Brief injection failed (non-fatal):', e.message);
   }
-}
+" 2>/dev/null || true
 
-If you cannot make the changes, set outcome to 'blocked' and explain in findings."
+# ── G5: Also merge brief into the task prompt ─────────────────────────────────
+node -e "
+  const fs = require('fs');
+  try {
+    const ctx = JSON.parse(fs.readFileSync('$CONTEXT_FILE', 'utf8'));
+    const brief = ctx.repoHQ?.brief ?? '';
+    const task = fs.readFileSync('$PROMPT_FILE', 'utf8');
+    const merged = task + (brief ? '\n\n---\n\n## RepoHQ Portfolio Context\n\n' + brief : '');
+    fs.writeFileSync('$PROMPT_FILE', merged);
+  } catch (e) { /* non-fatal */ }
+" 2>/dev/null || true
 
-echo "[gstack-ship] Execution complete"
+# ── G3: Inject repo-specific learnings before the skill runs ──────────────────
+if command -v "$GSTACK_BIN/gstack-slug" >/dev/null 2>&1; then
+  eval "$("$GSTACK_BIN/gstack-slug" 2>/dev/null)" || true
+  if [ -n "${SLUG:-}" ]; then
+    LEARNINGS=$("$GSTACK_BIN/gstack-learnings-search" --limit 5 2>/dev/null || true)
+    if [ -n "$LEARNINGS" ]; then
+      echo "[gstack-ship] Injecting ${SLUG} learnings into prompt"
+      printf '\n\n---\n\n## Operational Learnings (from past sessions on this repo)\n\n%s\n' "$LEARNINGS" >> "$PROMPT_FILE"
+    fi
+  fi
+fi
+
+# ── G4: Enable checkpoint mode ────────────────────────────────────────────────
+if command -v "$GSTACK_BIN/gstack-config" >/dev/null 2>&1; then
+  "$GSTACK_BIN/gstack-config" set checkpoint_mode continuous 2>/dev/null || true
+fi
+
+# ── Set up environment ────────────────────────────────────────────────────────
+export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
+export OPENCLAW_SESSION=true
+export SPAWNED_SESSION=true
+
+# ── G1: Invoke the real gstack /ship skill ────────────────────────────────────
+echo "[gstack-ship] Running gstack /ship..."
+claude /ship \
+  --print \
+  --dangerously-skip-permissions \
+  "$(cat "$PROMPT_FILE")" 2>&1
+
+echo "[gstack-ship] /ship complete"
