@@ -1104,6 +1104,30 @@ async function main(): Promise<void> {
             } catch { return false; }
           })();
 
+          // Fire agent_skill_report for findings-only skills (no-changes outcome).
+          // This closes the loop for /health and /investigate when they produce reports
+          // but no code changes — the button shows "Report Ready" instead of spinning forever.
+          if (agentRun.output.outcome === 'no-changes') {
+            const skillNotes = (() => {
+              try {
+                return typeof task.contextNotes === 'string'
+                  ? JSON.parse(task.contextNotes) as Record<string, unknown>
+                  : (task.contextNotes as unknown as Record<string, unknown> ?? {});
+              } catch { return {}; }
+            })();
+            const skillName = skillNotes.skillName as string | undefined;
+            // Always fire for skill-triggered tasks; also fire for advisor tasks that had no changes
+            void notifyRepoHQ(config, {
+              eventType: 'agent_skill_report',
+              taskId: task.id,
+              ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
+              skillName: skillName ?? 'skill',
+              findings: Array.isArray(agentRun.output.findings) ? agentRun.output.findings : [],
+              summary: agentRun.output.summary ?? 'Skill report complete',
+              outcome: 'no-changes',
+            });
+          }
+
           if (autoExec && (finalStatus === 'changes-generated' || finalStatus === 'validated')) {
             logWorker('info', 'auto-promote: creating review + PR', { agentTaskId: task.id, executionId });
             try {

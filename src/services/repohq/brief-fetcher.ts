@@ -171,7 +171,7 @@ export async function fetchRepoHQBrief(
 export async function notifyRepoHQ(
   config: AppConfig,
   payload: {
-    eventType: 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed';
+    eventType: 'agent_pr_created' | 'agent_pr_merged' | 'agent_execution_failed' | 'agent_skill_report';
     taskId: string;
     repoName?: string;
     prUrl?: string;
@@ -180,6 +180,10 @@ export async function notifyRepoHQ(
     durationMs?: number;
     filesChanged?: number;
     costUsd?: number;
+    // agent_skill_report fields
+    skillName?: string;
+    findings?: string[];
+    outcome?: string;
   },
 ): Promise<void> {
   if (!config.REPOHQ_WEBHOOK_URL) return;
