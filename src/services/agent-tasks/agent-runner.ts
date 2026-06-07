@@ -26,9 +26,13 @@ export const AGENT_OUTPUT_CONTRACT_VERSION = 'nexus-agent-output-v1';
 function resolveSkillCommand(skillName: string | undefined, fallback: string): string {
   if (!skillName) return fallback;
 
-  // Allow override via env var (e.g. GSTACK_SCRIPTS_DIR=/custom/path)
-  const scriptsDir = process.env.GSTACK_SCRIPTS_DIR
-    ?? path.dirname(fallback);
+  // Resolve to an absolute path — the worker spawns scripts with cwd=worktreePath,
+  // so a relative AGENT_EXECUTION_COMMAND like ./scripts/gstack-ship.sh would be
+  // resolved against the worktree (wrong). path.resolve anchors to process.cwd()
+  // which is the Nexus project root, giving the correct absolute path.
+  const scriptsDir = path.resolve(
+    process.env.GSTACK_SCRIPTS_DIR ?? path.dirname(fallback)
+  );
 
   // Full lifecycle skill routing — G7
   const SKILL_SCRIPTS: Record<string, string> = {
