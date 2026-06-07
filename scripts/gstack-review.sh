@@ -95,7 +95,13 @@ else
   CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
 fi
 
-$CLAUDE_CMD /review --print --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" 2>&1
+$CLAUDE_CMD --print --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" 2>&1
+
+# ── Force-revert any source changes the agent made ──────────────────────────
+echo "[gstack-review] Reverting any unexpected source changes..."
+git -C "$WORKTREE" checkout -- . 2>/dev/null || true
+git -C "$WORKTREE" clean -fd --exclude=.nexus 2>/dev/null || true
+echo "[gstack-review] Worktree clean."
 if [ -f "$OUTPUT_FILE" ]; then
   node -e "
     const fs = require('fs');

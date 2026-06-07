@@ -121,10 +121,21 @@ else
   CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
 fi
 
-$CLAUDE_CMD /health \
+$CLAUDE_CMD \
   --print \
   --dangerously-skip-permissions \
   "$(cat "$PROMPT_FILE")" 2>&1
+
+
+# ── Force-revert any source changes the agent made ──────────────────────────
+# Report-only skills must not modify source files. If the agent edited anything
+# despite the read-only constraint, revert it here so the Nexus worker sees
+# no git changes and fires agent_skill_report instead of creating a PR.
+# .nexus/ is always preserved (excluded from git pathspec by the worker).
+echo "[gstack-health] Reverting any unexpected source changes..."
+git -C "$WORKTREE" checkout -- . 2>/dev/null || true
+git -C "$WORKTREE" clean -fd --exclude=.nexus 2>/dev/null || true
+echo "[gstack-health] Worktree clean."
 
 # ── Post-process output.json ──────────────────────────────────────────────────
 # The /health skill may write output.json directly (when NEXUS_AGENT_OUTPUT_FILE

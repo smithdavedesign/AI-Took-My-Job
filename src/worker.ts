@@ -921,8 +921,28 @@ async function main(): Promise<void> {
               ? 'passed'
               : 'failed';
 
+          // Report-only skills (health, review, qa-only, canary, retro) should never
+          // produce git changes. If the script's git cleanup ran correctly, the worktree
+          // is already clean. If for any reason it isn't, and the output.json says
+          // no-changes, trust the contract — don't create a PR for a report skill.
+          const REPORT_ONLY_SKILLS = new Set(['health', 'review', 'qa-only', 'canary', 'retro']);
+          const taskSkillName = (() => {
+            try {
+              const notes = typeof task.contextNotes === 'string'
+                ? JSON.parse(task.contextNotes) as Record<string, unknown>
+                : (task.contextNotes as unknown as Record<string, unknown> ?? {});
+              return notes.skillName as string | undefined;
+            } catch { return undefined; }
+          })();
+          const isReportOnlySkill = taskSkillName ? REPORT_ONLY_SKILLS.has(taskSkillName) : false;
+
           const initialStatus = await runGit(workspace.worktreePath, ['status', '--short', ...repositoryChangePathspec()], undefined);
-          const hasChanges = initialStatus.stdout.trim().length > 0;
+          // For report-only skills: treat any git changes as a violation to ignore, not as
+          // "the agent made intentional changes". The script already ran git cleanup; if
+          // something still shows up, it's a metadata artifact — don't promote to PR.
+          const hasChanges = isReportOnlySkill
+            ? false
+            : initialStatus.stdout.trim().length > 0;
           let actualChangedFiles: string[] = [];
           if (hasChanges) {
             await runCommand('git', ['-C', workspace.worktreePath, 'add', '-A', ...repositoryChangePathspec()], {
