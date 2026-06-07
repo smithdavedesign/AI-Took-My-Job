@@ -68,7 +68,7 @@ services:
   - type: worker
     name: ai-devops-nexus-worker
     env: node
-    plan: starter
+    plan: standard
     region: oregon
     autoDeploy: false
     buildCommand: npm ci --include=dev && npm run build && npm install -g @anthropic-ai/claude-code
