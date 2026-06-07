@@ -49,6 +49,29 @@ import { createAgentTaskRepository } from './repositories/agent-task-repository.
 import type { StoredAgentTaskExecution } from './types/agent-tasks.js';
 import { resolveWorkspaceTriagePolicyForReport } from './services/reports/triage-policy.js';
 
+/**
+ * Lightweight keyword inference for the most likely next skill to run after a report.
+ * Mirrors the logic in RepoHQ's suggest-actions.ts — kept simple so it can run
+ * in the Nexus worker without importing from RepoHQ.
+ */
+function inferNextSkill(skillName: string, findings: string[]): string | null {
+  const text = findings.join(' ').toLowerCase();
+  if (['health', 'qa-only'].includes(skillName)) {
+    if (text.includes('typescript') || text.includes('type error') || text.includes('ts error')) return 'ship';
+    if (text.includes('dead code') || text.includes('never imported') || text.includes('unused export')) return 'ship';
+    if (text.includes('no test') || text.includes('missing test') || text.includes('coverage gap')) return 'ship';
+    if (text.includes('build fail') || text.includes('build error') || text.includes('module not found')) return 'investigate';
+  }
+  if (skillName === 'review') {
+    if (text.includes('security') || text.includes('vulnerability') || text.includes('injection')) return 'investigate';
+    if (text.includes('logic error') || text.includes('incorrect') || text.includes('bug')) return 'ship';
+  }
+  if (skillName === 'retro') {
+    if (text.includes('tech debt') || text.includes('test') || text.includes('quality')) return 'ship';
+  }
+  return null;
+}
+
 function logWorker(level: 'info' | 'error', message: string, payload: Record<string, unknown> = {}): void {
   const entry = {
     service: 'nexus-worker',
@@ -1116,15 +1139,23 @@ async function main(): Promise<void> {
               } catch { return {}; }
             })();
             const skillName = skillNotes.skillName as string | undefined;
-            // Always fire for skill-triggered tasks; also fire for advisor tasks that had no changes
+            const findings: string[] = Array.isArray(agentRun.output.findings)
+              ? agentRun.output.findings.filter((f: unknown) => typeof f === 'string' && f.trim())
+              : [];
+
+            // Infer suggested next skill from findings so RepoHQ can surface it
+            // without re-running inference on every load.
+            const suggestedNextSkill = inferNextSkill(skillName ?? '', findings);
+
             void notifyRepoHQ(config, {
               eventType: 'agent_skill_report',
               taskId: task.id,
               ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
               skillName: skillName ?? 'skill',
-              findings: Array.isArray(agentRun.output.findings) ? agentRun.output.findings : [],
+              findings,
               summary: agentRun.output.summary ?? 'Skill report complete',
               outcome: 'no-changes',
+              suggestedNextSkill: suggestedNextSkill ?? undefined,
             });
           }
 

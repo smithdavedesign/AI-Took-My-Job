@@ -184,6 +184,7 @@ export async function notifyRepoHQ(
     skillName?: string;
     findings?: string[];
     outcome?: string;
+    suggestedNextSkill?: string;
   },
 ): Promise<void> {
   if (!config.REPOHQ_WEBHOOK_URL) return;
