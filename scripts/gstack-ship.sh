@@ -82,7 +82,14 @@ export SPAWNED_SESSION=true
 
 # ── G1: Invoke the real gstack /ship skill ────────────────────────────────────
 echo "[gstack-ship] Running gstack /ship..."
-claude /ship \
+# Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE_CMD="claude"
+else
+  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+fi
+
+$CLAUDE_CMD /ship \
   --print \
   --dangerously-skip-permissions \
   "$(cat "$PROMPT_FILE")" 2>&1

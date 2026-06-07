@@ -89,7 +89,14 @@ export SPAWNED_SESSION=true
 
 # ── G1: Invoke the real gstack /investigate skill ─────────────────────────────
 echo "[gstack-investigate] Running gstack /investigate..."
-claude /investigate \
+# Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE_CMD="claude"
+else
+  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+fi
+
+$CLAUDE_CMD /investigate \
   --print \
   --dangerously-skip-permissions \
   "$(cat "$PROMPT_FILE")" 2>&1
