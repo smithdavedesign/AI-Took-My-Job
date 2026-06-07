@@ -56,6 +56,38 @@ export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
 export OPENCLAW_SESSION=true
 export SPAWNED_SESSION=true
 
+# ── Append Nexus output format requirement to prompt ─────────────────────────
+# The /health skill produces human-readable stdout. To capture structured findings
+# in the RepoHQ UI, the agent must write JSON to NEXUS_AGENT_OUTPUT_FILE.
+cat >> "$PROMPT_FILE" << 'NEXUS_OUTPUT_FORMAT'
+
+---
+
+## Required Output (Nexus contract)
+
+When the health check is complete, write the following JSON to the file at
+the path in the NEXUS_AGENT_OUTPUT_FILE environment variable:
+
+```json
+{
+  "contractVersion": "nexus-agent-output-v1",
+  "summary": "One-sentence health verdict (e.g. 'Health 72/100 — 3 TypeScript errors, 2 dead exports')",
+  "findings": [
+    "TypeScript: description of issue with file:line if known",
+    "Dead code: description",
+    "Tests: description"
+  ],
+  "outcome": "no-changes",
+  "changedFiles": []
+}
+```
+
+Rules:
+- findings: array of short strings, one per issue. Passing checks may be included as "✅ TypeScript: 0 errors".
+- outcome must be "no-changes" (health is read-only).
+- Write to NEXUS_AGENT_OUTPUT_FILE using the Bash tool or Write tool.
+NEXUS_OUTPUT_FORMAT
+
 # ── G1: Run /health — read-only code quality dashboard ───────────────────────
 echo "[gstack-health] Running gstack /health..."
 # Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments

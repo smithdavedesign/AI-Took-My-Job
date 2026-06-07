@@ -40,6 +40,35 @@ fi
 export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
 export OPENCLAW_SESSION=true
 export SPAWNED_SESSION=true
+
+# ── Append Nexus output format requirement to prompt ─────────────────────────
+# The /canary skill produces human-readable stdout. To capture structured findings
+# in the RepoHQ UI, the agent must write JSON to NEXUS_AGENT_OUTPUT_FILE.
+cat >> "$PROMPT_FILE" << 'NEXUS_OUTPUT_FORMAT'
+
+---
+
+## Required Output (Nexus contract)
+
+When the live app monitoring — console errors, performance, availability is complete, write the following JSON to the file at
+the path in the NEXUS_AGENT_OUTPUT_FILE environment variable:
+
+```json
+{
+  "contractVersion": "nexus-agent-output-v1",
+  "summary": "One-sentence verdict",
+  "findings": ["Finding 1 with file:line where applicable", "Finding 2"],
+  "outcome": "no-changes",
+  "changedFiles": []
+}
+```
+
+Rules:
+- Each finding is a short string. One issue per entry.
+- outcome must be "no-changes" (this skill is read-only).
+- Write to NEXUS_AGENT_OUTPUT_FILE using the Bash tool or Write tool.
+NEXUS_OUTPUT_FORMAT
+
 echo "[gstack-canary] Running gstack /canary..."
 # Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
 if command -v claude >/dev/null 2>&1; then
