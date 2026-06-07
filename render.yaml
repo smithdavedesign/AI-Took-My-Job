@@ -71,7 +71,7 @@ services:
     plan: starter
     region: oregon
     autoDeploy: false
-    buildCommand: npm ci --include=dev && npm run build
+    buildCommand: npm ci --include=dev && npm run build && npm install -g @anthropic-ai/claude-code
     startCommand: node dist/worker.js
     envVars:
       - key: NODE_VERSION
@@ -112,6 +112,8 @@ services:
       - key: GITHUB_APP_STATE_SECRET
         sync: false
       - key: PUBLIC_WIDGET_SIGNING_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: AGENT_EXECUTION_COMMAND
         sync: false
