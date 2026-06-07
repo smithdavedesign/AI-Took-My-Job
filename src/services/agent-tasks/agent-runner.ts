@@ -23,16 +23,22 @@ export const AGENT_OUTPUT_CONTRACT_VERSION = 'nexus-agent-output-v1';
  *   health      → gstack-health.sh       (code quality report, read-only)
  *   (default)   → AGENT_EXECUTION_COMMAND (env var, any custom command)
  */
+// Compute the scripts directory once at module load time.
+// GSTACK_SCRIPTS_DIR allows override; otherwise we resolve relative to
+// process.cwd() (the project root on Render and locally).
+// We deliberately do NOT derive this from AGENT_EXECUTION_COMMAND — that env var
+// may be a bare filename with no directory, or point to a single script, neither
+// of which reliably indicates where all the gstack-*.sh scripts live.
+const SCRIPTS_DIR = path.resolve(
+  process.env.GSTACK_SCRIPTS_DIR ?? path.join(process.cwd(), 'scripts')
+);
+
+console.log(`[agent-runner] scripts directory: ${SCRIPTS_DIR}`);
+
 function resolveSkillCommand(skillName: string | undefined, fallback: string): string {
   if (!skillName) return fallback;
 
-  // Resolve to an absolute path — the worker spawns scripts with cwd=worktreePath,
-  // so a relative AGENT_EXECUTION_COMMAND like ./scripts/gstack-ship.sh would be
-  // resolved against the worktree (wrong). path.resolve anchors to process.cwd()
-  // which is the Nexus project root, giving the correct absolute path.
-  const scriptsDir = path.resolve(
-    process.env.GSTACK_SCRIPTS_DIR ?? path.dirname(fallback)
-  );
+  const scriptsDir = SCRIPTS_DIR;
 
   // Full lifecycle skill routing — G7
   const SKILL_SCRIPTS: Record<string, string> = {
