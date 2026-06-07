@@ -1418,6 +1418,33 @@ async function main(): Promise<void> {
     if (job?.id) {
       await triageJobRepository.updateStatus(job.id, 'failed');
     }
+
+    // Notify RepoHQ so the lifecycle guard is cleared immediately.
+    // Without this, a stalled/failed job leaves the repo locked for up to
+    // LIFECYCLE_TIMEOUT_MS (15 min) because portfolio_events never gets
+    // an agent_execution_failed terminal event.
+    const agentTaskId = typeof job?.data?.payload?.agentTaskId === 'string'
+      ? job.data.payload.agentTaskId as string
+      : null;
+
+    if (agentTaskId && config.REPOHQ_WEBHOOK_URL) {
+      try {
+        const task = await agentTaskRepository.findById(agentTaskId);
+        const repoName = task?.targetRepository?.split('/').at(-1);
+        await notifyRepoHQ(config, {
+          eventType: 'agent_execution_failed',
+          taskId: agentTaskId,
+          ...(repoName ? { repoName } : {}),
+          summary: `Worker job failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      } catch (notifyErr) {
+        logWorker('error', 'failed to notify RepoHQ of job failure', {
+          agentTaskId,
+          error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        });
+      }
+    }
+
     logWorker('error', 'triage worker job failed', {
       jobId: job?.id ?? null,
       error: error instanceof Error ? error.message : String(error)
