@@ -56,36 +56,60 @@ export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
 export OPENCLAW_SESSION=true
 export SPAWNED_SESSION=true
 
-# ── Append Nexus output format requirement to prompt ─────────────────────────
-# The /health skill produces human-readable stdout. To capture structured findings
-# in the RepoHQ UI, the agent must write JSON to NEXUS_AGENT_OUTPUT_FILE.
+# ── Prepend hard read-only constraint then append output format ───────────────
+# IMPORTANT: prepend comes first so the agent reads the constraint BEFORE
+# the objective. Appending it at the end means the agent may already have
+# decided to make changes by the time it reads the instructions.
+ORIGINAL_PROMPT="$(cat "$PROMPT_FILE")"
+cat > "$PROMPT_FILE" << 'READ_ONLY_HEADER'
+# ASSESSMENT ONLY — DO NOT MODIFY ANY FILES
+
+This is a READ-ONLY code health assessment. You are a reporter, not a fixer.
+
+HARD CONSTRAINTS — violating any of these will cause the task to fail:
+1. DO NOT use Edit, Write, MultiEdit, or any tool that modifies source files.
+2. DO NOT run git add, git commit, git push, or stage any changes.
+3. DO NOT create, rename, or delete any source files.
+4. The ONLY file you may write is the JSON output to NEXUS_AGENT_OUTPUT_FILE.
+5. If you find a bug or issue: REPORT it as a finding. Do NOT fix it.
+
+Your job: read the code, assess quality, write a JSON report. Nothing else.
+
+---
+
+READ_ONLY_HEADER
+
+# Re-append original objective after the constraint header
+printf '%s\n' "$ORIGINAL_PROMPT" >> "$PROMPT_FILE"
+
+# Append output format requirement
 cat >> "$PROMPT_FILE" << 'NEXUS_OUTPUT_FORMAT'
 
 ---
 
 ## Required Output (Nexus contract)
 
-When the health check is complete, write the following JSON to the file at
-the path in the NEXUS_AGENT_OUTPUT_FILE environment variable:
+When your assessment is complete, write this JSON to NEXUS_AGENT_OUTPUT_FILE
+(use `echo '...' > "$NEXUS_AGENT_OUTPUT_FILE"` or the Write tool on that path):
 
-```json
 {
   "contractVersion": "nexus-agent-output-v1",
-  "summary": "One-sentence health verdict (e.g. 'Health 72/100 — 3 TypeScript errors, 2 dead exports')",
+  "summary": "One sentence: overall health verdict with score if determinable",
   "findings": [
-    "TypeScript: description of issue with file:line if known",
-    "Dead code: description",
-    "Tests: description"
+    "TypeScript: <specific issue with file:line>",
+    "Tests: <specific issue or passing count>",
+    "Dead code: <specific exports/functions never imported>",
+    "Lint: <specific issues>"
   ],
   "outcome": "no-changes",
   "changedFiles": []
 }
-```
 
 Rules:
-- findings: array of short strings, one per issue. Passing checks may be included as "✅ TypeScript: 0 errors".
-- outcome must be "no-changes" (health is read-only).
-- Write to NEXUS_AGENT_OUTPUT_FILE using the Bash tool or Write tool.
+- One finding per issue. Be specific — include file paths and line numbers where possible.
+- Passing checks: include as "✅ TypeScript: 0 errors" so the user sees what passed.
+- outcome MUST be "no-changes". This is a read-only task.
+- changedFiles MUST be []. You made no changes.
 NEXUS_OUTPUT_FORMAT
 
 # ── G1: Run /health — read-only code quality dashboard ───────────────────────

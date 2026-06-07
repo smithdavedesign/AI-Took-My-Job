@@ -41,32 +41,49 @@ export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
 export OPENCLAW_SESSION=true
 export SPAWNED_SESSION=true
 
-# ── Append Nexus output format requirement to prompt ─────────────────────────
-# The /canary skill produces human-readable stdout. To capture structured findings
-# in the RepoHQ UI, the agent must write JSON to NEXUS_AGENT_OUTPUT_FILE.
+# ── Prepend hard read-only constraint then append output format ───────────────
+ORIGINAL_PROMPT="$(cat "$PROMPT_FILE")"
+cat > "$PROMPT_FILE" << 'READ_ONLY_HEADER'
+# ASSESSMENT ONLY — DO NOT MODIFY ANY FILES
+
+This is a READ-ONLY assessment. You are a reporter, not a fixer.
+
+HARD CONSTRAINTS — violating any of these will cause the task to fail:
+1. DO NOT use Edit, Write, MultiEdit, or any tool that modifies source files.
+2. DO NOT run git add, git commit, git push, or stage any changes.
+3. DO NOT create, rename, or delete any source files.
+4. The ONLY file you may write is the JSON output to NEXUS_AGENT_OUTPUT_FILE.
+5. If you find a bug or issue: REPORT it as a finding. Do NOT fix it.
+
+Your job: live app monitoring — check for console errors and performance issues.
+
+---
+
+READ_ONLY_HEADER
+
+printf '%s\n' "$ORIGINAL_PROMPT" >> "$PROMPT_FILE"
+
 cat >> "$PROMPT_FILE" << 'NEXUS_OUTPUT_FORMAT'
 
 ---
 
 ## Required Output (Nexus contract)
 
-When the live app monitoring — console errors, performance, availability is complete, write the following JSON to the file at
-the path in the NEXUS_AGENT_OUTPUT_FILE environment variable:
+When your assessment is complete, write this JSON to NEXUS_AGENT_OUTPUT_FILE:
 
-```json
-{
+{{
   "contractVersion": "nexus-agent-output-v1",
-  "summary": "One-sentence verdict",
-  "findings": ["Finding 1 with file:line where applicable", "Finding 2"],
+  "summary": "One sentence verdict",
+  "findings": ["Finding 1 with file:line", "Finding 2"],
   "outcome": "no-changes",
   "changedFiles": []
-}
-```
+}}
 
 Rules:
-- Each finding is a short string. One issue per entry.
-- outcome must be "no-changes" (this skill is read-only).
-- Write to NEXUS_AGENT_OUTPUT_FILE using the Bash tool or Write tool.
+- One finding per issue. Include file paths and line numbers where possible.
+- outcome MUST be "no-changes". This is a read-only task.
+- changedFiles MUST be []. You made no changes.
+
 NEXUS_OUTPUT_FORMAT
 
 echo "[gstack-canary] Running gstack /canary..."
