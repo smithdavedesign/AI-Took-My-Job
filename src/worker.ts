@@ -1155,7 +1155,7 @@ async function main(): Promise<void> {
               findings,
               summary: agentRun.output.summary ?? 'Skill report complete',
               outcome: 'no-changes',
-              suggestedNextSkill: suggestedNextSkill ?? undefined,
+              ...(suggestedNextSkill ? { suggestedNextSkill } : {}),
             });
           }
 
