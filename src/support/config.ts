@@ -135,12 +135,6 @@ const configSchema = z.object({
   REPOHQ_WEBHOOK_SECRET: optionalString,   // shared secret for webhook auth
   REPOHQ_MCP_DATABASE_URL: optionalString, // Neon DB URL for direct RepoHQ MCP queries
   REPOHQ_MCP_USER_ID: optionalString,      // RepoHQ user UUID for MCP context fetching
-  // OpenClaw integration — when OPENCLAW_LOCAL=true and `openclaw` is in PATH, gstack scripts
-  // route execution through `openclaw agent --local` instead of bare claude CLI.
-  // This gives OpenClaw's memory persistence and session context between runs.
-  // OPENCLAW_GATEWAY_TOKEN is still used for gateway auth when the Gateway is running.
-  OPENCLAW_LOCAL: booleanFromEnv(false),  // true = use `openclaw agent --local` in scripts
-  OPENCLAW_GATEWAY_TOKEN: optionalString, // Bearer token for openclaw gateway auth
   OPENAI_API_KEY: optionalString,
   OPENAI_BASE_URL: optionalString,
   OPENAI_MODEL: optionalString,

@@ -41,23 +41,11 @@ export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
 export OPENCLAW_SESSION=true
 export SPAWNED_SESSION=true
 echo "[gstack-qa] Running gstack /qa..."
-# Pre-flight: verify openclaw + claude both available before delegating.
-_OPENCLAW_READY=false
-if [ "${OPENCLAW_LOCAL:-false}" = "true" ] && command -v openclaw >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
-  _OPENCLAW_READY=true
-fi
 
-if [ "$_OPENCLAW_READY" = "true" ]; then
-  echo "[gstack-qa] Routing to openclaw agent --local (session: nexus-${NEXUS_AGENT_TASK_ID:-local})"
-  openclaw agent --local \
-    --session-id "nexus-${NEXUS_AGENT_TASK_ID:-$(date +%s)}" \
-    --message "/qa $(cat "$PROMPT_FILE")" 2>&1
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE_CMD="claude"
 else
-  if command -v claude >/dev/null 2>&1; then
-    CLAUDE_CMD="claude"
-  else
-    CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
-  fi
+  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
   $CLAUDE_CMD /qa --print --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" 2>&1
 fi
 if [ -f "$OUTPUT_FILE" ]; then

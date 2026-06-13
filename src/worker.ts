@@ -1389,9 +1389,33 @@ async function main(): Promise<void> {
       });
     },
     {
-      connection: bullConnection
+      connection: bullConnection,
+      // Process 3 jobs in parallel — each spawns an independent agent subprocess
+      // so there's no shared state risk. Bounded by GitHub API rate limits and
+      // AGENT_EXECUTION_TIMEOUT_SECONDS (default 600s).
+      concurrency: 3,
+      // lockDuration must exceed the renewal interval (lockDuration/2) so BullMQ
+      // keeps the lock alive for the full duration of a long agent run.
+      // 60 s is fine — the worker auto-renews every 30 s.
+      lockDuration: 60_000,
+      // Check for stalled jobs every 30 s. A job is stalled if the worker
+      // crashes mid-run without renewing the lock.
+      stalledInterval: 30_000,
+      // Fail after 1 stall (don't silently re-queue — the failed handler
+      // fires and notifies RepoHQ to clear the lifecycle guard).
+      maxStalledCount: 1,
     }
   );
+
+  worker.on('error', (error) => {
+    logWorker('error', 'bullmq worker error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
+  worker.on('stalled', (jobId) => {
+    logWorker('error', 'job stalled — worker likely crashed mid-run', { jobId });
+  });
 
   worker.on('failed', async (job, error) => {
     if (job?.id) {
@@ -1430,18 +1454,26 @@ async function main(): Promise<void> {
     });
   });
 
-  const shutdown = async () => {
-    logWorker('info', 'worker shutdown requested');
+  const shutdown = async (signal: string) => {
+    logWorker('info', `${signal} received — stopping new jobs, waiting up to 30 s for active jobs`);
+    // Force-close after 30 s so a stuck agent doesn't block deploy restarts.
+    const forceTimer = setTimeout(() => {
+      logWorker('error', 'shutdown grace period elapsed — forcing close');
+      void worker.close(true);
+      process.exit(1);
+    }, 30_000);
+    forceTimer.unref();
     await worker.close();
+    clearTimeout(forceTimer);
     await queue.close();
     await redis.quit();
     await database.close();
     process.exit(0);
   };
 
-  logWorker('info', 'worker started');
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+  logWorker('info', 'worker started', { concurrency: 3 });
+  process.on('SIGINT',  () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
 void main();

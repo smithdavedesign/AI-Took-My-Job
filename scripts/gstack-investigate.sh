@@ -82,38 +82,12 @@ fi
 # ── Set up environment ────────────────────────────────────────────────────────
 export NEXUS_AGENT_OUTPUT_FILE="$OUTPUT_FILE"
 
-# OPENCLAW_SESSION: gstack preamble auto-chooses recommended options (no interactive prompts)
-# SPAWNED_SESSION: signals orchestrator context — disables feature discovery, telemetry prompts
-export OPENCLAW_SESSION=true
-export SPAWNED_SESSION=true
 
-# ── G1: Invoke the real gstack /investigate skill ─────────────────────────────
-echo "[gstack-investigate] Running gstack /investigate..."
-
-# OpenClaw local routing: when OPENCLAW_LOCAL=true and `openclaw` is in PATH,
-# delegate to `openclaw agent --local` which provides memory persistence and
-# session context between runs on the same repo.
-# Falls back to bare claude CLI when openclaw is not configured or not available.
-# Pre-flight: verify openclaw can use the Claude CLI before delegating.
-# openclaw --local uses the claude-cli provider which calls the same claude binary.
-# If claude isn't in PATH, fall back to bare claude (which will also fail, but with a clearer error).
-_OPENCLAW_READY=false
-if [ "${OPENCLAW_LOCAL:-false}" = "true" ] && command -v openclaw >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
-  _OPENCLAW_READY=true
-fi
-
-if [ "$_OPENCLAW_READY" = "true" ]; then
-  echo "[gstack-investigate] Routing to openclaw agent --local (session: nexus-${NEXUS_AGENT_TASK_ID:-local})"
-  openclaw agent --local \
-    --session-id "nexus-${NEXUS_AGENT_TASK_ID:-$(date +%s)}" \
-    --message "/investigate $(cat "$PROMPT_FILE")" 2>&1
+# Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE_CMD="claude"
 else
-  # Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
-  if command -v claude >/dev/null 2>&1; then
-    CLAUDE_CMD="claude"
-  else
-    CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
-  fi
+  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
 
   $CLAUDE_CMD /investigate \
     --print \

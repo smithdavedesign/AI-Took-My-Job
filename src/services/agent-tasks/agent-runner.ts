@@ -263,13 +263,6 @@ export async function runConfiguredAgent(input: {
     NEXUS_AGENT_PROMPT_FILE: promptPath,
     NEXUS_AGENT_CONTEXT_FILE: contextPath,
     NEXUS_AGENT_OUTPUT_FILE: outputPath,
-    // OpenClaw local agent — when OPENCLAW_LOCAL=true, scripts use `openclaw agent --local`
-    // instead of bare claude CLI, gaining memory persistence and session context.
-    // Falls back to bare claude CLI when false or openclaw not in PATH.
-    ...(input.config.OPENCLAW_LOCAL ? { OPENCLAW_LOCAL: 'true' } : {}),
-    ...(input.config.OPENCLAW_GATEWAY_TOKEN
-      ? { OPENCLAW_GATEWAY_TOKEN: input.config.OPENCLAW_GATEWAY_TOKEN }
-      : {}),
   };
 
   // G6: Dynamic skill routing — read skillName from contextNotes to select the right script.
