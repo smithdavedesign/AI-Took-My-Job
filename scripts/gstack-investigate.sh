@@ -89,17 +89,37 @@ export SPAWNED_SESSION=true
 
 # ── G1: Invoke the real gstack /investigate skill ─────────────────────────────
 echo "[gstack-investigate] Running gstack /investigate..."
-# Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
-if command -v claude >/dev/null 2>&1; then
-  CLAUDE_CMD="claude"
-else
-  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+
+# OpenClaw local routing: when OPENCLAW_LOCAL=true and `openclaw` is in PATH,
+# delegate to `openclaw agent --local` which provides memory persistence and
+# session context between runs on the same repo.
+# Falls back to bare claude CLI when openclaw is not configured or not available.
+# Pre-flight: verify openclaw can use the Claude CLI before delegating.
+# openclaw --local uses the claude-cli provider which calls the same claude binary.
+# If claude isn't in PATH, fall back to bare claude (which will also fail, but with a clearer error).
+_OPENCLAW_READY=false
+if [ "${OPENCLAW_LOCAL:-false}" = "true" ] && command -v openclaw >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
+  _OPENCLAW_READY=true
 fi
 
-$CLAUDE_CMD /investigate \
-  --print \
-  --dangerously-skip-permissions \
-  "$(cat "$PROMPT_FILE")" 2>&1
+if [ "$_OPENCLAW_READY" = "true" ]; then
+  echo "[gstack-investigate] Routing to openclaw agent --local (session: nexus-${NEXUS_AGENT_TASK_ID:-local})"
+  openclaw agent --local \
+    --session-id "nexus-${NEXUS_AGENT_TASK_ID:-$(date +%s)}" \
+    --message "/investigate $(cat "$PROMPT_FILE")" 2>&1
+else
+  # Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
+  if command -v claude >/dev/null 2>&1; then
+    CLAUDE_CMD="claude"
+  else
+    CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+  fi
+
+  $CLAUDE_CMD /investigate \
+    --print \
+    --dangerously-skip-permissions \
+    "$(cat "$PROMPT_FILE")" 2>&1
+fi
 
 # ── Sanitise output.json — filter empty findings strings ─────────────────────
 # /investigate may produce findings with empty strings (blank lines in markdown).

@@ -129,6 +129,27 @@ services:
         sync: false
       - key: OPENAI_MODEL
         sync: false
+      # ── RepoHQ integration (Phase 46+) ──────────────────────────────────────
+      - key: REPOHQ_WEBHOOK_URL
+        sync: false
+      - key: REPOHQ_WEBHOOK_SECRET
+        sync: false
+      - key: REPOHQ_MCP_DATABASE_URL
+        sync: false
+      - key: REPOHQ_MCP_USER_ID
+        sync: false
+      - key: GSTACK_SCRIPTS_DIR
+        sync: false
+      # ── OpenClaw integration (Phase 57) ─────────────────────────────────────
+      # NOTE: Set OPENCLAW_LOCAL=true only when running the worker LOCALLY
+      # (not on Render), since openclaw is local-first. To use OpenClaw:
+      #   1. Stop this Render worker service
+      #   2. Run: REDIS_URL=rediss://<render-redis-url> OPENCLAW_LOCAL=true node dist/worker.js
+      # The Render web service stays up to receive API calls from RepoHQ.
+      - key: OPENCLAW_LOCAL
+        value: 'false'
+      - key: OPENCLAW_GATEWAY_TOKEN
+        sync: false
 
   - type: keyvalue
     name: ai-devops-nexus-redis

@@ -108,23 +108,36 @@ When your assessment is complete, write this JSON to NEXUS_AGENT_OUTPUT_FILE
 Rules:
 - One finding per issue. Be specific — include file paths and line numbers where possible.
 - Passing checks: include as "✅ TypeScript: 0 errors" so the user sees what passed.
+- Include ALL findings. Do NOT truncate with entries like "+5 more findings" or "... and N more".
+  Every issue gets its own string in the array, no matter how many there are.
 - outcome MUST be "no-changes". This is a read-only task.
 - changedFiles MUST be []. You made no changes.
 NEXUS_OUTPUT_FORMAT
 
 # ── G1: Run /health — read-only code quality dashboard ───────────────────────
 echo "[gstack-health] Running gstack /health..."
-# Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
-if command -v claude >/dev/null 2>&1; then
-  CLAUDE_CMD="claude"
-else
-  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+# Pre-flight: verify openclaw + claude both available before delegating.
+_OPENCLAW_READY=false
+if [ "${OPENCLAW_LOCAL:-false}" = "true" ] && command -v openclaw >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
+  _OPENCLAW_READY=true
 fi
 
-$CLAUDE_CMD \
-  --print \
-  --dangerously-skip-permissions \
-  "$(cat "$PROMPT_FILE")" 2>&1
+if [ "$_OPENCLAW_READY" = "true" ]; then
+  echo "[gstack-health] Routing to openclaw agent --local (session: nexus-${NEXUS_AGENT_TASK_ID:-local})"
+  openclaw agent --local \
+    --session-id "nexus-${NEXUS_AGENT_TASK_ID:-$(date +%s)}" \
+    --message "/health $(cat "$PROMPT_FILE")" 2>&1
+else
+  if command -v claude >/dev/null 2>&1; then
+    CLAUDE_CMD="claude"
+  else
+    CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+  fi
+  $CLAUDE_CMD \
+    --print \
+    --dangerously-skip-permissions \
+    "$(cat "$PROMPT_FILE")" 2>&1
+fi
 
 
 # ── Force-revert any source changes the agent made ──────────────────────────

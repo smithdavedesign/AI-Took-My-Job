@@ -88,14 +88,25 @@ Rules:
 NEXUS_OUTPUT_FORMAT
 
 echo "[gstack-review] Running gstack /review..."
-# Resolve claude CLI — prefer global install, fall back to npx for CI/CD environments
-if command -v claude >/dev/null 2>&1; then
-  CLAUDE_CMD="claude"
-else
-  CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+# Pre-flight: verify openclaw + claude both available before delegating.
+_OPENCLAW_READY=false
+if [ "${OPENCLAW_LOCAL:-false}" = "true" ] && command -v openclaw >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
+  _OPENCLAW_READY=true
 fi
 
-$CLAUDE_CMD --print --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" 2>&1
+if [ "$_OPENCLAW_READY" = "true" ]; then
+  echo "[gstack-review] Routing to openclaw agent --local (session: nexus-${NEXUS_AGENT_TASK_ID:-local})"
+  openclaw agent --local \
+    --session-id "nexus-${NEXUS_AGENT_TASK_ID:-$(date +%s)}" \
+    --message "/review $(cat "$PROMPT_FILE")" 2>&1
+else
+  if command -v claude >/dev/null 2>&1; then
+    CLAUDE_CMD="claude"
+  else
+    CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
+  fi
+  $CLAUDE_CMD --print --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" 2>&1
+fi
 
 # ── Force-revert any source changes the agent made ──────────────────────────
 echo "[gstack-review] Reverting any unexpected source changes..."
