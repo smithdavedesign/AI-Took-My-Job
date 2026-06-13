@@ -704,12 +704,25 @@ async function main(): Promise<void> {
             projectId: task.projectId,
             repository: task.targetRepository
           });
+
+          // Phase 55: CI-fix tasks carry existingBranch in contextNotes so the agent
+          // pushes the fix onto the open PR branch instead of creating a new one.
+          const existingBranch = (() => {
+            try {
+              const notes = typeof task.contextNotes === 'string'
+                ? JSON.parse(task.contextNotes) as Record<string, unknown>
+                : (task.contextNotes as unknown as Record<string, unknown> ?? {});
+              return typeof notes.existingBranch === 'string' ? notes.existingBranch : undefined;
+            } catch { return undefined; }
+          })();
+
           const workspace = await prepareRepositoryWorkspace({
             config,
             targetRepository: task.targetRepository,
             agentTaskId: task.id,
             executionId,
-            github
+            github,
+            ...(existingBranch ? { existingBranch } : {}),
           });
 
           const replayContext = task.preparedContext.replay;

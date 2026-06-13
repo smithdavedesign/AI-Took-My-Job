@@ -213,6 +213,9 @@ export async function prepareRepositoryWorkspace(input: {
   agentTaskId: string;
   executionId: string;
   github?: GitHubIntegration;
+  /** When set, check out this existing branch instead of creating a new one.
+   *  Used by CI-fix tasks so the fix commit lands on the same PR branch. */
+  existingBranch?: string;
 }): Promise<PreparedRepositoryWorkspace> {
   const cloneTarget = await buildCloneTarget(input.config, input.targetRepository, input.github);
 
@@ -225,12 +228,30 @@ export async function prepareRepositoryWorkspace(input: {
     const baseBranch = await resolveBaseBranch(repositoryPath, cloneTarget.env);
     const runsRoot = path.resolve(process.cwd(), 'var/agent-workspaces/runs');
     const worktreePath = path.join(runsRoot, `${sanitizeSegment(input.agentTaskId)}-${sanitizeSegment(input.executionId)}`);
-    const branchName = `nexus/agent-task-${input.agentTaskId.slice(0, 8)}-${input.executionId.slice(0, 8)}-${randomBytes(2).toString('hex')}`;
-    const hasUsableBaseRef = await repositoryHasUsableBaseRef(repositoryPath, baseBranch, cloneTarget.env);
 
     await mkdir(runsRoot, { recursive: true });
     await rm(worktreePath, { recursive: true, force: true });
     await runCommand('git', ['-C', repositoryPath, 'worktree', 'prune'], withEnv(cloneTarget.env));
+
+    // Resume-on-branch: check out the existing PR branch instead of creating a new one.
+    // This lets the CI-fix agent push a fix commit directly onto the open PR.
+    if (input.existingBranch) {
+      // Fetch to ensure origin has the branch ref before we create the worktree
+      await runCommand(
+        'git',
+        ['-C', repositoryPath, 'fetch', 'origin', input.existingBranch],
+        withEnv(cloneTarget.env)
+      );
+      await runCommand(
+        'git',
+        ['-C', repositoryPath, 'worktree', 'add', '-B', input.existingBranch, worktreePath, `origin/${input.existingBranch}`],
+        withEnv(cloneTarget.env)
+      );
+      return { branchName: input.existingBranch, baseBranch, worktreePath };
+    }
+
+    const branchName = `nexus/agent-task-${input.agentTaskId.slice(0, 8)}-${input.executionId.slice(0, 8)}-${randomBytes(2).toString('hex')}`;
+    const hasUsableBaseRef = await repositoryHasUsableBaseRef(repositoryPath, baseBranch, cloneTarget.env);
 
     if (hasUsableBaseRef) {
       await runCommand(
@@ -238,12 +259,7 @@ export async function prepareRepositoryWorkspace(input: {
         ['-C', repositoryPath, 'worktree', 'add', '-B', branchName, worktreePath, `origin/${baseBranch}`],
         withEnv(cloneTarget.env)
       );
-
-      return {
-        branchName,
-        baseBranch,
-        worktreePath
-      };
+      return { branchName, baseBranch, worktreePath };
     }
 
     await runCommand(
@@ -251,11 +267,7 @@ export async function prepareRepositoryWorkspace(input: {
       ['-C', repositoryPath, 'worktree', 'add', '--orphan', '-B', branchName, worktreePath],
       withEnv(cloneTarget.env)
     );
-
-    return {
-      branchName,
-      worktreePath
-    };
+    return { branchName, worktreePath };
   } finally {
     if (cloneTarget.cleanup) {
       await cloneTarget.cleanup();
