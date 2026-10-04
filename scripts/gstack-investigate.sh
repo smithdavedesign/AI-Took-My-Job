@@ -88,12 +88,12 @@ if command -v claude >/dev/null 2>&1; then
   CLAUDE_CMD="claude"
 else
   CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
-
-  $CLAUDE_CMD /investigate \
-    --print \
-    --dangerously-skip-permissions \
-    "$(cat "$PROMPT_FILE")" 2>&1
 fi
+
+$CLAUDE_CMD /investigate \
+  --print \
+  --dangerously-skip-permissions \
+  "$(cat "$PROMPT_FILE")" 2>&1
 
 # ── Sanitise output.json — filter empty findings strings ─────────────────────
 # /investigate may produce findings with empty strings (blank lines in markdown).
