@@ -72,6 +72,16 @@ jobs:
       - name: Type check
         run: npm run check
 
+      - name: Unit tests
+        run: npm run test:unit
+
+      # Columns added to an existing table need ADD COLUMN IF NOT EXISTS, or live databases
+      # never get them (the worker's `column "correlation_id" does not exist`).
+      - name: Schema changes reach existing databases
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          npm run check:schema
+
       - name: Run config and clone guardrails
         run: npm run e2e:config-guardrails
 
