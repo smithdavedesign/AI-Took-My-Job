@@ -4,7 +4,14 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { buildExecutionCloseout } from '../../services/agent-tasks/execution-closeout.js';
+import { computeBranchCleanupPlan } from '../../services/agent-tasks/branch-cleanup.js';
 import { isGitHubRepository, promoteExecutionPullRequest } from '../../services/agent-tasks/pull-request-promotion.js';
+import {
+  assertAutonomousPromotionBranchPolicy,
+  isAutonomousTaskContext,
+  parseTaskContextNotes
+} from '../../support/agent-branch-policy.js';
+import { upsertNotionExecutionLedger } from '../../services/notion/execution-ledger.js';
 import { requireInternalServiceAuth } from '../../support/internal-auth.js';
 import { notifyRepoHQ } from '../../services/repohq/brief-fetcher.js';
 import { resolveProjectRepositoryScope } from '../../support/project-repositories.js';
@@ -33,6 +40,19 @@ const taskIdParamsSchema = z.object({
 
 const executionIdParamsSchema = z.object({
   executionId: z.string().uuid()
+});
+
+const branchCleanupPreviewQuerySchema = z.object({
+  ttlHours: z.coerce.number().int().min(1).max(24 * 90).optional(),
+  maxItems: z.coerce.number().int().min(1).max(500).optional(),
+  branchPrefix: z.string().min(1).max(200).optional()
+});
+
+const branchCleanupExecuteSchema = z.object({
+  dryRun: z.boolean().optional(),
+  ttlHours: z.coerce.number().int().min(1).max(24 * 90).optional(),
+  maxItems: z.coerce.number().int().min(1).max(500).optional(),
+  branchPrefix: z.string().min(1).max(200).optional()
 });
 
 const executionReviewSchema = z.object({
@@ -510,6 +530,138 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     return pullRequest;
   });
 
+  app.get('/internal/agent-task-branches/cleanup-preview', async (request) => {
+    requireInternalServiceAuth(app, request, ['internal:read']);
+    const query = branchCleanupPreviewQuerySchema.parse(request.query ?? {});
+
+    const ttlHours = query.ttlHours ?? app.config.AGENT_BRANCH_TTL_HOURS;
+    const maxItems = query.maxItems ?? app.config.AGENT_BRANCH_CLEANUP_MAX_PER_RUN;
+    const branchPrefix = query.branchPrefix ?? 'feature/bot';
+
+    const candidates = await app.agentTaskExecutions.findBranchCleanupCandidates({
+      ttlHours,
+      maxItems,
+      branchPrefix
+    });
+
+    const plan = computeBranchCleanupPlan({
+      now: new Date(),
+      ttlHours,
+      maxItems,
+      candidates
+    });
+
+    return {
+      ...plan,
+      branchPrefix,
+      cleanupEnabled: app.config.AGENT_BRANCH_CLEANUP_ENABLED,
+      note: 'Scaffold preview only. No remote branches are deleted by this endpoint yet.'
+    };
+  });
+
+  app.post('/internal/agent-task-branches/cleanup-execute', async (request) => {
+    const principal = requireInternalServiceAuth(app, request, ['internal:read']);
+    const payload = branchCleanupExecuteSchema.parse(request.body ?? {});
+
+    const dryRun = payload.dryRun ?? true;
+    if (!dryRun && !app.config.AGENT_BRANCH_CLEANUP_ENABLED) {
+      throw app.httpErrors.conflict('branch cleanup execution is disabled; set AGENT_BRANCH_CLEANUP_ENABLED=true to enable deletion');
+    }
+
+    const ttlHours = payload.ttlHours ?? app.config.AGENT_BRANCH_TTL_HOURS;
+    const maxItems = payload.maxItems ?? app.config.AGENT_BRANCH_CLEANUP_MAX_PER_RUN;
+    const branchPrefix = payload.branchPrefix ?? 'feature/bot';
+
+    const candidates = await app.agentTaskExecutions.findBranchCleanupCandidates({
+      ttlHours,
+      maxItems,
+      branchPrefix
+    });
+
+    const now = new Date();
+    const plan = computeBranchCleanupPlan({
+      now,
+      ttlHours,
+      maxItems,
+      candidates
+    });
+
+    const results: Array<{ executionId: string; repository: string; branchName: string; deleted: boolean; error?: string }> = [];
+
+    for (const candidate of plan.candidates) {
+      if (dryRun) {
+        results.push({
+          executionId: candidate.executionId,
+          repository: candidate.targetRepository,
+          branchName: candidate.branchName,
+          deleted: false
+        });
+        continue;
+      }
+
+      try {
+        const github = await app.github.resolve({ repository: candidate.targetRepository });
+        if (!github.enabled) {
+          results.push({
+            executionId: candidate.executionId,
+            repository: candidate.targetRepository,
+            branchName: candidate.branchName,
+            deleted: false,
+            error: 'GitHub integration disabled for repository'
+          });
+          continue;
+        }
+
+        await github.deleteBranch({
+          repository: candidate.targetRepository,
+          branch: candidate.branchName
+        });
+
+        results.push({
+          executionId: candidate.executionId,
+          repository: candidate.targetRepository,
+          branchName: candidate.branchName,
+          deleted: true
+        });
+      } catch (error) {
+        results.push({
+          executionId: candidate.executionId,
+          repository: candidate.targetRepository,
+          branchName: candidate.branchName,
+          deleted: false,
+          error: error instanceof Error ? error.message : 'unknown branch cleanup error'
+        });
+      }
+    }
+
+    await app.audit.write({
+      eventType: 'agent_task.branch_cleanup_executed',
+      actorType: 'service',
+      actorId: principal.id,
+      requestId: request.id,
+      payload: {
+        dryRun,
+        ttlHours,
+        maxItems,
+        branchPrefix,
+        attempted: results.length,
+        deleted: results.filter((item) => item.deleted).length,
+        failed: results.filter((item) => !item.deleted && item.error).length
+      }
+    });
+
+    return {
+      dryRun,
+      ttlHours,
+      maxItems,
+      branchPrefix,
+      attempted: results.length,
+      deleted: results.filter((item) => item.deleted).length,
+      failed: results.filter((item) => !item.deleted && item.error).length,
+      results
+    };
+  });
+
   app.post('/internal/agent-task-executions/:executionId/promote', async (request) => {
     const principal = requireInternalServiceAuth(app, request, ['internal:read']);
     const payload = promoteExecutionSchema.parse(request.body ?? {});
@@ -582,6 +734,18 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
     }
 
     const existingPullRequest = await app.agentTaskExecutionPullRequests.findByExecutionId(executionId);
+
+    const taskContextNotes = parseTaskContextNotes(task.contextNotes);
+    const taskIsAutonomous = isAutonomousTaskContext(taskContextNotes);
+    try {
+      assertAutonomousPromotionBranchPolicy({
+        isAutonomous: taskIsAutonomous,
+        ...(execution.baseBranch ? { baseBranch: execution.baseBranch } : {}),
+        integrationBaseBranch: app.config.AGENT_INTEGRATION_BASE_BRANCH
+      });
+    } catch (policyError) {
+      throw app.httpErrors.conflict(policyError instanceof Error ? policyError.message : 'autonomous promotion policy violation');
+    }
 
     try {
       const promoted = await promoteExecutionPullRequest({
@@ -669,13 +833,30 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       });
 
       // Phase 46C: notify RepoHQ that a PR was created
-      const taskContextNotes = typeof task.contextNotes === 'string' ? JSON.parse(task.contextNotes || '{}') : (task.contextNotes ?? {});
       void notifyRepoHQ(app.config, {
         eventType: 'agent_pr_created',
         taskId: task.id,
         ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
         prUrl: promoted.pullRequestUrl,
         summary: `PR #${promoted.pullRequestNumber} created by Nexus agent`,
+      });
+
+      const ledgerSource = taskContextNotes.source;
+      const ledgerSkill = taskContextNotes.skillName;
+
+      void upsertNotionExecutionLedger(app.config, {
+        executionId,
+        taskId: task.id,
+        repository: task.targetRepository,
+        ...(execution.branchName ? { branchName: execution.branchName } : {}),
+        ...(execution.baseBranch ? { baseBranch: execution.baseBranch } : {}),
+        ...(typeof ledgerSource === 'string' ? { source: ledgerSource } : {}),
+        ...(ledgerSkill ? { skillName: ledgerSkill } : {}),
+        objective: task.objective,
+        status: 'pr-opened',
+        summary: `PR #${promoted.pullRequestNumber} created by Nexus agent`,
+        pullRequestUrl: promoted.pullRequestUrl,
+        terminalState: 'in-review'
       });
 
       return {
@@ -841,6 +1022,21 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
         ...(task.targetRepository ? { repoName: task.targetRepository.split('/')[1] } : {}),
         ...(pullRequest.pullRequestUrl ? { prUrl: pullRequest.pullRequestUrl } : {}),
         summary: `PR #${pullRequest.pullRequestNumber} merged`,
+      });
+
+      const mergeContextNotes = parseTaskContextNotes(task.contextNotes);
+      void upsertNotionExecutionLedger(app.config, {
+        executionId,
+        taskId: task.id,
+        repository: task.targetRepository,
+        ...(execution.branchName ? { branchName: execution.branchName } : {}),
+        ...(execution.baseBranch ? { baseBranch: execution.baseBranch } : {}),
+        ...(mergeContextNotes.source ? { source: mergeContextNotes.source } : {}),
+        objective: task.objective,
+        status: 'merged',
+        summary: `PR #${pullRequest.pullRequestNumber} merged`,
+        ...(pullRequest.pullRequestUrl ? { pullRequestUrl: pullRequest.pullRequestUrl } : {}),
+        terminalState: 'merged'
       });
 
       return {
