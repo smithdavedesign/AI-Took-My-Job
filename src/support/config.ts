@@ -143,7 +143,8 @@ const configSchema = z.object({
   // G6: Directory containing gstack-{skill}.sh scripts for dynamic routing.
   // Defaults to the directory of AGENT_EXECUTION_COMMAND if not set.
   GSTACK_SCRIPTS_DIR: optionalString,
-  AGENT_INTEGRATION_BASE_BRANCH: z.string().min(1).default('integration/agent'),
+  // Unset: autonomous PRs target the repo's default branch. Set to restore an integration-branch flow.
+  AGENT_INTEGRATION_BASE_BRANCH: z.string().optional(),
   AGENT_BRANCH_CLEANUP_ENABLED: booleanFromEnv(false),
   AGENT_BRANCH_TTL_HOURS: z.coerce.number().int().min(1).max(24 * 90).default(72),
   AGENT_BRANCH_CLEANUP_MAX_PER_RUN: z.coerce.number().int().min(1).max(500).default(50),

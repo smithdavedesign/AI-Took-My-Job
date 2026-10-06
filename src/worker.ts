@@ -464,9 +464,10 @@ async function main(): Promise<void> {
             const initialBranchName = preparedTaskAutonomous
               ? buildAutonomousBranchName(agentTaskId, execId)
               : `nexus/auto-${execId.slice(0, 8)}`;
-            const initialBaseBranch = preparedTaskAutonomous
+            // Placeholder until the workspace resolves the repo's real base branch.
+            const initialBaseBranch = (preparedTaskAutonomous
               ? resolveAutonomousBaseBranch(config.AGENT_INTEGRATION_BASE_BRANCH)
-              : 'main';
+              : undefined) ?? 'main';
 
             await agentTaskExecutionRepository.create({
               id: execId,

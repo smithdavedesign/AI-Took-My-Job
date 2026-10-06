@@ -1,4 +1,3 @@
-export const DEFAULT_AUTONOMOUS_BASE_BRANCH = 'integration/agent';
 export const AUTONOMOUS_BRANCH_PREFIX = 'feature/bot';
 
 const AUTONOMOUS_SOURCES = new Set([
@@ -62,17 +61,24 @@ export function buildAutonomousBranchName(agentTaskId: string, executionId: stri
   return `${AUTONOMOUS_BRANCH_PREFIX}/${task}-${execution}`;
 }
 
-export function resolveAutonomousBaseBranch(configuredBaseBranch?: string): string {
+/**
+ * Base branch for autonomous PRs. Unset (the default since 2026-10) means the target repo's
+ * default branch: every change is one PR to main that a human merges. Setting
+ * AGENT_INTEGRATION_BASE_BRANCH restores an integration-branch flow.
+ */
+export function resolveAutonomousBaseBranch(configuredBaseBranch?: string): string | undefined {
   const candidate = configuredBaseBranch?.trim();
-  return candidate && candidate.length > 0 ? candidate : DEFAULT_AUTONOMOUS_BASE_BRANCH;
+  return candidate && candidate.length > 0 ? candidate : undefined;
 }
 
+/** With an integration branch configured, autonomous PRs must go there rather than to main. */
 export function assertAutonomousPromotionBranchPolicy(input: {
   isAutonomous: boolean;
-  baseBranch?: string;
-  integrationBaseBranch?: string;
+  baseBranch?: string | undefined;
+  integrationBaseBranch?: string | undefined;
 }): void {
-  if (!input.isAutonomous) {
+  const expected = resolveAutonomousBaseBranch(input.integrationBaseBranch);
+  if (!input.isAutonomous || !expected) {
     return;
   }
 
@@ -81,7 +87,6 @@ export function assertAutonomousPromotionBranchPolicy(input: {
     return;
   }
 
-  const expected = resolveAutonomousBaseBranch(input.integrationBaseBranch);
   throw new Error(
     `autonomous promotion policy violation: autonomous PRs may not target main; use ${expected} and promote to main via human-reviewed release PR`
   );

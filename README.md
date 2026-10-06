@@ -77,7 +77,7 @@ The product still requires explicit human review before GitHub promotion. The ne
 ### Autonomous Branch Policy
 
 - Autonomous execution branches use `feature/bot/{taskId}-{executionId}` naming.
-- Autonomous PRs target `integration/agent` by default (`AGENT_INTEGRATION_BASE_BRANCH`).
+- Autonomous PRs target each repository's default branch, and a human merges them. Set `AGENT_INTEGRATION_BASE_BRANCH` to route them to an integration branch instead.
 - Autonomous PR promotion to `main` is rejected by policy.
 - Human-reviewed promotion from integration branch to `main` remains the final required gate.
 
