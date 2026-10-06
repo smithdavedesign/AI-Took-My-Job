@@ -202,7 +202,6 @@ function buildHarBase64(baseUrl: string): string {
           }
         },
         {
-          pageref: 'page_1',
           startedDateTime: new Date().toISOString(),
           request: {
             method: 'POST',
