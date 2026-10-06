@@ -20,12 +20,12 @@ variable "redis_image" {
 
 variable "minio_image" {
   type    = string
-  default = "minio/minio:RELEASE.2025-02-28T09-55-16Z"
+  default = "quay.io/minio/minio:RELEASE.2025-02-28T09-55-16Z"
 }
 
 variable "minio_mc_image" {
   type    = string
-  default = "minio/mc:RELEASE.2025-02-21T16-00-46Z"
+  default = "quay.io/minio/mc:RELEASE.2025-02-21T16-00-46Z"
 }
 
 variable "node_env" {

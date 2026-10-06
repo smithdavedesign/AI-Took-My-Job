@@ -15,6 +15,25 @@ export interface StoredAgentTask {
   failureReason?: string;
 }
 
+export interface StoredAgentTaskExecutionTimelineEvent {
+  stage: string;
+  at: string;
+  note?: string;
+}
+
+export interface StoredAgentTaskExecutionTelemetry {
+  modelTier?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  durationMs?: number;
+  retryCount?: number;
+  chainDepth?: number;
+  correlationId?: string;
+  escalationReason?: string;
+}
+
 export interface StoredAgentTaskExecution {
   id: string;
   agentTaskId: string;
@@ -23,6 +42,9 @@ export interface StoredAgentTaskExecution {
   branchName?: string;
   baseBranch?: string;
   worktreePath?: string;
+  correlationId?: string;
+  telemetry?: StoredAgentTaskExecutionTelemetry;
+  executionTimeline?: StoredAgentTaskExecutionTimelineEvent[];
   resultSummary: Record<string, unknown>;
   findings: string[];
   patchSummary?: string;

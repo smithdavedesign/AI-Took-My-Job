@@ -345,6 +345,91 @@ Exit criteria:
 - [x] Worker runtime configuration is documented in repo docs and blueprint defaults without overwriting existing dashboard-managed secrets.
 - [x] The operator review queue still requires explicit human review before PR promotion.
 
+### [ ] Phase 14: Shared Branch Strategy And Promotion Gates
+
+Objective: standardize autonomous branch flow across repos so multiple PRs in flight remain traceable while preserving a hard human gate only for merges into `main`.
+
+Deliverables:
+
+- [x] Autonomous branches follow `feature/bot/{taskId}-{slug}` naming.
+- [x] Autonomous PRs target `integration/agent` (or repo-declared equivalent) instead of `main`.
+- [-] Human-reviewed promotion PRs move `integration/agent -> main`; this is the only required manual gate (workflow guard added; rollout labels/process docs now required per repo).
+- [x] Promotion-policy guard rejects autonomous PRs targeting `main` directly.
+- [-] Branch lifecycle policy (TTL + cleanup + max in-flight bot branches) is visible to operators via cleanup preview + execute endpoints (executor shipped behind config gate).
+
+Exit criteria:
+
+- [ ] No autonomous run opens a PR against `main`.
+- [ ] Multiple autonomous PRs can run in parallel with deterministic branch ownership and cleanup.
+
+### [ ] Phase 15: Agent Execution Observability
+
+Objective: provide full visibility into what the agent runtime is doing behind the scenes so operators can trust, debug, and tune autonomous work.
+
+Deliverables:
+
+- [ ] Execution timeline model: queued, preparing, running, report-ready, pr-ready, merged, failed, timed-out, needs-human.
+- [ ] Structured execution telemetry per run: model tier, tokens, cost, duration, retries, escalation reason, chain depth.
+- [ ] Operator dashboard panels for latency, failure causes, retry chains, and per-skill success rates.
+- [ ] Correlation IDs linking review queue items, worker runs, branch names, and PRs.
+- [ ] Query surfaces (routes/MCP) for replayable execution traces.
+
+Exit criteria:
+
+- [ ] Operators can trace any run from trigger to terminal state without inspecting raw logs.
+- [ ] Failures and escalations are classifiable and measurable.
+
+### [ ] Phase 16: gstack-Orchestrated Autonomous Skills
+
+Objective: move execution defaults to gstack skills so autonomy is policy-driven and consistent across investigate/fix/report workflows.
+
+Deliverables:
+
+- [ ] Skill registry with allowlisted execution (`/health`, `/review`, `/qa`, `/investigate`, `/ship`, `/document-release`, `/canary`, `/retro`).
+- [ ] Per-repo skill policy tiers (`report-only`, `analyze+fix`, `high-risk`) with explicit enablement.
+- [ ] Context continuity between chained skills (carry forward findings, unresolved blockers, and prior attempts).
+- [ ] Skill-specific safety gates before fix actions (security + sensitive repos default to investigate/report-only).
+- [ ] Operator-facing visibility of skill source (`manual`, `auto-dispatch`, `skill-chain`, `self-scan`, `mcp`).
+
+Exit criteria:
+
+- [ ] gstack is the default autonomous path for approved execution classes.
+- [ ] Skill orchestration is observable and policy-controlled per repo.
+
+### [ ] Phase 17: Run-Until-Complete Execution Loops
+
+Objective: minimize human intervention by allowing bounded self-correction loops that continue until the objective is complete or a stop condition is met.
+
+Deliverables:
+
+- [ ] Bounded retry engine with default max attempts = 3 and per-repo override controls.
+- [ ] Failure classifier for transient vs. code vs. infra vs. policy failures.
+- [ ] Automatic re-queue on recoverable failures with prior-attempt context attached.
+- [ ] Explicit terminal stop states (`merged`, `failed`, `timed_out`, `needs_human`, `rejected`) with reasons.
+- [ ] Anti-loop guardrails: duplicate-objective suppression, chain-depth cap, and cooldown windows.
+
+Exit criteria:
+
+- [ ] Recoverable failures auto-resolve without manual intervention in the majority of cases.
+- [ ] No unbounded loops occur under normal load.
+
+### [ ] Phase 18: Notion Audit Trail And Writing Standards
+
+Objective: keep a durable and readable document trail of autonomous work, decisions, and outcomes.
+
+Deliverables:
+
+- [-] Notion database becomes source of truth for autonomous run records (write-back service shipped; awaiting production credentials + DB template rollout).
+- [-] Every run syncs required fields: taskId, trigger, repo, skill, branch, PR links, timeline, retries, terminal status, outcome delta (PR-opened + merged lifecycle upserts implemented).
+- [ ] Standard writing template enforced for summaries: objective, acceptance criteria, confidence, rollback notes, final outcome.
+- [ ] Deep links between runtime surfaces and Notion records for audits and retrospectives.
+- [ ] Weekly governance digest for autonomy performance, merge approvals, and documentation completeness.
+
+Exit criteria:
+
+- [ ] Every autonomous run has one canonical documentation record.
+- [ ] Operators can reconstruct decisions and outcomes without searching raw execution logs.
+
 ## Current Sprint
 
 Current focus has moved beyond the original foundation sprint. The initial sprint items are complete:

@@ -128,6 +128,10 @@ const configSchema = z.object({
   // G6: Directory containing gstack-{skill}.sh scripts for dynamic routing.
   // Defaults to the directory of AGENT_EXECUTION_COMMAND if not set.
   GSTACK_SCRIPTS_DIR: optionalString,
+  AGENT_INTEGRATION_BASE_BRANCH: z.string().min(1).default('integration/agent'),
+  AGENT_BRANCH_CLEANUP_ENABLED: booleanFromEnv(false),
+  AGENT_BRANCH_TTL_HOURS: z.coerce.number().int().min(1).max(24 * 90).default(72),
+  AGENT_BRANCH_CLEANUP_MAX_PER_RUN: z.coerce.number().int().min(1).max(500).default(50),
   AGENT_EXECUTION_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(3600).default(600),
   AGENT_EXECUTION_AUTO_CREATE_PR: booleanFromEnv(false),
   // RepoHQ integration (Phase 46)
@@ -135,6 +139,8 @@ const configSchema = z.object({
   REPOHQ_WEBHOOK_SECRET: optionalString,   // shared secret for webhook auth
   REPOHQ_MCP_DATABASE_URL: optionalString, // Neon DB URL for direct RepoHQ MCP queries
   REPOHQ_MCP_USER_ID: optionalString,      // RepoHQ user UUID for MCP context fetching
+  NOTION_INTEGRATION_KEY: optionalString,
+  NOTION_EXECUTION_DATABASE_ID: optionalString,
   OPENAI_API_KEY: optionalString,
   OPENAI_BASE_URL: optionalString,
   OPENAI_MODEL: optionalString,

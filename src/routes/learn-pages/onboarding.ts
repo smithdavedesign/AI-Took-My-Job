@@ -211,7 +211,7 @@ export function buildOnboardingConsolePage(): string {
           <article class="card"><span class="helper">Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a support snapshot to score project readiness.</span></article>
         </div>
         <div class="section">
-          <h2 class="section-title">Setup Checklist</h2>
+          <h2 class="section-title">Readiness And Promotion Guardrails</h2>
           <div class="guardrail-grid">
             <article id="guardrailBoundary" class="guardrail-card guardrail-neutral"><strong>Project boundary unresolved</strong><span>Load a workspace, project, and repo connection before rollout moves forward.</span></article>
             <article id="guardrailReadiness" class="guardrail-card guardrail-neutral"><strong>Launch readiness unknown</strong><span>Support readiness has not been loaded yet.</span></article>
@@ -246,6 +246,12 @@ export function buildOnboardingConsolePage(): string {
             <h2 class="section-title">Launch Readiness</h2>
             <div id="supportSummary" class="helper">No support snapshot loaded yet.</div>
             <pre id="supportResult">// support readiness appears here</pre>
+          </section>
+          <section class="section">
+            <h2 class="section-title">Promote Customer Access</h2>
+            <div id="customerPortalGrantSummary" class="helper">No customer portal grant action run yet.</div>
+            <div id="customerPortalGrantList" class="button-list"></div>
+            <pre id="customerPortalGrantResult">// customer portal grant responses appear here</pre>
           </section>
         </div>
         <div class="workspace-secondary">

@@ -74,6 +74,56 @@ The default hosted path now looks like this:
 
 The product still requires explicit human review before GitHub promotion. The new agent pipeline can now move from approved report to worker-backed execution, but it is still intentionally review-gated and not autonomous PR publication.
 
+### Autonomous Branch Policy
+
+- Autonomous execution branches use `feature/bot/{taskId}-{executionId}` naming.
+- Autonomous PRs target `integration/agent` by default (`AGENT_INTEGRATION_BASE_BRANCH`).
+- Autonomous PR promotion to `main` is rejected by policy.
+- Human-reviewed promotion from integration branch to `main` remains the final required gate.
+
+### Main Release Gate
+
+- PRs targeting `main` must come from `integration/agent`.
+- PRs targeting `main` must include label `human-reviewed-release`.
+- This policy is enforced in workflow: `.github/workflows/policy-main-release-gate.yml`.
+
+### Branch Cleanup Preview (Scaffold)
+
+- Internal preview endpoint: `GET /internal/agent-task-branches/cleanup-preview`
+- Purpose: list candidate autonomous branches older than the configured TTL.
+- Execute endpoint: `POST /internal/agent-task-branches/cleanup-execute`.
+- `dryRun` defaults to `true`; set `dryRun=false` to delete candidate remote branches.
+- Deletion requires `AGENT_BRANCH_CLEANUP_ENABLED=true`.
+- Config knobs: `AGENT_BRANCH_CLEANUP_ENABLED`, `AGENT_BRANCH_TTL_HOURS`, `AGENT_BRANCH_CLEANUP_MAX_PER_RUN`.
+
+### Notion Execution Ledger
+
+- Optional write-back: set `NOTION_INTEGRATION_KEY` and `NOTION_EXECUTION_DATABASE_ID`.
+- Nexus upserts a canonical execution record on PR opened and merged lifecycle events.
+- Quick setup:
+	- Create a Notion internal integration token (`NOTION_INTEGRATION_KEY`).
+	- Share your target Notion database with that integration.
+	- Set `NOTION_EXECUTION_DATABASE_ID` to the database ID (or URL; parser normalizes URL form in validation script).
+	- Run `npm run notion:validate`.
+- Required Notion properties expected in the target database include:
+	- `Name` (title)
+	- `Execution ID` (rich text)
+	- `Task ID` (rich text)
+	- `Repository` (rich text)
+	- `Status` (rich text)
+	- `Terminal State` (rich text)
+	- `Branch` (rich text)
+	- `Base Branch` (rich text)
+	- `Source` (rich text)
+	- `Trigger` (rich text)
+	- `Skill` (rich text)
+	- `Objective` (rich text)
+	- `Summary` (rich text)
+	- `Outcome` (rich text)
+	- `Outcome Delta` (number)
+	- `PR URL` (url)
+	- `Retries` (number)
+
 ## Local Development
 
 Requirements:

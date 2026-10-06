@@ -28,6 +28,11 @@ export interface GitHubMergePullRequestInput {
   mergeMethod?: 'merge' | 'squash' | 'rebase';
 }
 
+export interface GitHubDeleteBranchInput {
+  repository?: string;
+  branch: string;
+}
+
 export interface GitHubIntegration {
   mode: AppConfig['GITHUB_AUTH_MODE'];
   enabled: boolean;
@@ -37,6 +42,7 @@ export interface GitHubIntegration {
   createIssueDraft(input: GitHubIssueDraftInput): Promise<{ number: number; url: string }>;
   createPullRequest(input: GitHubPullRequestInput): Promise<{ number: number; url: string }>;
   mergePullRequest(input: GitHubMergePullRequestInput): Promise<{ mergeCommitSha: string; merged: boolean; message: string }>;
+  deleteBranch(input: GitHubDeleteBranchInput): Promise<void>;
 }
 
 export interface GitHubIntegrationResolver {
@@ -281,6 +287,9 @@ export function createGitHubIntegration(
     },
     async mergePullRequest() {
       throw new Error(reason);
+    },
+    async deleteBranch() {
+      throw new Error(reason);
     }
   });
 
@@ -375,6 +384,14 @@ export function createGitHubIntegration(
         merged: response.data.merged,
         message: response.data.message
       };
+    },
+    async deleteBranch(input) {
+      const target = input.repository ? parseRepository(input.repository) : { owner, repo };
+      await octokit.rest.git.deleteRef({
+        owner: target.owner,
+        repo: target.repo,
+        ref: `heads/${input.branch}`
+      });
     }
   };
 }
