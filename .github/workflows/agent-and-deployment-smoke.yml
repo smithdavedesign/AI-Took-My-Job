@@ -395,6 +395,8 @@ jobs:
             -e TF_VAR_webhook_shared_secret=ci-webhook-secret \
             -e TF_VAR_github_draft_sync_enabled=false \
             -e TF_VAR_github_use_test_repo=false \
+            -e TF_VAR_artifact_storage_provider=local \
+            -e TF_VAR_artifact_storage_path=./var/artifacts \
             -e TF_VAR_s3_region=us-east-1 \
             -e TF_VAR_s3_bucket=nexus-artifacts \
             -e TF_VAR_s3_access_key_id=minioadmin \
@@ -434,6 +436,8 @@ jobs:
             -e TF_VAR_webhook_shared_secret=ci-webhook-secret \
             -e TF_VAR_github_draft_sync_enabled=false \
             -e TF_VAR_github_use_test_repo=false \
+            -e TF_VAR_artifact_storage_provider=local \
+            -e TF_VAR_artifact_storage_path=./var/artifacts \
             -e TF_VAR_s3_region=us-east-1 \
             -e TF_VAR_s3_bucket=nexus-artifacts \
             -e TF_VAR_s3_access_key_id=minioadmin \

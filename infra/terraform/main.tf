@@ -32,11 +32,13 @@ resource "docker_image" "redis" {
 }
 
 resource "docker_image" "minio" {
-  name = var.minio_image
+  count = var.artifact_storage_provider == "s3" ? 1 : 0
+  name  = var.minio_image
 }
 
 resource "docker_image" "mc" {
-  name = var.minio_mc_image
+  count = var.artifact_storage_provider == "s3" ? 1 : 0
+  name  = var.minio_mc_image
 }
 
 resource "docker_image" "app" {
@@ -87,8 +89,9 @@ resource "docker_container" "redis" {
 }
 
 resource "docker_container" "minio" {
+  count   = var.artifact_storage_provider == "s3" ? 1 : 0
   name    = "${var.stack_name}-minio"
-  image   = docker_image.minio.image_id
+  image   = docker_image.minio[0].image_id
   command = ["server", "/data", "--console-address", ":9001"]
 
   env = [
@@ -108,8 +111,9 @@ resource "docker_container" "minio" {
 }
 
 resource "docker_container" "minio_bootstrap" {
+  count    = var.artifact_storage_provider == "s3" ? 1 : 0
   name     = "${var.stack_name}-minio-bootstrap"
-  image    = docker_image.mc.image_id
+  image    = docker_image.mc[0].image_id
   must_run = false
 
   depends_on = [docker_container.minio]
@@ -123,7 +127,7 @@ resource "docker_container" "minio_bootstrap" {
   command = [
     "/bin/sh",
     "-c",
-    "until mc alias set local http://${docker_container.minio.name}:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do sleep 1; done && mc mb --ignore-existing local/$MINIO_BUCKET && mc anonymous set none local/$MINIO_BUCKET"
+    "until mc alias set local http://${docker_container.minio[0].name}:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do sleep 1; done && mc mb --ignore-existing local/$MINIO_BUCKET && mc anonymous set none local/$MINIO_BUCKET"
   ]
 
   networks_advanced {
@@ -143,7 +147,7 @@ locals {
     "ARTIFACT_DOWNLOAD_URL_TTL_SECONDS=${var.artifact_download_url_ttl_seconds}",
     "S3_REGION=${var.s3_region}",
     "S3_BUCKET=${var.s3_bucket}",
-    "S3_ENDPOINT=http://${docker_container.minio.name}:9000",
+    "S3_ENDPOINT=${var.artifact_storage_provider == "s3" ? "http://${docker_container.minio[0].name}:9000" : var.s3_endpoint}",
     "S3_ACCESS_KEY_ID=${var.s3_access_key_id}",
     "S3_SECRET_ACCESS_KEY=${var.s3_secret_access_key}",
     "S3_FORCE_PATH_STYLE=${var.s3_force_path_style}",
