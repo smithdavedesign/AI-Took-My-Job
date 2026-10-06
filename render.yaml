@@ -71,7 +71,10 @@ services:
     plan: standard
     region: oregon
     autoDeploy: false
-    buildCommand: npm ci --include=dev && npm run build && npm install -g @anthropic-ai/claude-code
+    # claude-code goes into the app's node_modules (a global install isn't part of the deployed
+    # artifact) and its installer runs explicitly to fetch the native binary ("claude native binary
+    # not installed" failed every /ship run).
+    buildCommand: npm ci --include=dev && npm run build && npm install --no-save --include=optional @anthropic-ai/claude-code && node node_modules/@anthropic-ai/claude-code/install.cjs
     startCommand: node dist/worker.js
     envVars:
       - key: NODE_VERSION

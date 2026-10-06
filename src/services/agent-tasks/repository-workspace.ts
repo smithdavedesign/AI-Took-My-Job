@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import os from 'node:os';
@@ -151,14 +151,48 @@ export async function createRepositoryCommandContext(config: AppConfig, targetRe
   };
 }
 
+async function isGitRepository(repositoryPath: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
+  try {
+    await runCommand('git', ['-C', repositoryPath, 'rev-parse', '--git-dir'], withEnv(env));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clone into a private temp directory, then rename it into place. Two tasks queued for the same
+ * repo at once used to clone into the same path ("could not create work tree dir: File exists"),
+ * and a failed clone left a partial directory that broke every later fetch for that repo.
+ */
+export async function cloneMirrorAtomically(cloneSource: string, repositoryPath: string, env?: NodeJS.ProcessEnv): Promise<void> {
+  const tempPath = `${repositoryPath}.clone-${randomBytes(4).toString('hex')}`;
+  try {
+    await runCommand('git', ['clone', cloneSource, tempPath], withEnv(env));
+    try {
+      await rename(tempPath, repositoryPath);
+    } catch (error) {
+      // Another task finished its clone first: use that mirror.
+      if (!(await isGitRepository(repositoryPath, env))) throw error;
+    }
+  } finally {
+    await rm(tempPath, { recursive: true, force: true });
+  }
+}
+
 async function ensureRepositoryMirror(repositoryLabel: string, cloneSource: string, env?: NodeJS.ProcessEnv): Promise<string> {
   const rootPath = path.resolve(process.cwd(), 'var/agent-workspaces/repos');
   const repositoryPath = path.join(rootPath, repositoryLabel);
 
   await mkdir(rootPath, { recursive: true });
 
+  if (await pathExists(repositoryPath) && !(await isGitRepository(repositoryPath, env))) {
+    // Leftover from an interrupted clone: start over.
+    await rm(repositoryPath, { recursive: true, force: true });
+  }
+
   if (!(await pathExists(repositoryPath))) {
-    await runCommand('git', ['clone', cloneSource, repositoryPath], withEnv(env));
+    await cloneMirrorAtomically(cloneSource, repositoryPath, env);
     return repositoryPath;
   }
 

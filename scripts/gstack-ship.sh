@@ -88,7 +88,12 @@ export SPAWNED_SESSION=true
 # ── G1: Invoke the real gstack /ship skill ────────────────────────────────────
 echo "[gstack-ship] Running gstack /ship..."
 
-if command -v claude >/dev/null 2>&1; then
+# Prefer the copy the worker build installs into node_modules (its native binary is
+# fetched there); a global install doesn't survive into the Render runtime and npx skips it.
+NEXUS_CLAUDE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/node_modules/.bin/claude"
+if [ -x "$NEXUS_CLAUDE" ]; then
+  CLAUDE_CMD="$NEXUS_CLAUDE"
+elif command -v claude >/dev/null 2>&1; then
   CLAUDE_CMD="claude"
 else
   CLAUDE_CMD="npx --yes @anthropic-ai/claude-code"
