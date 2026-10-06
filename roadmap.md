@@ -390,6 +390,8 @@ Deliverables:
 - [ ] Context continuity between chained skills (carry forward findings, unresolved blockers, and prior attempts).
 - [ ] Skill-specific safety gates before fix actions (security + sensitive repos default to investigate/report-only).
 - [ ] Operator-facing visibility of skill source (`manual`, `auto-dispatch`, `skill-chain`, `self-scan`, `mcp`).
+- [x] Skills actually invoke `claude` when it is installed (the OpenClaw removal had left the call in an `else` branch); guarded by `tests/integration/gstack-claude-invocation-check.sh`.
+- [x] Injected RepoHQ brief never lands in a commit: `scripts/lib/repohq-brief.sh` strips it on exit (it carried a "Last push" timestamp, so every agent PR rewrote `CLAUDE.md` and conflicted with the next; 12 open agent PRs contained nothing else).
 
 Exit criteria:
 
@@ -485,6 +487,14 @@ These do not block initial scaffolding, but they do affect later architecture:
 ## Tech Debt Reduction Plan
 
 Objective: improve maintainability and delivery confidence without changing the product contract shipped through Phase 11.
+
+### CI smoke failures (pre-existing, 2026-10-06)
+
+`agent-and-deployment-smoke.yml` fails on `main` and every PR, for reasons unrelated to recent changes:
+
+- `terraform-smoke`: the pinned MinIO images (`public.ecr.aws/minio/minio`, `public.ecr.aws/minio/mc`) no longer exist in that registry.
+- `policy-review-smoke`: `POST /internal/agent-tasks` → 409 "agent task target repository is not an active connection for this project" (fixture setup).
+- `compose-smoke`: the packaged app never reports healthy on `:4000`.
 
 ### Immediate Blocker
 
