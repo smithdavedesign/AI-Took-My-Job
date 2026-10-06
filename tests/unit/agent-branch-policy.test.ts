@@ -31,8 +31,16 @@ test('buildAutonomousBranchName uses feature/bot prefix', () => {
   assert.equal(branchName.includes(' '), false);
 });
 
-test('resolveAutonomousBaseBranch returns default when blank', () => {
-  assert.equal(resolveAutonomousBaseBranch(''), 'integration/agent');
+test('resolveAutonomousBaseBranch: blank or unset means the repo default branch', () => {
+  assert.equal(resolveAutonomousBaseBranch(''), undefined);
+  assert.equal(resolveAutonomousBaseBranch(undefined), undefined);
+  assert.equal(resolveAutonomousBaseBranch(' release/next '), 'release/next');
+});
+
+test('assertAutonomousPromotionBranchPolicy allows autonomous PRs to main when no integration branch is configured', () => {
+  assert.doesNotThrow(() => {
+    assertAutonomousPromotionBranchPolicy({ isAutonomous: true, baseBranch: 'main' });
+  });
 });
 
 test('assertAutonomousPromotionBranchPolicy rejects autonomous promotion to main', () => {

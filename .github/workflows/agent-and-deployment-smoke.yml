@@ -104,7 +104,6 @@ jobs:
           printf '# e2e target fixture\n' > "$FIXTURE/README.md"
           git -C "$FIXTURE" add -A
           git -C "$FIXTURE" -c user.email=ci@example.com -c user.name=ci commit -qm "fixture: initial commit"
-          git -C "$FIXTURE" branch integration/agent
           echo "REPOSITORY_CLONE_SOURCE_OVERRIDES={\"$E2E_TARGET_REPOSITORY\":\"$FIXTURE\"}" >> "$GITHUB_ENV"
 
       - name: Start API
