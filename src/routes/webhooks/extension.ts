@@ -95,9 +95,10 @@ export function registerExtensionWebhookRoute(app: FastifyInstance): void {
       },
       impactScore
     };
+    const project = await app.projects.findById(payload.projectId);
     const ingested = await ingestFeedbackReport(app, {
       source: 'extension',
-      projectId: payload.projectId,
+      ...(project ? { projectId: payload.projectId } : {}),
       externalId: payload.sessionId,
       title: payload.title,
       severity: payload.severity,
