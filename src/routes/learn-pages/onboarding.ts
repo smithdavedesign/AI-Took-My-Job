@@ -247,6 +247,12 @@ export function buildOnboardingConsolePage(): string {
             <div id="supportSummary" class="helper">No support snapshot loaded yet.</div>
             <pre id="supportResult">// support readiness appears here</pre>
           </section>
+          <section class="section">
+            <h2 class="section-title">Promote Customer Access</h2>
+            <div id="customerPortalGrantSummary" class="helper">No customer portal grant action run yet.</div>
+            <div id="customerPortalGrantList" class="button-list"></div>
+            <pre id="customerPortalGrantResult">// customer portal grant responses appear here</pre>
+          </section>
         </div>
         <div class="workspace-secondary">
           <details class="section advanced-disclosure">
