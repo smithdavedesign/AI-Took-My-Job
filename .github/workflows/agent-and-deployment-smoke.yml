@@ -176,15 +176,23 @@ jobs:
       DATABASE_URL: postgres://nexus:nexus@127.0.0.1:5432/nexus
       REDIS_URL: redis://127.0.0.1:6379
       GITHUB_DRAFT_SYNC_ENABLED: 'true'
-      GITHUB_AUTH_MODE: pat
+      GITHUB_AUTH_MODE: app
       GITHUB_USE_TEST_REPO: 'true'
       GITHUB_TEST_OWNER: ${{ secrets.E2E_GITHUB_TEST_OWNER }}
       GITHUB_TEST_REPO: ${{ secrets.E2E_GITHUB_TEST_REPO }}
       GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
+      GITHUB_APP_ID: ${{ secrets.E2E_GITHUB_APP_ID }}
+      GITHUB_APP_INSTALLATION_ID: ${{ secrets.E2E_GITHUB_APP_INSTALLATION_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.E2E_GITHUB_APP_PRIVATE_KEY }}
+      GITHUB_APP_SLUG: ${{ secrets.E2E_GITHUB_APP_SLUG }}
       E2E_BASE_URL: http://127.0.0.1:4000
       E2E_GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
       E2E_GITHUB_TEST_OWNER: ${{ secrets.E2E_GITHUB_TEST_OWNER }}
       E2E_GITHUB_TEST_REPO: ${{ secrets.E2E_GITHUB_TEST_REPO }}
+      E2E_GITHUB_APP_ID: ${{ secrets.E2E_GITHUB_APP_ID }}
+      E2E_GITHUB_APP_INSTALLATION_ID: ${{ secrets.E2E_GITHUB_APP_INSTALLATION_ID }}
+      E2E_GITHUB_APP_PRIVATE_KEY: ${{ secrets.E2E_GITHUB_APP_PRIVATE_KEY }}
+      E2E_GITHUB_APP_SLUG: ${{ secrets.E2E_GITHUB_APP_SLUG }}
 
     steps:
       - name: Checkout
@@ -199,7 +207,7 @@ jobs:
       - name: Check promotion secrets
         id: promotion-secrets
         run: |
-          if [[ -z "$E2E_GITHUB_TOKEN" || -z "$E2E_GITHUB_TEST_OWNER" || -z "$E2E_GITHUB_TEST_REPO" ]]; then
+          if [[ -z "$E2E_GITHUB_TOKEN" || -z "$E2E_GITHUB_TEST_OWNER" || -z "$E2E_GITHUB_TEST_REPO" || -z "$E2E_GITHUB_APP_ID" || -z "$E2E_GITHUB_APP_INSTALLATION_ID" || -z "$E2E_GITHUB_APP_PRIVATE_KEY" || -z "$E2E_GITHUB_APP_SLUG" ]]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -263,7 +271,7 @@ jobs:
 
       - name: Report skipped promotion smoke
         if: steps.promotion-secrets.outputs.available != 'true'
-        run: echo 'Promotion ownership smoke skipped because E2E GitHub test-repo secrets are not configured.'
+        run: echo 'Promotion ownership smoke skipped because required E2E GitHub test-repo and app-auth secrets are not configured.'
 
       - name: Print logs on failure
         if: failure() && steps.promotion-secrets.outputs.available == 'true'
