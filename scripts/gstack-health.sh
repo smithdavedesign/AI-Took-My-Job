@@ -24,6 +24,11 @@ echo "[gstack-health] Worktree: $WORKTREE"
 
 cd "$WORKTREE"
 
+# Strip the injected RepoHQ brief on exit so it never lands in a commit (scripts/lib/repohq-brief.sh).
+# shellcheck source=lib/repohq-brief.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/repohq-brief.sh"
+trap 'strip_repohq_brief "$WORKTREE"' EXIT
+
 # ── G5: Inject RepoHQ brief into CLAUDE.md ───────────────────────────────────
 node -e "
   const fs = require('fs');

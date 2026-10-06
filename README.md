@@ -83,8 +83,7 @@ The product still requires explicit human review before GitHub promotion. The ne
 
 ### Main Release Gate
 
-- PRs targeting `main` must come from `integration/agent`.
-- PRs targeting `main` must include label `human-reviewed-release`.
+- Integration promotion PRs targeting `main` (`integration/agent -> main`) must include label `human-reviewed-release`.
 - This policy is enforced in workflow: `.github/workflows/policy-main-release-gate.yml`.
 
 ### Branch Cleanup Preview (Scaffold)
@@ -171,3 +170,33 @@ The largest remaining gap is now runtime hardening rather than basic operator UX
 - `PRD-part2.md`: customer onboarding and operating model for the simplified path.
 - `roadmap.md`: phase history plus current simplification direction.
 - `docs/simplified-vnext/`: working simplification specs and gap analysis.
+## Installation and Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/smithdavedesign/AI-Took-My-Job.git
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Set up environment variables by copying `.env.example` to `.env` and configuring it with your settings.
+
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+5. Optionally, build the project for production:
+   ```bash
+   npm run build
+   ```
+
+6. Run tests (if any):
+   ```bash
+   npm test
+   ```
+
+7. For more detailed setup and configuration, refer to `docs/simplified-vnext/` directory.

@@ -89,6 +89,7 @@ resource "docker_container" "redis" {
 resource "docker_container" "minio" {
   name    = "${var.stack_name}-minio"
   image   = docker_image.minio.image_id
+  user    = "0:0"
   command = ["server", "/data", "--console-address", ":9001"]
 
   env = [
