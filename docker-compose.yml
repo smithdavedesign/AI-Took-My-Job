@@ -50,7 +50,7 @@ services:
 
   minio-create-bucket:
     profiles: ["s3"]
-    image: public.ecr.aws/aws-cli/aws-cli:2.37.9
+    image: amazon/aws-cli:2.37.9
     container_name: nexus-minio-bootstrap
     depends_on:
       minio:

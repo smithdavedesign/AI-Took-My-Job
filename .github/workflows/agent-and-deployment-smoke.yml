@@ -84,6 +84,19 @@ jobs:
       - name: Initialize database
         run: psql "$DATABASE_URL" -f sql/init/001_initial.sql
 
+      # The smokes target $E2E_TARGET_REPOSITORY by name (repo connections, reviews), but the
+      # worker clones a local fixture instead of github.com: no network, token or real repo needed.
+      - name: Create fixture target repository
+        run: |
+          FIXTURE="$RUNNER_TEMP/e2e-target-repo"
+          git init -q -b main "$FIXTURE"
+          printf '{"name":"e2e-target","version":"0.0.0","private":true,"scripts":{"test":"node -e \\"process.exit(0)\\""}}\n' > "$FIXTURE/package.json"
+          printf '# e2e target fixture\n' > "$FIXTURE/README.md"
+          git -C "$FIXTURE" add -A
+          git -C "$FIXTURE" -c user.email=ci@example.com -c user.name=ci commit -qm "fixture: initial commit"
+          git -C "$FIXTURE" branch integration/agent
+          echo "REPOSITORY_CLONE_SOURCE_OVERRIDES={\"$E2E_TARGET_REPOSITORY\":\"$FIXTURE\"}" >> "$GITHUB_ENV"
+
       - name: Start API
         run: node dist/index.js > /tmp/nexus-api.log 2>&1 &
 

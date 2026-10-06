@@ -27,9 +27,10 @@ variable "minio_image" {
 }
 
 # Creates the artifacts bucket with the AWS CLI (works against any S3-compatible server).
+# Docker Hub image: CI pulls through the mirror.gcr.io cache; public.ecr.aws is rate-limited.
 variable "s3_bootstrap_image" {
   type    = string
-  default = "public.ecr.aws/aws-cli/aws-cli:2.37.9"
+  default = "amazon/aws-cli:2.37.9"
 }
 
 variable "node_env" {
