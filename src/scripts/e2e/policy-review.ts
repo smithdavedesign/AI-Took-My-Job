@@ -201,6 +201,7 @@ async function main(): Promise<void> {
     },
     body: JSON.stringify({
       sessionId: `policy_review_${Date.now()}`,
+      projectId: `ci-policy-review-${Date.now()}`,
       title: 'Policy review validation report',
       pageUrl: 'https://staging.example.test/checkout',
       environment: 'staging',
