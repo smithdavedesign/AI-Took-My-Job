@@ -211,7 +211,7 @@ export function buildOnboardingConsolePage(): string {
           <article class="card"><span class="helper">Readiness</span><strong id="readinessValue">unknown</strong><span id="readinessNote" class="helper">Load a support snapshot to score project readiness.</span></article>
         </div>
         <div class="section">
-          <h2 class="section-title">Setup Checklist</h2>
+          <h2 class="section-title">Readiness And Promotion Guardrails</h2>
           <div class="guardrail-grid">
             <article id="guardrailBoundary" class="guardrail-card guardrail-neutral"><strong>Project boundary unresolved</strong><span>Load a workspace, project, and repo connection before rollout moves forward.</span></article>
             <article id="guardrailReadiness" class="guardrail-card guardrail-neutral"><strong>Launch readiness unknown</strong><span>Support readiness has not been loaded yet.</span></article>
