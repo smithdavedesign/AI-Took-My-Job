@@ -2,6 +2,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
+import { ZodError } from 'zod';
 
 import { createGitHubIntegrationResolver, type GitHubIntegrationResolver } from './integrations/github/client.js';
 import { createAuditRepository, type AuditRepository } from './repositories/audit-repository.js';
@@ -193,6 +194,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   }));
 
   await app.register(sensible);
+
+  // Routes validate input with `schema.parse(request.params|body|query)`. Without this, a
+  // malformed request (e.g. a non-UUID task id) surfaced as a 500 with raw Zod internals.
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: error.issues.map((issue) => `${issue.path.join('.') || 'request'}: ${issue.message}`).join('; ')
+      });
+    }
+    return reply.send(error);
+  });
   await app.register(helmet, {
     global: true
   });

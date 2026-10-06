@@ -108,6 +108,16 @@ export async function buildCloneTarget(config: AppConfig, targetRepository: stri
   }
   const [owner, repo] = parts as [string, string];
 
+  // Keeps the owner/repo identity (connections, reviews, PR metadata) while cloning from
+  // a configured source — e.g. CI smoke tests clone a local fixture instead of github.com.
+  const override = config.REPOSITORY_CLONE_SOURCE_OVERRIDES?.[targetRepository];
+  if (override) {
+    return {
+      cloneSource: override,
+      repositoryLabel: `${sanitizeSegment(owner)}__${sanitizeSegment(repo)}`
+    };
+  }
+
   const token = github ? await github.resolveGitAuthToken() : config.GITHUB_TOKEN;
   if (!token) {
     return {
