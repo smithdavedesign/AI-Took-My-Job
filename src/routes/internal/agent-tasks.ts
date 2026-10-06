@@ -174,6 +174,10 @@ export function registerAgentTaskInternalRoutes(app: FastifyInstance): void {
       });
 
       await app.agentTasks.updateProcessingJobId(taskId, queueResult.jobId);
+      // The shared audit + response below read these; without them report-based tasks
+      // were returned as `agentTaskId: ""` (regressed when reportId became optional).
+      finalTaskId = taskId;
+      finalJobId = queueResult.jobId;
     } else {
       // Portfolio-score task: create a synthetic report to satisfy the NOT NULL FK
       if (!payload.targetRepository) {
