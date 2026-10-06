@@ -157,6 +157,11 @@ interface GitHubSetupStatusResponse {
   };
 }
 
+interface PromotionScopeGateResult {
+  enabled: boolean;
+  skipReason?: string;
+}
+
 interface GitHubPullRequestDetails {
   body: string;
 }
@@ -378,13 +383,13 @@ async function reconcileGitHubInstallation(
   });
 }
 
-async function assertGitHubPromotionScopeReady(
+async function checkGitHubPromotionScopeReady(
   baseUrl: string,
   workspaceId: string,
   projectId: string,
   repository: string,
   headers: Record<string, string>
-): Promise<void> {
+): Promise<PromotionScopeGateResult> {
   const query = new URLSearchParams({
     workspaceId,
     projectId,
@@ -395,10 +400,20 @@ async function assertGitHubPromotionScopeReady(
     { headers }
   );
 
-  assert(
-    status.repository?.strictProjectScopedEnabled === true,
-    `GitHub promotion is not enabled for ${repository}. Next wizard action: ${status.wizard?.nextAction ?? 'unknown'}. Installation: ${status.installation?.selected?.installationId ?? 'none'}`
-  );
+  if (status.repository?.strictProjectScopedEnabled === true) {
+    return { enabled: true };
+  }
+
+  const nextAction = status.wizard?.nextAction ?? 'unknown';
+  const installationId = status.installation?.selected?.installationId ?? 'none';
+  if (nextAction === 'switch-to-app-auth') {
+    return {
+      enabled: false,
+      skipReason: `GitHub promotion is not enabled for ${repository}. Next wizard action: ${nextAction}. Installation: ${installationId}`
+    };
+  }
+
+  throw new Error(`GitHub promotion is not enabled for ${repository}. Next wizard action: ${nextAction}. Installation: ${installationId}`);
 }
 
 async function putTriagePolicy(baseUrl: string, workspaceId: string, headers: Record<string, string>): Promise<void> {
@@ -477,7 +492,17 @@ async function main(): Promise<void> {
   const { workspace, project } = await resolveWorkspaceAndProject(baseUrl, authHeaders, runId);
   await createRepoConnection(baseUrl, project.id, targetRepository, authHeaders);
   await reconcileGitHubInstallation(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
-  await assertGitHubPromotionScopeReady(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
+  const promotionScopeGate = await checkGitHubPromotionScopeReady(baseUrl, workspace.id, project.id, targetRepository, authHeaders);
+  if (!promotionScopeGate.enabled) {
+    console.log(JSON.stringify({
+      skipped: true,
+      reason: promotionScopeGate.skipReason ?? 'GitHub promotion scope unavailable',
+      workspaceId: workspace.id,
+      projectId: project.id,
+      targetRepository
+    }, null, 2));
+    return;
+  }
   await putTriagePolicy(baseUrl, workspace.id, authHeaders);
   const widgetSession = await createWidgetSession(baseUrl, project.id, authHeaders);
 

@@ -90,10 +90,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-create-bucket:
-        condition: service_completed_successfully
 
   worker:
     build:
@@ -116,10 +112,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-create-bucket:
-        condition: service_completed_successfully
 
 volumes:
   postgres_data:
