@@ -9,6 +9,11 @@ PROMPT_FILE="${NEXUS_AGENT_PROMPT_FILE:-$WORKTREE/.nexus/task.md}"
 GSTACK_BIN="${HOME}/.claude/skills/gstack/bin"
 echo "[gstack-review] Starting /review for execution ${NEXUS_AGENT_EXECUTION_ID:-local}"
 cd "$WORKTREE"
+
+# Strip the injected RepoHQ brief on exit so it never lands in a commit (scripts/lib/repohq-brief.sh).
+# shellcheck source=lib/repohq-brief.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/repohq-brief.sh"
+trap 'strip_repohq_brief "$WORKTREE"' EXIT
 node -e "
   const fs = require('fs');
   try {
