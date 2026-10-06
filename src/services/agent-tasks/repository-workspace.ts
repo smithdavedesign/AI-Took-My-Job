@@ -213,6 +213,8 @@ export async function prepareRepositoryWorkspace(input: {
   agentTaskId: string;
   executionId: string;
   github?: GitHubIntegration;
+  preferredBranchName?: string;
+  preferredBaseBranch?: string;
   /** When set, check out this existing branch instead of creating a new one.
    *  Used by CI-fix tasks so the fix commit lands on the same PR branch. */
   existingBranch?: string;
@@ -225,7 +227,8 @@ export async function prepareRepositoryWorkspace(input: {
       cloneTarget.cloneSource,
       cloneTarget.env
     );
-    const baseBranch = await resolveBaseBranch(repositoryPath, cloneTarget.env);
+    const repositoryBaseBranch = await resolveBaseBranch(repositoryPath, cloneTarget.env);
+    const baseBranch = input.preferredBaseBranch ?? repositoryBaseBranch;
     const runsRoot = path.resolve(process.cwd(), 'var/agent-workspaces/runs');
     const worktreePath = path.join(runsRoot, `${sanitizeSegment(input.agentTaskId)}-${sanitizeSegment(input.executionId)}`);
 
@@ -250,7 +253,9 @@ export async function prepareRepositoryWorkspace(input: {
       return { branchName: input.existingBranch, baseBranch, worktreePath };
     }
 
-    const branchName = `nexus/agent-task-${input.agentTaskId.slice(0, 8)}-${input.executionId.slice(0, 8)}-${randomBytes(2).toString('hex')}`;
+    const branchName = input.preferredBranchName
+      ? sanitizeSegment(input.preferredBranchName)
+      : `nexus/agent-task-${input.agentTaskId.slice(0, 8)}-${input.executionId.slice(0, 8)}-${randomBytes(2).toString('hex')}`;
     const hasUsableBaseRef = await repositoryHasUsableBaseRef(repositoryPath, baseBranch, cloneTarget.env);
 
     if (hasUsableBaseRef) {
@@ -260,6 +265,10 @@ export async function prepareRepositoryWorkspace(input: {
         withEnv(cloneTarget.env)
       );
       return { branchName, baseBranch, worktreePath };
+    }
+
+    if (input.preferredBaseBranch) {
+      throw new Error(`configured autonomous base branch does not exist on origin: ${input.preferredBaseBranch}. Create it before running autonomous execution.`);
     }
 
     await runCommand(

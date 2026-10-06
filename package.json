@@ -25,6 +25,7 @@
     "extension:watch": "node scripts/generate-extension-icons.mjs && node scripts/build-extension.mjs --watch",
     "extension:pack": "npm run extension:build && node scripts/pack-extension.mjs",
     "extension:release": "npm run extension:pack && node scripts/release-extension.mjs",
+    "notion:validate": "tsx src/scripts/notion-validate-ledger.ts",
     "e2e:smoke": "tsx src/scripts/e2e/full-stack.ts",
     "e2e:agent-routes": "tsx src/scripts/e2e/agent-execution-routes.ts",
     "e2e:customer-handoff": "tsx src/scripts/e2e/customer-handoff.ts",
@@ -41,7 +42,8 @@
     "e2e:widget-browser-submit": "tsx src/scripts/e2e/widget-browser-submit.ts",
     "e2e:policy-review": "tsx src/scripts/e2e/policy-review.ts",
     "e2e:shadow-suite": "tsx src/scripts/e2e/shadow-suite.ts",
-    "e2e:promotion-ownership": "tsx src/scripts/e2e/promotion-ownership.ts"
+    "e2e:promotion-ownership": "tsx src/scripts/e2e/promotion-ownership.ts",
+    "test:unit": "tsx --test tests/unit/**/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

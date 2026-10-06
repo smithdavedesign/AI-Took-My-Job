@@ -1,5 +1,10 @@
 import type { GitHubIntegration } from '../../integrations/github/client.js';
 import type { AppConfig } from '../../support/config.js';
+import {
+  assertAutonomousPromotionBranchPolicy,
+  isAutonomousTaskContext,
+  parseTaskContextNotes
+} from '../../support/agent-branch-policy.js';
 import type { StoredAgentTask, StoredAgentTaskExecution } from '../../types/agent-tasks.js';
 
 function buildReference(baseUrl: string | undefined, path: string): string {
@@ -117,6 +122,13 @@ export async function promoteExecutionPullRequest(input: PromoteExecutionPullReq
   if (!input.execution.branchName || !input.execution.baseBranch) {
     throw new Error('execution is missing branch or base branch metadata');
   }
+
+  const contextNotes = parseTaskContextNotes(input.task.contextNotes);
+  assertAutonomousPromotionBranchPolicy({
+    isAutonomous: isAutonomousTaskContext(contextNotes),
+    baseBranch: input.execution.baseBranch,
+    integrationBaseBranch: input.config.AGENT_INTEGRATION_BASE_BRANCH
+  });
 
   const pullRequest = await input.github.createPullRequest({
     repository: input.task.targetRepository,

@@ -30,6 +30,7 @@ import { createWorkspaceRepository } from './repositories/workspace-repository.j
 import { createWorkspaceTriagePolicyRepository } from './repositories/workspace-triage-policy-repository.js';
 import { createArtifactStore } from './services/artifacts/index.js';
 import { runConfiguredAgent } from './services/agent-tasks/agent-runner.js';
+import { buildExecutionTelemetryPayload } from './services/agent-tasks/execution-telemetry.js';
 import { notifyRepoHQ } from './services/repohq/brief-fetcher.js';
 import { persistExecutionTextArtifact } from './services/agent-tasks/execution-artifacts.js';
 import { isGitHubRepository } from './services/agent-tasks/pull-request-promotion.js';
@@ -48,6 +49,13 @@ import { createIssueDraft } from './services/triage/issue-draft.js';
 import { createAgentTaskRepository } from './repositories/agent-task-repository.js';
 import type { StoredAgentTaskExecution } from './types/agent-tasks.js';
 import { resolveWorkspaceTriagePolicyForReport } from './services/reports/triage-policy.js';
+import {
+  assertAutonomousPromotionBranchPolicy,
+  buildAutonomousBranchName,
+  isAutonomousTaskContext,
+  parseTaskContextNotes,
+  resolveAutonomousBaseBranch
+} from './support/agent-branch-policy.js';
 
 import { inferNextSkill } from './lib/infer-next-skill.js';
 
@@ -67,6 +75,21 @@ function logWorker(level: 'info' | 'error', message: string, payload: Record<str
   }
 
   console.log(serialized);
+}
+
+function normalizeFailureSummary(message: string): string {
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('repository not found') ||
+    normalized.includes('could not read from remote repository') ||
+    normalized.includes('permission denied') ||
+    (normalized.includes('git clone') && normalized.includes('failed with code 128'))
+  ) {
+    return 'Repository clone failed: the GitHub repo could not be accessed. Check the repo name, visibility, and GitHub token or app installation.';
+  }
+
+  return message;
 }
 
 async function runCommand(command: string, args: string[], options: {
@@ -429,26 +452,28 @@ async function main(): Promise<void> {
 
           // Phase 46: auto-execute when flagged (RepoHQ fully-automated flow)
           const preparedTask = await agentTaskRepository.findById(agentTaskId);
-          const autoExecute = (() => {
-            try {
-              const notes = typeof preparedTask?.contextNotes === 'string'
-                ? JSON.parse(preparedTask.contextNotes) as Record<string, unknown>
-                : {};
-              return notes.autoExecute === true;
-            } catch { return false; }
-          })();
+          const autoExecute = isAutonomousTaskContext(parseTaskContextNotes(preparedTask?.contextNotes));
+
+          const preparedTaskNotes = parseTaskContextNotes(preparedTask?.contextNotes);
+          const preparedTaskAutonomous = isAutonomousTaskContext(preparedTaskNotes);
 
           if (autoExecute && config.AGENT_EXECUTION_COMMAND) {
             logWorker('info', 'auto-execute: enqueuing agent execution', { agentTaskId });
             const execId    = randomUUID();
             const execJobId = randomUUID(); // UUID job ID — prevents invalid uuid crash in triageJobRepository
+            const initialBranchName = preparedTaskAutonomous
+              ? buildAutonomousBranchName(agentTaskId, execId)
+              : `nexus/auto-${execId.slice(0, 8)}`;
+            const initialBaseBranch = preparedTaskAutonomous
+              ? resolveAutonomousBaseBranch(config.AGENT_INTEGRATION_BASE_BRANCH)
+              : 'main';
 
             await agentTaskExecutionRepository.create({
               id: execId,
               agentTaskId,
               status: 'queued',
-              branchName: `nexus/auto-${execId.slice(0, 8)}`,
-              baseBranch: 'main',
+              branchName: initialBranchName,
+              baseBranch: initialBaseBranch,
               findings: [],
               resultSummary: {},
               validationEvidence: {}
@@ -689,13 +714,31 @@ async function main(): Promise<void> {
         }
 
         const startedAt = new Date().toISOString();
+        const initialTimeline = [
+          ...(execution.executionTimeline ?? []),
+          { stage: 'queued', at: execution.startedAt ?? startedAt },
+          { stage: 'running', at: startedAt }
+        ];
+        const initialTelemetry = buildExecutionTelemetryPayload({
+          correlationId: execution.correlationId ?? executionId,
+          chainDepth: typeof task.preparedContext?.chainDepth === 'number' ? task.preparedContext.chainDepth : undefined,
+          executionTimeline: initialTimeline,
+          durationMs: 0,
+          escalationReason: typeof task.failureReason === 'string' ? task.failureReason : undefined
+        });
         await agentTaskRepository.updateStatus(task.id, 'running', {
           preparedContext: task.preparedContext
         });
         const runningExecution: StoredAgentTaskExecution = {
           ...execution,
           status: 'running',
-          startedAt
+          startedAt,
+          correlationId: initialTelemetry.correlationId ?? execution.correlationId ?? executionId,
+          telemetry: {
+            ...(execution.telemetry ?? {}),
+            ...(initialTelemetry.telemetry ?? {})
+          },
+          executionTimeline: initialTimeline
         };
         await agentTaskExecutionRepository.update(runningExecution);
 
@@ -707,14 +750,15 @@ async function main(): Promise<void> {
 
           // Phase 55: CI-fix tasks carry existingBranch in contextNotes so the agent
           // pushes the fix onto the open PR branch instead of creating a new one.
-          const existingBranch = (() => {
-            try {
-              const notes = typeof task.contextNotes === 'string'
-                ? JSON.parse(task.contextNotes) as Record<string, unknown>
-                : (task.contextNotes as unknown as Record<string, unknown> ?? {});
-              return typeof notes.existingBranch === 'string' ? notes.existingBranch : undefined;
-            } catch { return undefined; }
-          })();
+          const taskNotes = parseTaskContextNotes(task.contextNotes);
+          const isAutonomousTask = isAutonomousTaskContext(taskNotes);
+          const existingBranch = taskNotes.existingBranch;
+          const preferredBaseBranch = isAutonomousTask
+            ? (taskNotes.preferredBaseBranch ?? resolveAutonomousBaseBranch(config.AGENT_INTEGRATION_BASE_BRANCH))
+            : undefined;
+          const preferredBranchName = !existingBranch && isAutonomousTask
+            ? buildAutonomousBranchName(task.id, executionId)
+            : undefined;
 
           const workspace = await prepareRepositoryWorkspace({
             config,
@@ -722,6 +766,8 @@ async function main(): Promise<void> {
             agentTaskId: task.id,
             executionId,
             github,
+            ...(preferredBaseBranch ? { preferredBaseBranch } : {}),
+            ...(preferredBranchName ? { preferredBranchName } : {}),
             ...(existingBranch ? { existingBranch } : {}),
           });
 
@@ -1086,12 +1132,30 @@ async function main(): Promise<void> {
             validationStatus: aggregateValidationStatus,
             contractStatus
           };
+          const completionTimeline = [
+            ...(execution.executionTimeline ?? []),
+            { stage: 'completed', at: completedAt }
+          ];
+          const completionTelemetry = buildExecutionTelemetryPayload({
+            correlationId: execution.correlationId ?? executionId,
+            modelTier: typeof task.preparedContext?.agentTier === 'string' ? task.preparedContext.agentTier : undefined,
+            durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
+            chainDepth: typeof task.preparedContext?.chainDepth === 'number' ? task.preparedContext.chainDepth : undefined,
+            executionTimeline: completionTimeline,
+            escalationReason: typeof task.failureReason === 'string' ? task.failureReason : undefined
+          });
 
           const completedExecution: StoredAgentTaskExecution = {
             ...execution,
             status: finalStatus,
             branchName: workspace.branchName,
             worktreePath: workspace.worktreePath,
+            correlationId: completionTelemetry.correlationId ?? execution.correlationId ?? executionId,
+            telemetry: {
+              ...(execution.telemetry ?? {}),
+              ...(completionTelemetry.telemetry ?? {})
+            },
+            executionTimeline: completionTimeline,
             resultSummary,
             findings,
             patchSummary,
@@ -1190,6 +1254,11 @@ async function main(): Promise<void> {
                 strictProjectScoped: false
               });
               if (github.enabled && workspace.branchName && workspace.baseBranch) {
+                assertAutonomousPromotionBranchPolicy({
+                  isAutonomous: isAutonomousTask,
+                  baseBranch: workspace.baseBranch,
+                  integrationBaseBranch: config.AGENT_INTEGRATION_BASE_BRANCH
+                });
                 const { promoteExecutionPullRequest } = await import('./services/agent-tasks/pull-request-promotion.js');
                 const promoted = await promoteExecutionPullRequest({
                   config,
@@ -1249,6 +1318,7 @@ async function main(): Promise<void> {
           return;
         } catch (error) {
           const failureReason = error instanceof Error ? error.message : 'unknown agent execution failure';
+          const failureSummary = normalizeFailureSummary(failureReason);
           // Notify RepoHQ of execution failure so the Run Agent button shows error state
           try {
             const failNotes = typeof task.contextNotes === 'string' ? JSON.parse(task.contextNotes) as Record<string, unknown> : {};
@@ -1256,7 +1326,7 @@ async function main(): Promise<void> {
               void notifyRepoHQ(config, {
                 eventType: 'agent_execution_failed',
                 taskId: task.id,
-                summary: `Execution failed: ${failureReason.slice(0, 200)}`,
+                summary: `Execution failed: ${failureSummary.slice(0, 200)}`,
               });
             }
           } catch { /* non-fatal */ }
@@ -1447,11 +1517,12 @@ async function main(): Promise<void> {
       try {
         const task = await agentTaskRepository.findById(agentTaskId);
         const repoName = task?.targetRepository?.split('/').at(-1);
+        const failureSummary = normalizeFailureSummary(error instanceof Error ? error.message : String(error));
         await notifyRepoHQ(config, {
           eventType: 'agent_execution_failed',
           taskId: agentTaskId,
           ...(repoName ? { repoName } : {}),
-          summary: `Worker job failed: ${error instanceof Error ? error.message : String(error)}`,
+          summary: `Worker job failed: ${failureSummary}`,
         });
       } catch (notifyErr) {
         logWorker('error', 'failed to notify RepoHQ of job failure', {
