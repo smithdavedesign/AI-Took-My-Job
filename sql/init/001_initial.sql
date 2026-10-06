@@ -302,6 +302,14 @@ CREATE TABLE IF NOT EXISTS agent_task_executions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Added after agent_task_executions first shipped (fca7f20). CREATE TABLE IF NOT EXISTS skips an
+-- existing table, so new columns also need ADD COLUMN IF NOT EXISTS for live databases
+-- (npm run check:schema enforces this in CI).
+ALTER TABLE agent_task_executions
+  ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+  ADD COLUMN IF NOT EXISTS telemetry JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS execution_timeline JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 CREATE INDEX IF NOT EXISTS agent_task_executions_task_idx
   ON agent_task_executions (agent_task_id, created_at DESC);
 
