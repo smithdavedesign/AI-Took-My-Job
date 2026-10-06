@@ -30,7 +30,8 @@ services:
       retries: 10
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-02-28T09-55-16Z
+    profiles: ["s3"]
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
     container_name: nexus-minio
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -48,6 +49,7 @@ services:
       retries: 20
 
   minio-create-bucket:
+    profiles: ["s3"]
     image: public.ecr.aws/aws-cli/aws-cli:latest
     container_name: nexus-minio-bootstrap
     depends_on:
@@ -88,10 +90,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-create-bucket:
-        condition: service_completed_successfully
 
   worker:
     build:
@@ -114,10 +112,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-      minio-create-bucket:
-        condition: service_completed_successfully
 
 volumes:
   postgres_data:

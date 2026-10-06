@@ -83,8 +83,7 @@ The product still requires explicit human review before GitHub promotion. The ne
 
 ### Main Release Gate
 
-- PRs targeting `main` must come from `integration/agent`.
-- PRs targeting `main` must include label `human-reviewed-release`.
+- Integration promotion PRs targeting `main` (`integration/agent -> main`) must include label `human-reviewed-release`.
 - This policy is enforced in workflow: `.github/workflows/policy-main-release-gate.yml`.
 
 ### Branch Cleanup Preview (Scaffold)

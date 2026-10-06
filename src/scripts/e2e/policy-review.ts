@@ -5,6 +5,14 @@ interface HealthResponse {
   status: string;
 }
 
+interface WorkspaceResponse {
+  id: string;
+}
+
+interface ProjectResponse {
+  id: string;
+}
+
 interface ExtensionWebhookResponse {
   reportId: string;
 }
@@ -93,6 +101,35 @@ function getTargetRepository(): string {
   return process.env.E2E_TARGET_REPOSITORY ?? 'smithdavedesign/testRepo';
 }
 
+async function createWorkspace(baseUrl: string, headers: Record<string, string>, suffix: string): Promise<WorkspaceResponse> {
+  return requestJson<WorkspaceResponse>(`${baseUrl}/internal/workspaces`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      name: `Policy Review ${suffix}`,
+      slug: `policy-review-${suffix}`
+    })
+  });
+}
+
+async function createProject(baseUrl: string, workspaceId: string, headers: Record<string, string>, suffix: string): Promise<ProjectResponse> {
+  return requestJson<ProjectResponse>(`${baseUrl}/internal/projects`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      workspaceId,
+      name: `Policy Review ${suffix}`,
+      projectKey: `policy-review-${suffix}`
+    })
+  });
+}
+
 async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -165,7 +202,6 @@ function buildHarBase64(baseUrl: string): string {
           }
         },
         {
-          pageref: 'page_1',
           startedDateTime: new Date().toISOString(),
           request: {
             method: 'POST',
@@ -194,6 +230,10 @@ async function main(): Promise<void> {
   const health = await requestJson<HealthResponse>(`${baseUrl}/health`);
   assert(health.status === 'ok', 'Health endpoint did not return ok');
 
+  const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const workspace = await createWorkspace(baseUrl, authHeaders, suffix);
+  const project = await createProject(baseUrl, workspace.id, authHeaders, suffix);
+
   const report = await requestJson<ExtensionWebhookResponse>(`${baseUrl}/webhooks/extension/report`, {
     method: 'POST',
     headers: {
@@ -202,7 +242,7 @@ async function main(): Promise<void> {
     },
     body: JSON.stringify({
       sessionId: `policy_review_${Date.now()}`,
-      projectId: randomUUID(),
+      projectId: project.id,
       title: 'Policy review validation report',
       pageUrl: 'https://staging.example.test/checkout',
       environment: 'staging',
