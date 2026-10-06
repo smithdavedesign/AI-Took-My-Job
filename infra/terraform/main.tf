@@ -35,8 +35,8 @@ resource "docker_image" "minio" {
   name = var.minio_image
 }
 
-resource "docker_image" "mc" {
-  name = var.minio_mc_image
+resource "docker_image" "s3_bootstrap" {
+  name = var.s3_bootstrap_image
 }
 
 resource "docker_image" "app" {
@@ -87,14 +87,14 @@ resource "docker_container" "redis" {
 }
 
 resource "docker_container" "minio" {
-  name    = "${var.stack_name}-minio"
-  image   = docker_image.minio.image_id
-  user    = "0:0"
-  command = ["server", "/data", "--console-address", ":9001"]
+  name  = "${var.stack_name}-minio"
+  image = docker_image.minio.image_id
+  user  = "0:0"
 
+  # RustFS (MinIO-compatible): serves S3 on :9000 from /data by default.
   env = [
-    "MINIO_ROOT_USER=${var.minio_root_user}",
-    "MINIO_ROOT_PASSWORD=${var.minio_root_password}"
+    "RUSTFS_ACCESS_KEY=${var.minio_root_user}",
+    "RUSTFS_SECRET_KEY=${var.minio_root_password}"
   ]
 
   networks_advanced {
@@ -109,22 +109,24 @@ resource "docker_container" "minio" {
 }
 
 resource "docker_container" "minio_bootstrap" {
-  name     = "${var.stack_name}-minio-bootstrap"
-  image    = docker_image.mc.image_id
-  must_run = false
+  name       = "${var.stack_name}-minio-bootstrap"
+  image      = docker_image.s3_bootstrap.image_id
+  must_run   = false
+  entrypoint = ["/bin/sh", "-c"]
 
   depends_on = [docker_container.minio]
 
   env = [
-    "MINIO_ROOT_USER=${var.minio_root_user}",
-    "MINIO_ROOT_PASSWORD=${var.minio_root_password}",
-    "MINIO_BUCKET=${var.minio_bucket}"
+    "AWS_ACCESS_KEY_ID=${var.minio_root_user}",
+    "AWS_SECRET_ACCESS_KEY=${var.minio_root_password}",
+    "AWS_DEFAULT_REGION=${var.s3_region}",
+    "S3_BUCKET=${var.minio_bucket}",
+    "S3_URL=http://${docker_container.minio.name}:9000"
   ]
 
+  # Wait for the server, then create the bucket (idempotent). Buckets are private by default.
   command = [
-    "/bin/sh",
-    "-c",
-    "until mc alias set local http://${docker_container.minio.name}:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do sleep 1; done && mc mb --ignore-existing local/$MINIO_BUCKET && mc anonymous set none local/$MINIO_BUCKET"
+    "until aws --endpoint-url $S3_URL s3api list-buckets >/dev/null 2>&1; do sleep 1; done; aws --endpoint-url $S3_URL s3api head-bucket --bucket $S3_BUCKET 2>/dev/null || aws --endpoint-url $S3_URL s3api create-bucket --bucket $S3_BUCKET"
   ]
 
   networks_advanced {

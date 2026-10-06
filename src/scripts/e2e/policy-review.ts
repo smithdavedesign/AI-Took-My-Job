@@ -130,6 +130,26 @@ async function createProject(baseUrl: string, workspaceId: string, headers: Reco
   });
 }
 
+// Agent tasks for project-scoped reports may only target the project's active repo
+// connections (src/routes/internal/agent-tasks.ts), so the smoke must connect one.
+async function createRepoConnection(baseUrl: string, projectId: string, repository: string, headers: Record<string, string>): Promise<void> {
+  await requestJson(`${baseUrl}/internal/repo-connections`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      projectId,
+      repository,
+      isDefault: true,
+      config: {
+        source: 'e2e:policy-review'
+      }
+    })
+  });
+}
+
 async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -233,6 +253,7 @@ async function main(): Promise<void> {
   const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`;
   const workspace = await createWorkspace(baseUrl, authHeaders, suffix);
   const project = await createProject(baseUrl, workspace.id, authHeaders, suffix);
+  await createRepoConnection(baseUrl, project.id, targetRepository, authHeaders);
 
   const report = await requestJson<ExtensionWebhookResponse>(`${baseUrl}/webhooks/extension/report`, {
     method: 'POST',
