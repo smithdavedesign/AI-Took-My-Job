@@ -275,6 +275,8 @@ jobs:
 
   compose-smoke:
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROFILES: s3
 
     steps:
       - name: Checkout
