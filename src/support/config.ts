@@ -76,6 +76,18 @@ const optionalStringArraySchema = z.preprocess((value) => {
   return value;
 }, z.array(z.string().min(1)).optional());
 
+const stringRecordSchema = z.preprocess((value) => {
+  if (value === '' || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    return JSON.parse(value);
+  }
+
+  return value;
+}, z.record(z.string().min(1), z.string().min(1)).optional());
+
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
@@ -125,6 +137,9 @@ const configSchema = z.object({
   PUBLIC_FEEDBACK_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000).default(20),
   AGENT_EXECUTION_COMMAND: optionalString,
   AGENT_EXECUTION_ARGS: optionalStringArraySchema,
+  // Test/self-hosted only: JSON map of "owner/repo" → local path or git URL to clone instead
+  // of github.com (CI smoke tests use a local fixture repo). Unset in normal deployments.
+  REPOSITORY_CLONE_SOURCE_OVERRIDES: stringRecordSchema,
   // G6: Directory containing gstack-{skill}.sh scripts for dynamic routing.
   // Defaults to the directory of AGENT_EXECUTION_COMMAND if not set.
   GSTACK_SCRIPTS_DIR: optionalString,

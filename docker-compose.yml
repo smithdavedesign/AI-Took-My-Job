@@ -31,26 +31,26 @@ services:
 
   minio:
     profiles: ["s3"]
-    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    # RustFS: Apache-2.0, MinIO-compatible S3 server. MinIO no longer publishes community
+    # container images, so the pinned minio/minio tag stopped resolving.
+    image: rustfs/rustfs:1.0.1
     container_name: nexus-minio
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "9000:9000"
-      - "9001:9001"
-    command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 5s
       timeout: 5s
       retries: 20
 
   minio-create-bucket:
     profiles: ["s3"]
-    image: public.ecr.aws/aws-cli/aws-cli:latest
+    image: amazon/aws-cli:2.37.9
     container_name: nexus-minio-bootstrap
     depends_on:
       minio:

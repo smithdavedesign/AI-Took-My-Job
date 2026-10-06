@@ -130,6 +130,26 @@ async function createProject(baseUrl: string, workspaceId: string, headers: Reco
   });
 }
 
+// Agent tasks for project-scoped reports may only target the project's active repo
+// connections (src/routes/internal/agent-tasks.ts), so the smoke must connect one.
+async function createRepoConnection(baseUrl: string, projectId: string, repository: string, headers: Record<string, string>): Promise<void> {
+  await requestJson(`${baseUrl}/internal/repo-connections`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      projectId,
+      repository,
+      isDefault: true,
+      config: {
+        source: 'e2e:policy-review'
+      }
+    })
+  });
+}
+
 async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -233,6 +253,7 @@ async function main(): Promise<void> {
   const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`;
   const workspace = await createWorkspace(baseUrl, authHeaders, suffix);
   const project = await createProject(baseUrl, workspace.id, authHeaders, suffix);
+  await createRepoConnection(baseUrl, project.id, targetRepository, authHeaders);
 
   const report = await requestJson<ExtensionWebhookResponse>(`${baseUrl}/webhooks/extension/report`, {
     method: 'POST',
@@ -389,11 +410,15 @@ async function main(): Promise<void> {
 
   assert(closeoutBefore.promotable === false, 'Execution should not be promotable before approval');
   assert(closeoutBefore.blockers.some((blocker) => blocker.includes('approval')), 'Closeout blockers did not mention approval before review');
-  assert(closeoutAfter.promotable === false, 'Execution with failed validation should remain non-promotable after approval');
+  assert(closeoutBefore.blockers.some((blocker) => blocker.includes('validations failed')), 'Closeout blockers did not mention failed validation before approval');
+  // GitHub promotion is disabled in this smoke, so the execution stays non-promotable regardless.
+  assert(closeoutAfter.promotable === false, 'Execution should stay non-promotable while GitHub promotion is disabled');
   assert(closeoutAfter.gates.review?.status === 'approved', `Expected approved review gate, received ${closeoutAfter.gates.review?.status}`);
   assert(closeoutAfter.gates.validation?.status === 'failed', `Expected failed validation gate, received ${closeoutAfter.gates.validation?.status}`);
   assert(closeoutAfter.closeoutStatus === 'blocked', `Unexpected closeout status after approval: ${closeoutAfter.closeoutStatus}`);
-  assert(closeoutAfter.blockers.some((blocker) => blocker.includes('validations failed')), 'Closeout blockers did not mention failed validation after approval');
+  // Policy since 32e6d61: human approval overrides a failed validation (operators can promote
+  // changes they verified manually), so the validation blocker clears once review approves.
+  assert(!closeoutAfter.blockers.some((blocker) => blocker.includes('validations failed')), 'Approval should clear the failed-validation blocker');
 
   console.log(JSON.stringify({
     ok: true,

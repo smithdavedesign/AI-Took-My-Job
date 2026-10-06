@@ -18,14 +18,19 @@ variable "redis_image" {
   default = "redis:7-alpine"
 }
 
+# S3-compatible object store for artifacts. MinIO no longer publishes community container
+# images (every registry dropped them), so the stack runs RustFS, an Apache-2.0
+# MinIO-compatible server. Variable and resource names keep "minio" for state compatibility.
 variable "minio_image" {
   type    = string
-  default = "public.ecr.aws/minio/minio:RELEASE.2025-02-28T09-55-16Z"
+  default = "rustfs/rustfs:1.0.1"
 }
 
-variable "minio_mc_image" {
+# Creates the artifacts bucket with the AWS CLI (works against any S3-compatible server).
+# Docker Hub image: CI pulls through the mirror.gcr.io cache; public.ecr.aws is rate-limited.
+variable "s3_bootstrap_image" {
   type    = string
-  default = "public.ecr.aws/minio/mc:RELEASE.2025-02-21T16-00-46Z"
+  default = "amazon/aws-cli:2.37.9"
 }
 
 variable "node_env" {
