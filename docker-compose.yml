@@ -1,3 +1,5 @@
+# Ports bind to 127.0.0.1: the defaults (minioadmin, postgres) must not be reachable from
+# other machines on the network (2026-10 audit).
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -7,7 +9,7 @@ services:
       POSTGRES_USER: nexus
       POSTGRES_PASSWORD: nexus
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/init:/docker-entrypoint-initdb.d:ro
@@ -21,7 +23,7 @@ services:
     image: redis:7-alpine
     container_name: nexus-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -39,7 +41,7 @@ services:
       RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -84,7 +86,7 @@ services:
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
